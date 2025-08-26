@@ -1,0 +1,92 @@
+package com.example.scanner.mapper;
+
+import com.example.scanner.dto.CookieDto;
+import com.example.scanner.dto.ScanResultDto;
+import com.example.scanner.entity.CookieEntity;
+import com.example.scanner.entity.ScanResultEntity;
+import com.example.scanner.enums.SameSite;
+import com.example.scanner.enums.Source;
+
+import java.util.List;
+import java.util.stream.Collectors;
+
+public class ScanResultMapper {
+
+    // Convert CookieDto to CookieEntity
+    public static CookieEntity cookieDtoToEntity(CookieDto dto) {
+        return new CookieEntity(
+                dto.getName(),
+                dto.getUrl(),
+                dto.getDomain(),
+                dto.getPath(),
+                dto.getExpires(),
+                dto.isSecure(),
+                dto.isHttpOnly(),
+                dto.getSameSite() != null
+                        ? SameSite.valueOf(dto.getSameSite().name())
+                        : null,
+                dto.getSource() != null
+                        ? Source.valueOf(dto.getSource().name())
+                        : null,
+                dto.getCategory(),    // New field mapping
+                dto.getDescription()  // New field mapping
+        );
+    }
+
+    // Convert CookieEntity to CookieDto
+    public static CookieDto cookieEntityToDto(CookieEntity entity) {
+        return new CookieDto(
+                entity.getName(),
+                entity.getUrl(),
+                entity.getDomain(),
+                entity.getPath(),
+                entity.getExpires(),
+                entity.isSecure(),
+                entity.isHttpOnly(),
+                entity.getSameSite(),
+                entity.getSource(),
+                entity.getCategory(),    // New field mapping
+                entity.getDescription()  // New field mapping
+        );
+    }
+
+    // Convert ScanResultDto to ScanResultEntity
+    public static ScanResultEntity toEntity(ScanResultDto dto) {
+        ScanResultEntity entity = new ScanResultEntity();
+        entity.setId(dto.getId());
+        entity.setTransactionId(dto.getTransactionId());
+        entity.setStatus(dto.getStatus());
+        entity.setErrorMessage(dto.getErrorMessage());
+        entity.setUrl(dto.getUrl());
+
+        if (dto.getCookies() != null) {
+            List<CookieEntity> cookieEntities = dto.getCookies()
+                    .stream()
+                    .map(ScanResultMapper::cookieDtoToEntity)
+                    .collect(Collectors.toList());
+            entity.setCookies(cookieEntities);
+        }
+
+        return entity;
+    }
+
+    // Convert ScanResultEntity to ScanResultDto
+    public static ScanResultDto toDto(ScanResultEntity entity) {
+        ScanResultDto dto = new ScanResultDto();
+        dto.setId(entity.getId());
+        dto.setTransactionId(entity.getTransactionId());
+        dto.setStatus(entity.getStatus());
+        dto.setErrorMessage(entity.getErrorMessage());
+        dto.setUrl(entity.getUrl());
+
+        if (entity.getCookies() != null) {
+            List<CookieDto> cookieDtos = entity.getCookies()
+                    .stream()
+                    .map(ScanResultMapper::cookieEntityToDto)
+                    .collect(Collectors.toList());
+            dto.setCookies(cookieDtos);
+        }
+
+        return dto;
+    }
+}
