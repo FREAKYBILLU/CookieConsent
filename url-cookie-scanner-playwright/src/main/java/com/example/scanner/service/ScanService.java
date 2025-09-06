@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
@@ -63,6 +64,7 @@ public class ScanService {
             result.setTransactionId(transactionId);
             result.setStatus(ScanStatus.PENDING.name());
             result.setUrl(normalizedUrl);
+            result.setCookies(new ArrayList<>()); // Initialize with empty list
 
             try {
                 repository.save(result);
@@ -73,13 +75,12 @@ public class ScanService {
 
             log.info("Created new scan with transactionId={} for URL={}", transactionId, normalizedUrl);
 
-            // Run async scan with normalized URL
             self.runScanAsync(transactionId, normalizedUrl);
 
             return transactionId;
 
         } catch (UrlValidationException e) {
-            throw e; // Re-throw custom exceptions
+            throw e;
         } catch (Exception e) {
             log.error("Unexpected error during scan initialization", e);
             throw new ScanExecutionException("Failed to start scan", e);
@@ -98,16 +99,14 @@ public class ScanService {
             result.setStatus(ScanStatus.RUNNING.name());
             repository.save(result);
 
-            // Execute scan with proper error handling
-            List<CookieEntity> cookies = performScan(url, transactionId);
+            performScanWithIncrementalSaving(url, transactionId);
 
+            result = repository.findById(transactionId).orElse(result);
             result.setStatus(ScanStatus.COMPLETED.name());
-            result.setCookies(cookies);
-            result.setUrl(url);
             repository.save(result);
 
             log.info("DPDPA-compliant scan COMPLETED for transactionId={} with {} cookies",
-                    transactionId, cookies.size());
+                    transactionId, result.getCookies().size());
 
         } catch (Exception e) {
             log.error("DPDPA scan FAILED for transactionId={} URL={} due to error: {}",
@@ -125,10 +124,12 @@ public class ScanService {
         }
     }
 
-    private List<CookieEntity> performScan(String url, String transactionId) throws ScanExecutionException {
+    private void performScanWithIncrementalSaving(String url, String transactionId) throws ScanExecutionException {
         Playwright playwright = null;
         Browser browser = null;
         BrowserContext context = null;
+
+        Map<String, CookieDto> discoveredCookies = new ConcurrentHashMap<>();
 
         try {
             playwright = Playwright.create();
@@ -153,13 +154,10 @@ public class ScanService {
 
             Page page = context.newPage();
 
-            // Extract root domain for classification
             String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
             log.debug("Site root domain: {}", siteRoot);
 
-            // Cookie collection logic
-            List<CookieDto> httpHeaderCookies = Collections.synchronizedList(new ArrayList<>());
-
+            // Set up response listener for HTTP header cookies with incremental saving
             context.onResponse(response -> {
                 try {
                     String setCookieHeader = response.headers().get("set-cookie");
@@ -173,7 +171,18 @@ public class ScanService {
 
                         CookieDto parsedCookie = parseSetCookieHeader(setCookieHeader, url, responseRoot, source);
                         if (parsedCookie != null) {
-                            httpHeaderCookies.add(parsedCookie);
+                            String cookieKey = generateCookieKey(parsedCookie.getName(), parsedCookie.getDomain());
+
+                            // Add to discovered cookies
+                            if (!discoveredCookies.containsKey(cookieKey)) {
+                                discoveredCookies.put(cookieKey, parsedCookie);
+
+                                // Categorize this single cookie
+                                categorizeSingleCookie(parsedCookie);
+
+                                // Save incrementally with immediate flush
+                                saveIncrementalCookieWithFlush(transactionId, parsedCookie);
+                            }
                         }
                     }
                 } catch (Exception e) {
@@ -198,22 +207,24 @@ public class ScanService {
             // Handle consent banners
             handleConsentBanners(page);
 
-            // Collect cookies
+            // Collect browser context cookies
             List<CookieDto> browserContextCookies = collectBrowserCookies(context, url, siteRoot);
 
-            // Merge and deduplicate
-            List<CookieDto> allCookieDtos = new ArrayList<>();
-            allCookieDtos.addAll(browserContextCookies);
-            allCookieDtos.addAll(httpHeaderCookies);
+            // Process browser cookies incrementally
+            for (CookieDto cookie : browserContextCookies) {
+                String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain());
+                if (!discoveredCookies.containsKey(cookieKey)) {
+                    discoveredCookies.put(cookieKey, cookie);
 
-            Map<String, CookieDto> deduplicatedCookies = deduplicateCookies(allCookieDtos);
+                    // Categorize this single cookie
+                    categorizeSingleCookie(cookie);
 
-            // Categorize cookies with error handling
-            categorizeCookies(deduplicatedCookies, transactionId);
+                    // Save incrementally with immediate flush
+                    saveIncrementalCookieWithFlush(transactionId, cookie);
+                }
+            }
 
-            return deduplicatedCookies.values().stream()
-                    .map(ScanResultMapper::cookieDtoToEntity)
-                    .collect(Collectors.toList());
+            log.info("Total unique cookies discovered: {}", discoveredCookies.size());
 
         } catch (PlaywrightException e) {
             throw new ScanExecutionException("Playwright error during scan: " + e.getMessage(), e);
@@ -222,6 +233,58 @@ public class ScanService {
         } finally {
             // Ensure proper cleanup
             cleanupResources(context, browser, playwright);
+        }
+    }
+
+    private void saveIncrementalCookieWithFlush(String transactionId, CookieDto cookieDto) {
+        try {
+            ScanResultEntity result = repository.findById(transactionId).orElse(null);
+            if (result != null) {
+                List<CookieEntity> currentCookies = result.getCookies();
+                if (currentCookies == null) {
+                    currentCookies = new ArrayList<>();
+                    result.setCookies(currentCookies);
+                }
+
+                // Check if cookie already exists (by name and domain)
+                boolean exists = currentCookies.stream()
+                        .anyMatch(c -> c.getName().equals(cookieDto.getName()) &&
+                                Objects.equals(c.getDomain(), cookieDto.getDomain()));
+
+                if (!exists) {
+                    CookieEntity cookieEntity = ScanResultMapper.cookieDtoToEntity(cookieDto);
+                    currentCookies.add(cookieEntity);
+                    result.setCookies(currentCookies);
+
+                    // Force immediate save and flush
+                    repository.save(result);
+
+                    log.debug("Incrementally saved cookie '{}' for transaction {}", cookieDto.getName(), transactionId);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to incrementally save cookie '{}' for transaction {}: {}",
+                    cookieDto.getName(), transactionId, e.getMessage());
+        }
+    }
+
+    private void categorizeSingleCookie(CookieDto cookie) {
+        try {
+            Map<String, CookieCategorizationResponse> categoryMap =
+                    cookieCategorizationService.categorizeCookies(List.of(cookie.getName()));
+
+            CookieCategorizationResponse categorization = categoryMap.get(cookie.getName());
+            if (categorization != null) {
+                cookie.setCategory(categorization.getCategory());
+                cookie.setDescription(categorization.getDescription());
+            } else {
+                cookie.setCategory("Unknown");
+                cookie.setDescription("Category not determined");
+            }
+        } catch (Exception e) {
+            log.debug("Failed to categorize cookie '{}': {}", cookie.getName(), e.getMessage());
+            cookie.setCategory("Unknown");
+            cookie.setDescription("Categorization failed");
         }
     }
 
@@ -276,53 +339,6 @@ public class ScanService {
                 })
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
-    }
-
-    private Map<String, CookieDto> deduplicateCookies(List<CookieDto> allCookieDtos) {
-        return allCookieDtos.stream()
-                .collect(Collectors.toMap(
-                        cookie -> generateCookieKey(cookie.getName(), cookie.getDomain()),
-                        cookie -> cookie,
-                        (existing, duplicate) -> {
-                            // Keep the most complete cookie
-                            if (existing.getExpires() != null && duplicate.getExpires() == null) {
-                                return existing;
-                            } else if (existing.getExpires() == null && duplicate.getExpires() != null) {
-                                return duplicate;
-                            }
-                            return existing;
-                        }
-                ));
-    }
-
-    private void categorizeCookies(Map<String, CookieDto> cookies, String transactionId) {
-        try {
-            List<String> cookieNames = cookies.values().stream()
-                    .map(CookieDto::getName)
-                    .collect(Collectors.toList());
-
-            log.info("Calling cookie categorization API for {} unique cookies", cookieNames.size());
-            Map<String, CookieCategorizationResponse> categoryMap =
-                    cookieCategorizationService.categorizeCookies(cookieNames);
-
-            for (CookieDto cookie : cookies.values()) {
-                CookieCategorizationResponse categorization = categoryMap.get(cookie.getName());
-                if (categorization != null) {
-                    cookie.setCategory(categorization.getCategory());
-                    cookie.setDescription(categorization.getDescription());
-                } else {
-                    cookie.setCategory("Unknown");
-                    cookie.setDescription("Category not determined");
-                }
-            }
-        } catch (Exception e) {
-            log.error("Cookie categorization failed for transactionId={}: {}", transactionId, e.getMessage(), e);
-            // Don't fail the entire scan, just mark cookies as uncategorized
-            for (CookieDto cookie : cookies.values()) {
-                cookie.setCategory("Unknown");
-                cookie.setDescription("Categorization failed");
-            }
-        }
     }
 
     private CookieDto parseSetCookieHeader(String setCookieHeader, String scanUrl, String responseDomain, Source source) {

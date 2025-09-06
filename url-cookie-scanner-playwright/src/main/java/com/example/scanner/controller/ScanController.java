@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -36,8 +37,8 @@ public class ScanController {
   private final CookieService cookieService;
 
   public ScanController(ScanService scanService,
-                                ScanResultRepository repository,
-                                CookieService cookieService) {
+                        ScanResultRepository repository,
+                        CookieService cookieService) {
     this.scanService = scanService;
     this.repository = repository;
     this.cookieService = cookieService;
@@ -95,6 +96,7 @@ public class ScanController {
     log.debug("Retrieving status for transactionId: {}", transactionId);
 
     try {
+      // Force fresh query by using findByTransactionId instead of findById
       Optional<ScanResultEntity> resultOpt = repository.findByTransactionId(transactionId);
 
       if (resultOpt.isEmpty()) {
@@ -104,13 +106,17 @@ public class ScanController {
 
       ScanResultEntity result = resultOpt.get();
 
+      // Log current cookie count for debugging
+      int cookieCount = result.getCookies() != null ? result.getCookies().size() : 0;
+      log.debug("Retrieved transaction {} with status {} and {} cookies",
+              transactionId, result.getStatus(), cookieCount);
+
       ScanStatusResponse response = new ScanStatusResponse(
               result.getTransactionId(),
               result.getStatus(),
-              "COMPLETED".equals(result.getStatus()) ? result.getCookies() : null
+              result.getCookies()
       );
 
-      log.debug("Status retrieved for transactionId: {} - Status: {}", transactionId, result.getStatus());
       return ResponseEntity.ok(response);
 
     } catch (TransactionNotFoundException e) {
