@@ -1,7 +1,9 @@
 package com.example.scanner.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CookieCategorizationResponse {
     private String category;
     private double confidence;
