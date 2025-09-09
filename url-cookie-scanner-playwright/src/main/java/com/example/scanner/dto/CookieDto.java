@@ -6,39 +6,32 @@ import lombok.Data;
 
 import java.time.Instant;
 
-
 @Data
 public class CookieDto {
   private String name;
   private String url;
   private String domain;
   private String path;
-  private Instant expires; // Playwright gives double
+  private Instant expires;
   private boolean secure;
   private boolean httpOnly;
-  private SameSite sameSite; // Lax, Strict, None
-  private Source source;   // First-party or Third-party
-  private String category;     // New field for cookie category
-  private String description; // New field for cookie description
-  private String description_gpt; // New field for cookie description_gpt
+  private SameSite sameSite;
+  private Source source;
+  private String category;
+  private String description;
+  private String description_gpt;
 
-  public CookieDto(String name, String url, String domain, String path, Instant expires,
-                   boolean secure, boolean httpOnly, SameSite sameSite, Source source) {
-    this.name = name;
-    this.url = url;
-    this.domain = domain;
-    this.path = path;
-    this.expires = expires;
-    this.secure = secure;
-    this.httpOnly = httpOnly;
-    this.sameSite = sameSite;
-    this.source = source;
+  // NEW FIELD: Store the subdomain name where this cookie was found
+  private String subdomainName;
+
+  // Default constructor
+  public CookieDto() {
   }
 
-  // Constructor with new fields
+  // Constructor with subdomain field
   public CookieDto(String name, String url, String domain, String path, Instant expires,
                    boolean secure, boolean httpOnly, SameSite sameSite, Source source,
-                   String category, String description, String description_gpt) {
+                   String category, String description, String description_gpt, String subdomainName) {
     this.name = name;
     this.url = url;
     this.domain = domain;
@@ -51,8 +44,21 @@ public class CookieDto {
     this.category = category;
     this.description = description;
     this.description_gpt = description_gpt;
+    this.subdomainName = subdomainName;
   }
 
+  // Backward compatibility constructor
+  public CookieDto(String name, String url, String domain, String path, Instant expires,
+                   boolean secure, boolean httpOnly, SameSite sameSite, Source source,
+                   String category, String description, String description_gpt) {
+    this(name, url, domain, path, expires, secure, httpOnly, sameSite, source,
+            category, description, description_gpt, "main");
+  }
 
-
+  // Original constructor for backward compatibility
+  public CookieDto(String name, String url, String domain, String path, Instant expires,
+                   boolean secure, boolean httpOnly, SameSite sameSite, Source source) {
+    this(name, url, domain, path, expires, secure, httpOnly, sameSite, source,
+            null, null, null, "main");
+  }
 }

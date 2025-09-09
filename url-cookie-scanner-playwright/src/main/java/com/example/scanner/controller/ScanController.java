@@ -2,6 +2,7 @@ package com.example.scanner.controller;
 
 import com.example.scanner.dto.CookieUpdateRequest;
 import com.example.scanner.dto.CookieUpdateResponse;
+import com.example.scanner.dto.ScanRequestDto;
 import com.example.scanner.dto.ScanStatusResponse;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.exception.ScanExecutionException;
@@ -16,19 +17,20 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import org.slf4j.ILoggerFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 @RestController
 @CrossOrigin(origins = "*", allowedHeaders = "*")
-@Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs")
+@Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support")
 public class ScanController {
 
   private static final Logger log = LoggerFactory.getLogger(ScanController.class);
@@ -46,41 +48,64 @@ public class ScanController {
   }
 
   @Operation(
-          summary = "Start Website Cookie Scan",
-          description = "Initiates a comprehensive cookie scan of the specified website URL. Returns a transaction ID to track the scan progress."
+          summary = "Start Website Cookie Scan with Subdomain Support",
+          description = "Initiates a comprehensive cookie scan of the specified website URL and its subdomains. " +
+                  "All subdomains must belong to the same root domain as the main URL. " +
+                  "Returns a transaction ID to track the scan progress."
   )
   @ApiResponse(responseCode = "200", description = "Scan initiated successfully")
-  @ApiResponse(responseCode = "400", description = "Invalid URL provided")
+  @ApiResponse(responseCode = "400", description = "Invalid URL or subdomains provided")
   @ApiResponse(responseCode = "500", description = "Failed to initiate scan")
   @PostMapping("/scan")
-  public ResponseEntity<Map<String, String>> scanUrl(
-          @Parameter(description = "Request body containing the URL to scan", required = true)
-          @RequestBody Map<String, String> requestMap) throws UrlValidationException, ScanExecutionException {
+  public ResponseEntity<Map<String, Object>> scanUrl(
+          @Valid @RequestBody ScanRequestDto scanRequest) throws UrlValidationException, ScanExecutionException {
 
-    String url = requestMap.get("url");
+    String url = scanRequest.getUrl();
+    List<String> subdomains = scanRequest.getSubDomain();
 
     if (url == null || url.trim().isEmpty()) {
       throw new UrlValidationException("URL is required and cannot be empty");
     }
 
-    log.info("Received scan request for URL: {}", url);
+    log.info("Received scan request for URL: {} with {} subdomains",
+            url, subdomains != null ? subdomains.size() : 0);
+
+    if (subdomains != null && !subdomains.isEmpty()) {
+      log.info("Subdomains to scan: {}", subdomains);
+    }
 
     try {
-      String transactionId = scanService.startScan(url);
+      String transactionId = scanService.startScan(url, subdomains);
       log.info("Scan initiated successfully with transactionId: {}", transactionId);
-      return ResponseEntity.ok(Map.of("transactionId", transactionId));
+
+      String message = "Scan started for main URL";
+      if (subdomains != null && !subdomains.isEmpty()) {
+        message += " and " + subdomains.size() + " subdomain" +
+                (subdomains.size() > 1 ? "s" : "");
+      }
+
+      // Fix: Use Map<String, Object> to handle mixed types
+      Map<String, Object> response = new HashMap<>();
+      response.put("transactionId", transactionId);
+      response.put("message", message);
+      response.put("mainUrl", url);
+      response.put("subdomainCount", subdomains != null ? subdomains.size() : 0);
+
+      return ResponseEntity.ok(response);
+
     } catch (UrlValidationException e) {
-      log.warn("URL validation failed for: {}", url);
+      log.warn("URL/Subdomain validation failed for: {} with subdomains: {}", url, subdomains);
       throw e; // Let global handler manage it
     } catch (Exception e) {
-      log.error("Unexpected error starting scan for URL: {}", url, e);
+      log.error("Unexpected error starting scan for URL: {} with subdomains: {}", url, subdomains, e);
       throw new ScanExecutionException("Failed to initiate scan", e);
     }
   }
 
   @Operation(
-          summary = "Get Scan Status",
-          description = "Retrieves the current status and results of a cookie scan using the transaction ID."
+          summary = "Get Scan Status and Results",
+          description = "Retrieves the current status and detailed results of a cookie scan using the transaction ID. " +
+                  "Results include cookies from main URL and all scanned subdomains with subdomain attribution."
   )
   @ApiResponse(responseCode = "200", description = "Scan status retrieved successfully")
   @ApiResponse(responseCode = "400", description = "Invalid transaction ID")
@@ -97,7 +122,6 @@ public class ScanController {
     log.debug("Retrieving status for transactionId: {}", transactionId);
 
     try {
-      // Force fresh query by using findByTransactionId instead of findById
       Optional<ScanResultEntity> resultOpt = repository.findByTransactionId(transactionId);
 
       if (resultOpt.isEmpty()) {
@@ -107,10 +131,29 @@ public class ScanController {
 
       ScanResultEntity result = resultOpt.get();
 
-      // Log current cookie count for debugging
+      // Log current cookie count and subdomain distribution for debugging
       int cookieCount = result.getCookies() != null ? result.getCookies().size() : 0;
-      log.debug("Retrieved transaction {} with status {} and {} cookies",
-              transactionId, result.getStatus(), cookieCount);
+
+      if (result.getCookies() != null && !result.getCookies().isEmpty()) {
+        Map<String, Long> subdomainDistribution = result.getCookies().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        cookie -> cookie.getSubdomainName() != null ? cookie.getSubdomainName() : "main",
+                        java.util.stream.Collectors.counting()
+                ));
+
+        Map<String, Long> sourceDistribution = result.getCookies().stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        cookie -> cookie.getSource() != null ? cookie.getSource().name() : "UNKNOWN",
+                        java.util.stream.Collectors.counting()
+                ));
+
+        log.debug("Retrieved transaction {} with status {} and {} cookies. " +
+                        "Subdomain distribution: {}, Source distribution: {}",
+                transactionId, result.getStatus(), cookieCount, subdomainDistribution, sourceDistribution);
+      } else {
+        log.debug("Retrieved transaction {} with status {} and {} cookies",
+                transactionId, result.getStatus(), cookieCount);
+      }
 
       ScanStatusResponse response = new ScanStatusResponse(
               result.getTransactionId(),
@@ -121,7 +164,7 @@ public class ScanController {
       return ResponseEntity.ok(response);
 
     } catch (TransactionNotFoundException e) {
-      throw e; // Let global handler manage it
+      throw e;
     } catch (Exception e) {
       log.error("Unexpected error retrieving status for transactionId: {}", transactionId, e);
       throw new ScanExecutionException("Failed to retrieve scan status", e);
@@ -179,12 +222,23 @@ public class ScanController {
   )
   @ApiResponse(responseCode = "200", description = "Service is healthy")
   @GetMapping("/health")
-  public ResponseEntity<Map<String, String>> healthCheck() {
+  public ResponseEntity<Map<String, Object>> healthCheck() {
     log.debug("Health check requested");
-    return ResponseEntity.ok(Map.of(
-            "status", "UP",
-            "service", "Cookie Scanner API",
-            "timestamp", java.time.Instant.now().toString()
-    ));
+
+    Map<String, Object> healthInfo = new HashMap<>();
+    healthInfo.put("status", "UP");
+    healthInfo.put("service", "Cookie Scanner API");
+    healthInfo.put("version", "2.0.0");
+    healthInfo.put("timestamp", java.time.Instant.now().toString());
+
+    Map<String, Object> features = new HashMap<>();
+    features.put("subdomainScanning", true);
+    features.put("cookieCategorization", true);
+    features.put("consentHandling", true);
+    features.put("iframeProcessing", true);
+
+    healthInfo.put("features", features);
+
+    return ResponseEntity.ok(healthInfo);
   }
 }

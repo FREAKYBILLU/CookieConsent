@@ -16,6 +16,7 @@ import com.example.scanner.repository.ScanResultRepository;
 import com.example.scanner.util.CookieDetectionUtil;
 import com.example.scanner.util.UrlAndCookieUtil;
 import com.example.scanner.util.UrlAndCookieUtil.ValidationResult;
+import com.example.scanner.util.SubdomainValidationUtil;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.Cookie;
 import com.microsoft.playwright.options.WaitUntilState;
@@ -58,8 +59,9 @@ public class ScanService {
         this.metrics = metrics;
     }
 
-    public String startScan(String url) throws UrlValidationException, ScanExecutionException {
-        log.info("Received request to scan URL: {}", url);
+    // NEW: Main method with subdomain support
+    public String startScan(String url, List<String> subdomains) throws UrlValidationException, ScanExecutionException {
+        log.info("Received request to scan URL: {} with {} subdomains", url, subdomains != null ? subdomains.size() : 0);
 
         try {
             ValidationResult validationResult = UrlAndCookieUtil.validateUrlForScanning(url);
@@ -69,6 +71,20 @@ public class ScanService {
 
             String normalizedUrl = validationResult.getNormalizedUrl();
             log.info("URL validation passed. Normalized URL: {}", normalizedUrl);
+
+            // Validate subdomains if provided
+            List<String> validatedSubdomains = new ArrayList<>();
+            if (subdomains != null && !subdomains.isEmpty()) {
+                SubdomainValidationUtil.ValidationResult subdomainValidation =
+                        SubdomainValidationUtil.validateSubdomains(normalizedUrl, subdomains);
+
+                if (!subdomainValidation.isValid()) {
+                    throw new UrlValidationException("Subdomain validation failed: " + subdomainValidation.getErrorMessage());
+                }
+
+                validatedSubdomains = subdomainValidation.getValidatedSubdomains();
+                log.info("Subdomain validation passed. {} valid subdomains", validatedSubdomains.size());
+            }
 
             String transactionId = UUID.randomUUID().toString();
             ScanResultEntity result = new ScanResultEntity();
@@ -86,9 +102,11 @@ public class ScanService {
                 throw new ScanExecutionException("Failed to initialize scan", e);
             }
 
-            log.info("Created new scan with transactionId={} for URL={}", transactionId, normalizedUrl);
+            log.info("Created new scan with transactionId={} for URL={} and {} subdomains",
+                    transactionId, normalizedUrl, validatedSubdomains.size());
 
-            self.runScanAsync(transactionId, normalizedUrl);
+            // Pass subdomains to async method
+            self.runScanAsync(transactionId, normalizedUrl, validatedSubdomains);
 
             return transactionId;
 
@@ -100,9 +118,16 @@ public class ScanService {
         }
     }
 
+    // ORIGINAL: Single URL method for backward compatibility
+    public String startScan(String url) throws UrlValidationException, ScanExecutionException {
+        return startScan(url, null);
+    }
+
+    // MODIFIED: Added subdomains parameter
     @Async
-    public void runScanAsync(String transactionId, String url) {
-        log.info("Starting MAXIMUM COOKIE DETECTION scan for transactionId={} URL={}", transactionId, url);
+    public void runScanAsync(String transactionId, String url, List<String> subdomains) {
+        log.info("Starting MAXIMUM COOKIE DETECTION scan for transactionId={} URL={} with {} subdomains",
+                transactionId, url, subdomains != null ? subdomains.size() : 0);
 
         ScanPerformanceTracker.ScanMetrics scanMetrics = new ScanPerformanceTracker.ScanMetrics();
         long scanStartTime = System.currentTimeMillis();
@@ -116,7 +141,7 @@ public class ScanService {
             repository.save(result);
 
             scanMetrics.setScanPhase("RUNNING");
-            performMaximumCookieDetection(url, transactionId, scanMetrics);
+            performMaximumCookieDetection(url, transactionId, scanMetrics, subdomains);
 
             result = repository.findById(transactionId).orElse(result);
             result.setStatus(ScanStatus.COMPLETED.name());
@@ -156,8 +181,16 @@ public class ScanService {
         }
     }
 
+    // Backward compatibility overload
+    @Async
+    public void runScanAsync(String transactionId, String url) {
+        runScanAsync(transactionId, url, null);
+    }
+
+    // MODIFIED: Added subdomains parameter
     private void performMaximumCookieDetection(String url, String transactionId,
-                                               ScanPerformanceTracker.ScanMetrics scanMetrics)
+                                               ScanPerformanceTracker.ScanMetrics scanMetrics,
+                                               List<String> subdomains)
             throws ScanExecutionException {
 
         Playwright playwright = null;
@@ -229,6 +262,10 @@ public class ScanService {
                             List<CookieDto> headerCookies = parseAllCookieHeaders(headerValue, responseUrl, responseRoot, source);
 
                             for (CookieDto cookie : headerCookies) {
+                                // Set subdomain name based on response URL
+                                String subdomainName = determineSubdomainNameFromUrl(responseUrl, url, subdomains);
+                                cookie.setSubdomainName(subdomainName);
+
                                 String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain());
                                 if (!discoveredCookies.containsKey(cookieKey)) {
                                     discoveredCookies.put(cookieKey, cookie);
@@ -236,7 +273,8 @@ public class ScanService {
                                     saveIncrementalCookieWithFlush(transactionId, cookie);
                                     scanMetrics.incrementCookiesFound(source.name());
                                     metrics.recordCookieDiscovered(source.name());
-                                    log.info("ADDED HTTP COOKIE: {} from {} (Source: {})", cookie.getName(), responseUrl, source);
+                                    log.info("ADDED HTTP COOKIE: {} from {} (Source: {}, Subdomain: {})",
+                                            cookie.getName(), responseUrl, source, subdomainName);
                                 }
                             }
                         }
@@ -251,6 +289,8 @@ public class ScanService {
             });
 
             Page page = context.newPage();
+
+            // === YOUR ORIGINAL 8 PHASES FOR MAIN URL - UNCHANGED ===
 
             // === PHASE 1: INITIAL LOAD WITH EXTENDED WAIT ===
             scanMetrics.setScanPhase("LOADING_PAGE");
@@ -466,13 +506,81 @@ public class ScanService {
             // === PHASE 8: IFRAME AND EMBED DETECTION ===
             handleIframesAndEmbeds(page, url, transactionId, discoveredCookies, scanMetrics);
 
+            // === NEW PHASE 9: SCAN PROVIDED SUBDOMAINS ===
+            if (subdomains != null && !subdomains.isEmpty()) {
+                scanMetrics.setScanPhase("SCANNING_SUBDOMAINS");
+                log.info("=== PHASE 9: Scanning {} provided subdomains ===", subdomains.size());
+
+                for (int i = 0; i < subdomains.size(); i++) {
+                    String subdomain = subdomains.get(i);
+                    String subdomainName = SubdomainValidationUtil.extractSubdomainName(subdomain, rootDomain);
+
+                    log.info("=== SUBDOMAIN {}/{}: {} (Name: {}) ===", i+1, subdomains.size(), subdomain, subdomainName);
+
+                    try {
+                        // Navigate to subdomain in SAME browser session
+                        Response subdomainResponse = page.navigate(subdomain, new Page.NavigateOptions()
+                                .setWaitUntil(WaitUntilState.NETWORKIDLE)
+                                .setTimeout(30000));
+
+                        if (subdomainResponse != null && subdomainResponse.ok()) {
+                            page.waitForTimeout(8000);
+
+                            // Capture initial cookies
+                            captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
+                                    transactionId, scanMetrics, subdomainName);
+
+                            // Basic consent and interaction for subdomain
+                            try {
+                                boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page, 10000);
+                                if (subdomainConsentHandled) {
+                                    page.waitForTimeout(3000);
+                                    captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
+                                            transactionId, scanMetrics, subdomainName);
+                                }
+
+                                // Quick scroll and interaction
+                                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)");
+                                page.waitForTimeout(2000);
+                                page.evaluate("window.scrollTo(0, 0)");
+                                page.waitForTimeout(1000);
+
+                                // Trigger some analytics events
+                                page.evaluate("""
+                                    if (typeof gtag === 'function') {
+                                        gtag('event', 'page_view');
+                                    }
+                                    window.dispatchEvent(new Event('scroll'));
+                                """);
+                                page.waitForTimeout(2000);
+
+                                // Final capture for this subdomain
+                                captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
+                                        transactionId, scanMetrics, subdomainName);
+
+                            } catch (Exception e) {
+                                log.debug("Subdomain interaction failed for {}: {}", subdomain, e.getMessage());
+                            }
+
+                            log.info("Completed scanning subdomain: {} (Total cookies so far: {})",
+                                    subdomain, discoveredCookies.size());
+                        } else {
+                            log.warn("Failed to load subdomain: {} (Status: {})", subdomain,
+                                    subdomainResponse != null ? subdomainResponse.status() : "No response");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Error scanning subdomain {}: {}", subdomain, e.getMessage());
+                    }
+                }
+            }
+
             // === FINAL CAPTURE ===
             scanMetrics.setScanPhase("FINAL_CAPTURE");
             page.waitForTimeout(8000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
 
-            log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}",
-                    discoveredCookies.size(), processedUrls.size());
+            log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}, Subdomains scanned: {}",
+                    discoveredCookies.size(), processedUrls.size(), subdomains != null ? subdomains.size() : 0);
 
         } catch (PlaywrightException e) {
             throw new ScanExecutionException("Playwright error during scan: " + e.getMessage(), e);
@@ -483,197 +591,90 @@ public class ScanService {
         }
     }
 
-    /**
-     * PHASE 8: GENERIC IFRAME AND EMBED DETECTION
-     * Handles embedded content cookies from any third-party service
-     */
-    private void handleIframesAndEmbeds(Page page, String url, String transactionId,
-                                        Map<String, CookieDto> discoveredCookies,
-                                        ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            scanMetrics.setScanPhase("IFRAME_DETECTION");
-            log.info("=== PHASE 8: Detecting and processing iframes/embeds ===");
-
-            // 1. DETECT ALL IFRAMES AND EMBEDS
-            List<IframeInfo> iframes = detectAllIframes(page);
-            log.info("Found {} iframes/embeds on page", iframes.size());
-
-            // 2. INTERACT WITH ALL DETECTED IFRAMES
-            interactWithAllIframes(page, iframes);
-            page.waitForTimeout(3000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-            // 3. TRIGGER GENERIC IFRAME EVENTS
-            triggerGenericIframeEvents(page);
-            page.waitForTimeout(2000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-            // 4. LOAD COMMON EMBED PATTERNS
-            loadCommonEmbedPatterns(page);
-            page.waitForTimeout(3000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.warn("Error during iframe detection: {}", e.getMessage());
-        }
+    // Backward compatibility overload
+    private void performMaximumCookieDetection(String url, String transactionId,
+                                               ScanPerformanceTracker.ScanMetrics scanMetrics)
+            throws ScanExecutionException {
+        performMaximumCookieDetection(url, transactionId, scanMetrics, null);
     }
 
-    private static class IframeInfo {
-        String src;
-        String domain;
-        String type;
-
-        IframeInfo(String src, String domain, String type) {
-            this.src = src;
-            this.domain = domain;
-            this.type = type;
-        }
-    }
-
-    private List<IframeInfo> detectAllIframes(Page page) {
+    // NEW: Helper method to determine subdomain name from URL
+    private String determineSubdomainNameFromUrl(String currentUrl, String mainUrl, List<String> subdomains) {
         try {
-            List<Map<String, String>> iframeData = (List<Map<String, String>>) page.evaluate("""
-                Array.from(document.querySelectorAll('iframe, embed, object'))
-                    .map(element => {
-                        const src = element.src || element.data || '';
-                        if (!src || !src.startsWith('http')) return null;
-                        
-                        let domain = '';
-                        let type = 'embed';
-                        
-                        try {
-                            domain = new URL(src).hostname;
-                            
-                            // Generic type detection based on common patterns
-                            if (src.includes('video') || src.includes('player')) type = 'video';
-                            else if (src.includes('social') || src.includes('widget')) type = 'social';
-                            else if (src.includes('map')) type = 'maps';
-                            else if (src.includes('captcha') || src.includes('security')) type = 'security';
-                            else if (src.includes('ads') || src.includes('advertising')) type = 'advertising';
-                            else if (src.includes('analytics') || src.includes('tracking')) type = 'analytics';
-                            else type = 'embed';
-                            
-                        } catch(e) {
-                            domain = src;
-                        }
-                        
-                        return {src: src, domain: domain, type: type};
-                    })
-                    .filter(info => info !== null);
-            """);
+            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
 
-            return iframeData.stream()
-                    .map(map -> new IframeInfo(map.get("src"), map.get("domain"), map.get("type")))
-                    .collect(Collectors.toList());
+            // If it's the main URL
+            if (isSameUrl(currentUrl, mainUrl)) {
+                return SubdomainValidationUtil.extractSubdomainName(mainUrl, rootDomain);
+            }
 
-        } catch (Exception e) {
-            log.debug("Error detecting iframes: {}", e.getMessage());
-            return new ArrayList<>();
-        }
-    }
-
-    private void interactWithAllIframes(Page page, List<IframeInfo> iframes) {
-        try {
-            log.info("Interacting with {} detected iframes/embeds...", iframes.size());
-
-            // Group iframes by type for logging
-            Map<String, List<IframeInfo>> iframesByType = iframes.stream()
-                    .collect(Collectors.groupingBy(iframe -> iframe.type));
-
-            log.info("Iframe types detected: {}", iframesByType.keySet());
-
-            // Generic iframe interaction
-            page.evaluate("""
-                document.querySelectorAll('iframe, embed, object').forEach((element, index) => {
-                    try {
-                        // Scroll element into view
-                        element.scrollIntoView({behavior: 'smooth', block: 'center'});
-                        
-                        // Trigger mouse events
-                        ['mouseover', 'mouseenter', 'focus', 'click'].forEach(eventType => {
-                            element.dispatchEvent(new MouseEvent(eventType, {
-                                bubbles: true,
-                                cancelable: true,
-                                view: window
-                            }));
-                        });
-                        
-                        // Try to focus if possible
-                        if (element.focus) element.focus();
-                        
-                        console.log('Interacted with iframe/embed:', element.src || element.data);
-                        
-                    } catch(e) {
-                        console.log('Error interacting with iframe:', e.message);
+            // If it's one of the provided subdomains
+            if (subdomains != null) {
+                for (String subdomain : subdomains) {
+                    if (isSameUrl(currentUrl, subdomain)) {
+                        return SubdomainValidationUtil.extractSubdomainName(subdomain, rootDomain);
                     }
-                });
-            """);
+                }
+            }
 
-            page.waitForTimeout(1000);
+            // Fallback - extract from current URL
+            return SubdomainValidationUtil.extractSubdomainName(currentUrl, rootDomain);
 
         } catch (Exception e) {
-            log.debug("Error interacting with iframes: {}", e.getMessage());
+            log.debug("Error determining subdomain name for {}: {}", currentUrl, e.getMessage());
+            return "unknown";
         }
     }
 
-    private void triggerGenericIframeEvents(Page page) {
+    // NEW: Helper to check if URLs are from same domain/subdomain
+    private boolean isSameUrl(String url1, String url2) {
         try {
-            page.evaluate("""
-                // Trigger events that commonly create iframe cookies
-                ['load', 'DOMContentLoaded', 'resize', 'focus', 'blur'].forEach(eventType => {
-                    document.querySelectorAll('iframe').forEach(iframe => {
-                        try {
-                            iframe.dispatchEvent(new Event(eventType, {bubbles: true}));
-                        } catch(e) {}
-                    });
-                });
-                
-                // Trigger window events that affect iframes
-                window.dispatchEvent(new Event('message'));
-                window.dispatchEvent(new Event('resize'));
-                
-                // Post messages to iframes (common pattern for communication)
-                document.querySelectorAll('iframe').forEach(iframe => {
-                    try {
-                        iframe.contentWindow.postMessage('ping', '*');
-                    } catch(e) {}
-                });
-            """);
+            String host1 = new java.net.URI(url1.startsWith("http") ? url1 : "https://" + url1).getHost();
+            String host2 = new java.net.URI(url2.startsWith("http") ? url2 : "https://" + url2).getHost();
+            return host1.equalsIgnoreCase(host2);
         } catch (Exception e) {
-            log.debug("Error triggering iframe events: {}", e.getMessage());
+            return false;
         }
     }
 
-    private void loadCommonEmbedPatterns(Page page) {
+    // NEW: Capture cookies with specific subdomain name
+    private void captureBrowserCookiesWithSubdomainName(BrowserContext context, String scanUrl,
+                                                        Map<String, CookieDto> discoveredCookies,
+                                                        String transactionId,
+                                                        ScanPerformanceTracker.ScanMetrics scanMetrics,
+                                                        String subdomainName) {
         try {
-            page.evaluate("""
-                // Detect existing third-party script patterns
-                const existingScripts = Array.from(document.querySelectorAll('script[src]'))
-                    .map(s => s.src)
-                    .filter(src => src.includes('//') && !src.includes(window.location.hostname));
-                
-                console.log('Found external scripts:', existingScripts.length);
-                
-                // Trigger events that commonly create cookies for ANY embed
-                window.dispatchEvent(new Event('message'));
-                window.dispatchEvent(new Event('resize'));
-                window.dispatchEvent(new Event('beforeunload'));
-                
-                // Create generic tracking pixel pattern (no specific domains)
-                const img = document.createElement('img');
-                img.style.display = 'none';
-                img.style.width = '1px';
-                img.style.height = '1px';
-                img.onload = () => console.log('Generic tracking pattern triggered');
-                
-                // Trigger postMessage events that iframes often listen for
-                window.postMessage({type: 'resize'}, '*');
-                window.postMessage({type: 'scroll'}, '*');
-            """);
+            String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
+            List<Cookie> browserCookies = context.cookies();
+
+            log.info("=== CAPTURING {} browser cookies for subdomain: {} ===", browserCookies.size(), subdomainName);
+
+            for (Cookie playwrightCookie : browserCookies) {
+                try {
+                    CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
+                    cookieDto.setSubdomainName(subdomainName);
+
+                    String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain());
+
+                    if (!discoveredCookies.containsKey(cookieKey)) {
+                        discoveredCookies.put(cookieKey, cookieDto);
+                        categorizeSingleCookieSimple(cookieDto);
+                        saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                        scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
+                        metrics.recordCookieDiscovered(cookieDto.getSource().name());
+                        log.info("ADDED SUBDOMAIN BROWSER COOKIE: {} from domain {} (Source: {}, Subdomain: {})",
+                                cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSource(), subdomainName);
+                    }
+                } catch (Exception e) {
+                    log.warn("Error processing browser cookie {}: {}", playwrightCookie.name, e.getMessage());
+                }
+            }
         } catch (Exception e) {
-            log.debug("Error in generic embed pattern handling: {}", e.getMessage());
+            log.warn("Error capturing browser cookies for subdomain {}: {}", subdomainName, e.getMessage());
         }
     }
+
+    // === ALL YOUR ORIGINAL METHODS - UNCHANGED ===
 
     private void captureBrowserCookiesEnhanced(BrowserContext context, String scanUrl,
                                                Map<String, CookieDto> discoveredCookies, String transactionId,
@@ -894,6 +895,177 @@ public class ScanService {
 
     private String generateCookieKey(String name, String domain) {
         return name + "@" + (domain != null ? domain.toLowerCase() : "");
+    }
+
+    private void handleIframesAndEmbeds(Page page, String url, String transactionId,
+                                        Map<String, CookieDto> discoveredCookies,
+                                        ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        try {
+            scanMetrics.setScanPhase("IFRAME_DETECTION");
+            log.info("=== PHASE 8: Detecting and processing iframes/embeds ===");
+
+            List<IframeInfo> iframes = detectAllIframes(page);
+            log.info("Found {} iframes/embeds on page", iframes.size());
+
+            interactWithAllIframes(page, iframes);
+            page.waitForTimeout(3000);
+            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
+
+            triggerGenericIframeEvents(page);
+            page.waitForTimeout(2000);
+            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
+
+            loadCommonEmbedPatterns(page);
+            page.waitForTimeout(3000);
+            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
+
+        } catch (Exception e) {
+            log.warn("Error during iframe detection: {}", e.getMessage());
+        }
+    }
+
+    private static class IframeInfo {
+        String src;
+        String domain;
+        String type;
+
+        IframeInfo(String src, String domain, String type) {
+            this.src = src;
+            this.domain = domain;
+            this.type = type;
+        }
+    }
+
+    private List<IframeInfo> detectAllIframes(Page page) {
+        try {
+            List<Map<String, String>> iframeData = (List<Map<String, String>>) page.evaluate("""
+                Array.from(document.querySelectorAll('iframe, embed, object'))
+                    .map(element => {
+                        const src = element.src || element.data || '';
+                        if (!src || !src.startsWith('http')) return null;
+                        
+                        let domain = '';
+                        let type = 'embed';
+                        
+                        try {
+                            domain = new URL(src).hostname;
+                            
+                            if (src.includes('video') || src.includes('player')) type = 'video';
+                            else if (src.includes('social') || src.includes('widget')) type = 'social';
+                            else if (src.includes('map')) type = 'maps';
+                            else if (src.includes('captcha') || src.includes('security')) type = 'security';
+                            else if (src.includes('ads') || src.includes('advertising')) type = 'advertising';
+                            else if (src.includes('analytics') || src.includes('tracking')) type = 'analytics';
+                            else type = 'embed';
+                            
+                        } catch(e) {
+                            domain = src;
+                        }
+                        
+                        return {src: src, domain: domain, type: type};
+                    })
+                    .filter(info => info !== null);
+            """);
+
+            return iframeData.stream()
+                    .map(map -> new IframeInfo(map.get("src"), map.get("domain"), map.get("type")))
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.debug("Error detecting iframes: {}", e.getMessage());
+            return new ArrayList<>();
+        }
+    }
+
+    private void interactWithAllIframes(Page page, List<IframeInfo> iframes) {
+        try {
+            log.info("Interacting with {} detected iframes/embeds...", iframes.size());
+
+            Map<String, List<IframeInfo>> iframesByType = iframes.stream()
+                    .collect(Collectors.groupingBy(iframe -> iframe.type));
+
+            log.info("Iframe types detected: {}", iframesByType.keySet());
+
+            page.evaluate("""
+                document.querySelectorAll('iframe, embed, object').forEach((element, index) => {
+                    try {
+                        element.scrollIntoView({behavior: 'smooth', block: 'center'});
+                        
+                        ['mouseover', 'mouseenter', 'focus', 'click'].forEach(eventType => {
+                            element.dispatchEvent(new MouseEvent(eventType, {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            }));
+                        });
+                        
+                        if (element.focus) element.focus();
+                        
+                        console.log('Interacted with iframe/embed:', element.src || element.data);
+                        
+                    } catch(e) {
+                        console.log('Error interacting with iframe:', e.message);
+                    }
+                });
+            """);
+
+            page.waitForTimeout(1000);
+
+        } catch (Exception e) {
+            log.debug("Error interacting with iframes: {}", e.getMessage());
+        }
+    }
+
+    private void triggerGenericIframeEvents(Page page) {
+        try {
+            page.evaluate("""
+                ['load', 'DOMContentLoaded', 'resize', 'focus', 'blur'].forEach(eventType => {
+                    document.querySelectorAll('iframe').forEach(iframe => {
+                        try {
+                            iframe.dispatchEvent(new Event(eventType, {bubbles: true}));
+                        } catch(e) {}
+                    });
+                });
+                
+                window.dispatchEvent(new Event('message'));
+                window.dispatchEvent(new Event('resize'));
+                
+                document.querySelectorAll('iframe').forEach(iframe => {
+                    try {
+                        iframe.contentWindow.postMessage('ping', '*');
+                    } catch(e) {}
+                });
+            """);
+        } catch (Exception e) {
+            log.debug("Error triggering iframe events: {}", e.getMessage());
+        }
+    }
+
+    private void loadCommonEmbedPatterns(Page page) {
+        try {
+            page.evaluate("""
+                const existingScripts = Array.from(document.querySelectorAll('script[src]'))
+                    .map(s => s.src)
+                    .filter(src => src.includes('//') && !src.includes(window.location.hostname));
+                
+                console.log('Found external scripts:', existingScripts.length);
+                
+                window.dispatchEvent(new Event('message'));
+                window.dispatchEvent(new Event('resize'));
+                window.dispatchEvent(new Event('beforeunload'));
+                
+                const img = document.createElement('img');
+                img.style.display = 'none';
+                img.style.width = '1px';
+                img.style.height = '1px';
+                img.onload = () => console.log('Generic tracking pattern triggered');
+                
+                window.postMessage({type: 'resize'}, '*');
+                window.postMessage({type: 'scroll'}, '*');
+            """);
+        } catch (Exception e) {
+            log.debug("Error in generic embed pattern handling: {}", e.getMessage());
+        }
     }
 
     private void discoverAndScanHyperlinks(Page page, String originalUrl, String transactionId,

@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 @Slf4j
 public class ScanResultMapper {
 
-    // Convert CookieDto to CookieEntity
+    // Convert CookieDto to CookieEntity with subdomain support
     public static CookieEntity cookieDtoToEntity(CookieDto dto) {
         return new CookieEntity(
                 dto.getName(),
@@ -30,14 +30,14 @@ public class ScanResultMapper {
                 dto.getSource() != null
                         ? Source.valueOf(dto.getSource().name())
                         : null,
-                dto.getCategory(),    // New field mapping
-                dto.getDescription(),  // New field mapping
-                dto.getDescription_gpt() // New field mapping
-
+                dto.getCategory(),
+                dto.getDescription(),
+                dto.getDescription_gpt(),
+                dto.getSubdomainName() != null ? dto.getSubdomainName() : "main"
         );
     }
 
-    // Convert CookieEntity to CookieDto
+    // Convert CookieEntity to CookieDto with subdomain support
     public static CookieDto cookieEntityToDto(CookieEntity entity) {
         return new CookieDto(
                 entity.getName(),
@@ -49,9 +49,10 @@ public class ScanResultMapper {
                 entity.isHttpOnly(),
                 entity.getSameSite(),
                 entity.getSource(),
-                entity.getCategory(),    // New field mapping
-                entity.getDescription(), // New field mapping
-                entity.getDescription_gpt()
+                entity.getCategory(),
+                entity.getDescription(),
+                entity.getDescription_gpt(),
+                entity.getSubdomainName() != null ? entity.getSubdomainName() : "main"
         );
     }
 
@@ -93,5 +94,23 @@ public class ScanResultMapper {
         }
 
         return dto;
+    }
+
+    // Helper method to create backward compatible CookieEntity (without subdomain)
+    public static CookieEntity createLegacyCookieEntity(String name, String url, String domain,
+                                                        String path, java.time.Instant expires,
+                                                        boolean secure, boolean httpOnly,
+                                                        SameSite sameSite, Source source) {
+        return new CookieEntity(name, url, domain, path, expires, secure, httpOnly,
+                sameSite, source, null, null, null, "main");
+    }
+
+    // Helper method to create backward compatible CookieDto (without subdomain)
+    public static CookieDto createLegacyCookieDto(String name, String url, String domain,
+                                                  String path, java.time.Instant expires,
+                                                  boolean secure, boolean httpOnly,
+                                                  SameSite sameSite, Source source) {
+        return new CookieDto(name, url, domain, path, expires, secure, httpOnly,
+                sameSite, source, null, null, null, "main");
     }
 }
