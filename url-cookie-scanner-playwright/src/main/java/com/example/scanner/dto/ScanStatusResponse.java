@@ -1,9 +1,11 @@
 package com.example.scanner.dto;
 
 import com.example.scanner.entity.CookieEntity;
+import lombok.Data;
 
 import java.util.List;
 
+@Data
 public class ScanStatusResponse {
     private String transactionId;
     private String status; // PENDING, RUNNING, COMPLETED, FAILED
@@ -15,27 +17,4 @@ public class ScanStatusResponse {
         this.cookies = cookies;
     }
 
-    public String getTransactionId() {
-        return transactionId;
-    }
-
-    public void setTransactionId(String transactionId) {
-        this.transactionId = transactionId;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public List<CookieEntity> getCookies() {
-        return cookies;
-    }
-
-    public void setCookies(List<CookieEntity> cookies) {
-        this.cookies = cookies;
-    }
 }

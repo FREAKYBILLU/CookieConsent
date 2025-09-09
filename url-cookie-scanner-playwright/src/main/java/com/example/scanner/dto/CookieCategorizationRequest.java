@@ -1,11 +1,15 @@
 package com.example.scanner.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Data;
+import lombok.Getter;
+
 import java.util.List;
 
 /**
  * Request DTO for cookie categorization API
  */
+@Data
 public class CookieCategorizationRequest {
     @JsonProperty("cookie_names")
     private List<String> cookieNames;
@@ -17,11 +21,4 @@ public class CookieCategorizationRequest {
         this.cookieNames = cookieNames;
     }
 
-    public List<String> getCookieNames() {
-        return cookieNames;
-    }
-
-    public void setCookieNames(List<String> cookieNames) {
-        this.cookieNames = cookieNames;
-    }
 }

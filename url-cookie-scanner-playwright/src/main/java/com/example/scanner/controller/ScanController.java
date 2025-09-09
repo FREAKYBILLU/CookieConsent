@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @RestController
+@CrossOrigin(origins = "*", allowedHeaders = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs")
 public class ScanController {
 

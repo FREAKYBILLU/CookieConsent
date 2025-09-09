@@ -31,10 +31,10 @@ public class CookieCategorizationService {
 
     private static final Logger log = LoggerFactory.getLogger(CookieCategorizationService.class);
 
-    @Value("${cookie.categorization.api.url:http://127.0.0.1:5000/predict}")
+    @Value("${cookie.categorization.api.url}")
     private String categorizationApiUrl;
 
-    @Value("${cookie.categorization.cache.enabled:true}")
+    @Value("${cookie.categorization.cache.enabled}")
     private boolean cacheEnabled;
 
     @Value("${cookie.categorization.cache.ttl.minutes:60}")
@@ -110,6 +110,7 @@ public class CookieCategorizationService {
         try {
             // Prepare request
             CookieCategorizationRequest request = new CookieCategorizationRequest(cookieNames);
+            log.info("Testing {}", request);
 
             // Set headers
             HttpHeaders headers = new HttpHeaders();
@@ -185,6 +186,7 @@ public class CookieCategorizationService {
             }
 
             String responseBody = response.getBody();
+            log.info("Testing {}", responseBody);
             if (responseBody == null || responseBody.trim().isEmpty()) {
                 throw new RuntimeException("Empty response from API");
             }
@@ -193,11 +195,12 @@ public class CookieCategorizationService {
                     responseBody,
                     new TypeReference<List<CookieCategorizationResponse>>() {}
             );
+            log.info("Testing {}", responses);
 
             return responses.stream()
-                    .filter(resp -> resp != null && resp.getCookieName() != null)
+                    .filter(resp -> resp != null && resp.getName() != null)
                     .collect(Collectors.toMap(
-                            CookieCategorizationResponse::getCookieName,
+                            CookieCategorizationResponse::getName,
                             resp -> resp,
                             (existing, replacement) -> existing
                     ));

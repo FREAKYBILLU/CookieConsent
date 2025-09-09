@@ -6,10 +6,12 @@ import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.SameSite;
 import com.example.scanner.enums.Source;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 public class ScanResultMapper {
 
     // Convert CookieDto to CookieEntity
@@ -29,7 +31,9 @@ public class ScanResultMapper {
                         ? Source.valueOf(dto.getSource().name())
                         : null,
                 dto.getCategory(),    // New field mapping
-                dto.getDescription()  // New field mapping
+                dto.getDescription(),  // New field mapping
+                dto.getDescription_gpt() // New field mapping
+
         );
     }
 
@@ -46,7 +50,8 @@ public class ScanResultMapper {
                 entity.getSameSite(),
                 entity.getSource(),
                 entity.getCategory(),    // New field mapping
-                entity.getDescription()  // New field mapping
+                entity.getDescription(), // New field mapping
+                entity.getDescription_gpt()
         );
     }
 

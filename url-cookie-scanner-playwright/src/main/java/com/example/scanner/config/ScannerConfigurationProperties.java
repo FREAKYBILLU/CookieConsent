@@ -281,4 +281,57 @@ public class ScannerConfigurationProperties {
             }
         }
     }
+
+
+    public static class Hyperlinks {
+        private boolean enabled = true;
+        private int priorityMax = 5;
+        private int navigationMax = 2;
+        private int subdomainMax = 3;
+        private int timeoutSeconds = 15;
+
+        public boolean isEnabled() {
+            return enabled;
+        }
+
+        public void setEnabled(boolean enabled) {
+            this.enabled = enabled;
+        }
+
+        public int getPriorityMax() {
+            return priorityMax;
+        }
+
+        public void setPriorityMax(int priorityMax) {
+            this.priorityMax = priorityMax;
+        }
+
+        public int getNavigationMax() {
+            return navigationMax;
+        }
+
+        public void setNavigationMax(int navigationMax) {
+            this.navigationMax = navigationMax;
+        }
+
+        public int getSubdomainMax() {
+            return subdomainMax;
+        }
+
+        public void setSubdomainMax(int subdomainMax) {
+            this.subdomainMax = subdomainMax;
+        }
+
+        public int getTimeoutSeconds() {
+            return timeoutSeconds;
+        }
+
+        public void setTimeoutSeconds(int timeoutSeconds) {
+            this.timeoutSeconds = timeoutSeconds;
+        }
+    }
+
+    private Hyperlinks hyperlinks = new Hyperlinks();
+    public Hyperlinks getHyperlinks() { return hyperlinks; }
+
 }
