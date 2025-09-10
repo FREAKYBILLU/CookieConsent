@@ -269,7 +269,7 @@ public class ScanService {
                                 String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain());
                                 if (!discoveredCookies.containsKey(cookieKey)) {
                                     discoveredCookies.put(cookieKey, cookie);
-                                    categorizeSingleCookieSimple(cookie);
+                                    categorizeWithExternalAPI(cookie);
                                     saveIncrementalCookieWithFlush(transactionId, cookie);
                                     scanMetrics.incrementCookiesFound(source.name());
                                     metrics.recordCookieDiscovered(source.name());
@@ -658,7 +658,7 @@ public class ScanService {
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeSingleCookieSimple(cookieDto);
+                        categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -692,7 +692,7 @@ public class ScanService {
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeSingleCookieSimple(cookieDto);
+                        categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -735,35 +735,7 @@ public class ScanService {
         return cookies;
     }
 
-    private void categorizeSingleCookieSimple(CookieDto cookie) {
-        try {
-            String category = "Functional";
-            String description = "Auto-categorized cookie";
 
-            String cookieName = cookie.getName().toLowerCase();
-            if (cookieName.contains("analytics") || cookieName.contains("_ga") || cookieName.contains("_gid")) {
-                category = "Analytics";
-                description = "Used for website analytics and performance tracking";
-            } else if (cookieName.contains("ads") || cookieName.contains("doubleclick") || cookieName.contains("fbp")) {
-                category = "Advertising";
-                description = "Used for advertising and marketing purposes";
-            } else if (cookieName.contains("session") || cookieName.contains("csrf") || cookieName.contains("auth")) {
-                category = "Necessary";
-                description = "Essential for website functionality";
-            } else if (cookieName.contains("pref") || cookieName.contains("lang") || cookieName.contains("theme")) {
-                category = "Preferences";
-                description = "Stores user preferences and settings";
-            }
-
-            cookie.setCategory(category);
-            cookie.setDescription(description);
-
-        } catch (Exception e) {
-            log.debug("Failed to categorize cookie '{}': {}", cookie.getName(), e.getMessage());
-            cookie.setCategory("Unknown");
-            cookie.setDescription("Categorization failed");
-        }
-    }
 
     private CookieDto mapPlaywrightCookie(Cookie playwrightCookie, String scanUrl, String siteRoot) {
         Instant expiry = playwrightCookie.expires != null ?
@@ -1330,4 +1302,35 @@ public class ScanService {
         }
         return "An unexpected error occurred during scanning";
     }
+
+    private void categorizeWithExternalAPI(CookieDto cookie) {
+        try {
+            log.debug("Calling external API to categorize cookie: {}", cookie.getName());
+
+            CookieCategorizationResponse apiResponse = cookieCategorizationService.categorizeSingleCookie(cookie.getName());
+
+            if (apiResponse != null) {
+                cookie.setCategory(apiResponse.getCategory());
+                cookie.setDescription(apiResponse.getDescription());
+                cookie.setDescription_gpt(apiResponse.getDescription_gpt());
+
+                log.info("✅ Cookie '{}' categorized by API: Category={}, Description={}",
+                        cookie.getName(), apiResponse.getCategory(), apiResponse.getDescription());
+            } else {
+                cookie.setCategory(null);
+                cookie.setDescription(null);
+                cookie.setDescription_gpt(null);
+
+                log.warn("⚠️ API returned null for cookie '{}'", cookie.getName());
+            }
+
+        } catch (Exception e) {
+            cookie.setCategory(null);
+            cookie.setDescription(null);
+            cookie.setDescription_gpt(null);
+
+            log.error("❌ Failed to categorize cookie '{}' via API: {}", cookie.getName(), e.getMessage());
+        }
+    }
+
 }
