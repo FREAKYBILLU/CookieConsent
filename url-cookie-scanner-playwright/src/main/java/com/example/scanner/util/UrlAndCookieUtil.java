@@ -89,6 +89,11 @@ public class UrlAndCookieUtil {
 
       host = host.toLowerCase();
 
+      // ADDED: Domain format validation
+      if (!isValidDomainName(host)) {
+        return ValidationResult.invalid("Invalid domain name format");
+      }
+
       // Check for blocked domains
       if (BLOCKED_DOMAINS.contains(host) || host.endsWith(".local") || host.endsWith(".test")) {
         return ValidationResult.invalid("Domain is reserved or for testing purposes");
@@ -135,6 +140,55 @@ public class UrlAndCookieUtil {
 
     } catch (URISyntaxException e) {
       return ValidationResult.invalid("Invalid URL format: " + e.getMessage());
+    }
+  }
+
+  /**
+   * ADDED: Validates if the domain name has proper format
+   */
+  private static boolean isValidDomainName(String host) {
+    // Check for IP addresses (allow them as they're valid hosts)
+    if (isIpAddress(host)) {
+      return true; // IPs are valid hosts
+    }
+
+    // Domain must contain at least one dot for TLD
+    if (!host.contains(".")) {
+      return false;
+    }
+
+    // Must not start or end with dot or hyphen
+    if (host.startsWith(".") || host.endsWith(".") ||
+            host.startsWith("-") || host.endsWith("-")) {
+      return false;
+    }
+
+    // Must not contain consecutive dots
+    if (host.contains("..")) {
+      return false;
+    }
+
+    // Use Guava's InternetDomainName for comprehensive validation
+    try {
+      InternetDomainName domainName = InternetDomainName.from(host);
+      // Must have a public suffix (TLD)
+      return domainName.hasPublicSuffix();
+    } catch (Exception e) {
+      return false;
+    }
+  }
+
+  /**
+   * ADDED: Check if host is an IP address
+   */
+  private static boolean isIpAddress(String host) {
+    try {
+      InetAddress.getByName(host);
+      // If no exception, it's a valid IP
+      return host.matches("\\d+\\.\\d+\\.\\d+\\.\\d+") || // IPv4
+              host.contains(":"); // IPv6 (simplified check)
+    } catch (UnknownHostException e) {
+      return false;
     }
   }
 

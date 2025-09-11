@@ -65,8 +65,8 @@ public class SubdomainValidationUtil {
                     String subdomainHost = extractHost(trimmedSubdomain);
 
                     if (mainHost.equalsIgnoreCase(subdomainHost)) {
-                        log.warn("Subdomain {} is the same as main URL host {}, skipping", subdomainHost, mainHost);
-                        continue; // Skip, don't add to invalid list
+                        invalidSubdomains.add(trimmedSubdomain + " - Subdomain cannot be the same as the main URL");
+                        continue;
                     }
 
                     validatedSubdomains.add(subdomainValidation.getNormalizedUrl());

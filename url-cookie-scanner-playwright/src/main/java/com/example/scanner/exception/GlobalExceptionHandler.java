@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "Please provide a valid URL and try again",
+                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -42,7 +42,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCookieNotFoundException(CookieNotFoundException ex, HttpServletRequest request) {
         ErrorResponse errorResponse = new ErrorResponse(
                 ex.getErrorCode(),
-                "The requested cookie was not found in this transaction",
+                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
                 Instant.now(),
                 request.getRequestURI()
         );
@@ -56,7 +56,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "The scan transaction you're looking for doesn't exist",
+                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -64,13 +64,15 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
 
+    // TECHNICAL EXCEPTIONS - Use custom user-friendly messages
+
     @ExceptionHandler(ScanExecutionException.class)
     public ResponseEntity<ErrorResponse> handleScanExecution(ScanExecutionException ex, WebRequest request) {
         log.error("Scan execution failed: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "Unable to complete the scan. Please try again later",
+                "Unable to complete the scan. Please try again later",  // KEPT: Custom user-friendly message
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -84,7 +86,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "Cookie categorization is temporarily unavailable. Your scan will continue without categorization",
+                "Cookie categorization is temporarily unavailable. Your scan will continue without categorization",  // KEPT: Custom message
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -103,9 +105,14 @@ public class GlobalExceptionHandler {
             fieldErrors.put(fieldName, errorMessage);
         });
 
+        // Build user-friendly message with field details
+        String fieldErrorDetails = fieldErrors.entrySet().stream()
+                .map(entry -> entry.getKey() + ": " + entry.getValue())
+                .collect(Collectors.joining(", "));
+
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
-                "Please check your request data and fix the validation errors",
+                "Please fix the following errors: " + fieldErrorDetails,  // CHANGED: Include field details
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -119,7 +126,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.EXTERNAL_SERVICE_ERROR,
-                "An external service is temporarily unavailable. Please try again later",
+                "An external service is temporarily unavailable. Please try again later",  // KEPT: Custom message
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -147,7 +154,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.INTERNAL_ERROR,
-                "Something went wrong on our end. Please try again later",
+                "Something went wrong on our end. Please try again later",  // KEPT: Generic friendly message
                 Instant.now(),
                 request.getDescription(false)
         );

@@ -9,7 +9,6 @@ import java.time.Instant;
 public class ErrorResponse {
     private String errorCode;
     private String message;
-    private String details;
 
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private Instant timestamp;
