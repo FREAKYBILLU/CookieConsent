@@ -4,6 +4,7 @@ import com.example.scanner.dto.CookieUpdateRequest;
 import com.example.scanner.dto.CookieUpdateResponse;
 import com.example.scanner.dto.ScanRequestDto;
 import com.example.scanner.dto.ScanStatusResponse;
+import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
@@ -11,6 +12,7 @@ import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.repository.ScanResultRepository;
 import com.example.scanner.service.CookieService;
 import com.example.scanner.service.ScanService;
+import com.example.scanner.util.UrlAndCookieUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -25,10 +27,8 @@ import jakarta.validation.Valid;
 
 import com.example.scanner.exception.CookieNotFoundException;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @CrossOrigin(origins = "*", allowedHeaders = "*")
@@ -136,35 +136,57 @@ public class ScanController {
 
       ScanResultEntity result = resultOpt.get();
 
-      // Log current cookie count and subdomain distribution for debugging
-      int cookieCount = result.getCookies() != null ? result.getCookies().size() : 0;
+      // Convert grouped data to response
+      List<ScanStatusResponse.SubdomainCookieGroup> subdomains = new ArrayList<>();
 
-      if (result.getCookies() != null && !result.getCookies().isEmpty()) {
-        Map<String, Long> subdomainDistribution = result.getCookies().stream()
-                .collect(java.util.stream.Collectors.groupingBy(
-                        cookie -> cookie.getSubdomainName() != null ? cookie.getSubdomainName() : "main",
-                        java.util.stream.Collectors.counting()
-                ));
+      if (result.getCookiesBySubdomain() != null) {
+        for (Map.Entry<String, List<CookieEntity>> entry : result.getCookiesBySubdomain().entrySet()) {
+          String subdomainName = entry.getKey();
+          List<CookieEntity> cookies = entry.getValue();
+          String subdomainUrl = "main".equals(subdomainName) ? result.getUrl() :
+                  constructSubdomainUrl(result.getUrl(), subdomainName);
 
-        Map<String, Long> sourceDistribution = result.getCookies().stream()
-                .collect(java.util.stream.Collectors.groupingBy(
-                        cookie -> cookie.getSource() != null ? cookie.getSource().name() : "UNKNOWN",
-                        java.util.stream.Collectors.counting()
-                ));
+          subdomains.add(new ScanStatusResponse.SubdomainCookieGroup(subdomainName, subdomainUrl, cookies));
+        }
 
-        log.debug("Retrieved transaction {} with status {} and {} cookies. " +
-                        "Subdomain distribution: {}, Source distribution: {}",
-                transactionId, result.getStatus(), cookieCount, subdomainDistribution, sourceDistribution);
-      } else {
-        log.debug("Retrieved transaction {} with status {} and {} cookies",
-                transactionId, result.getStatus(), cookieCount);
+        // Sort: "main" first, then alphabetically
+        subdomains.sort((a, b) -> {
+          if ("main".equals(a.getSubdomainName())) return -1;
+          if ("main".equals(b.getSubdomainName())) return 1;
+          return a.getSubdomainName().compareTo(b.getSubdomainName());
+        });
       }
+
+      // Create summary from all cookies
+      List<CookieEntity> allCookies = result.getCookiesBySubdomain() != null ?
+              result.getCookiesBySubdomain().values().stream()
+                      .flatMap(List::stream)
+                      .collect(Collectors.toList()) : new ArrayList<>();
+
+      Map<String, Integer> bySource = allCookies.stream()
+              .collect(Collectors.groupingBy(
+                      cookie -> cookie.getSource() != null ? cookie.getSource().name() : "UNKNOWN",
+                      Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
+              ));
+
+      Map<String, Integer> byCategory = allCookies.stream()
+              .collect(Collectors.groupingBy(
+                      cookie -> cookie.getCategory() != null ? cookie.getCategory() : "uncategorized",
+                      Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
+              ));
+
+      ScanStatusResponse.ScanSummary summary = new ScanStatusResponse.ScanSummary(bySource, byCategory);
 
       ScanStatusResponse response = new ScanStatusResponse(
               result.getTransactionId(),
               result.getStatus(),
-              result.getCookies()
+              result.getUrl(),
+              subdomains,
+              summary
       );
+
+      log.debug("Retrieved transaction {} with status {} and {} cookies in {} subdomains",
+              transactionId, result.getStatus(), allCookies.size(), subdomains.size());
 
       return ResponseEntity.ok(response);
 
@@ -176,6 +198,15 @@ public class ScanController {
     }
   }
 
+  private String constructSubdomainUrl(String mainUrl, String subdomainName) {
+    try {
+      String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
+      String protocol = mainUrl.startsWith("https") ? "https" : "http";
+      return protocol + "://" + subdomainName + "." + rootDomain;
+    } catch (Exception e) {
+      return mainUrl;
+    }
+  }
   @Operation(
           summary = "Update Cookie Information",
           description = "Updates the category and description for a specific cookie within a scan transaction."

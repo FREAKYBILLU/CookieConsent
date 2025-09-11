@@ -4,7 +4,7 @@ import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.util.List;
+import java.util.*;
 
 @Data
 @Document(collection = "scan_results")
@@ -12,12 +12,13 @@ public class ScanResultEntity {
     @Id
     private String id;
     private String transactionId;
-    private String status; // PENDING, RUNNING, COMPLETED, FAILED
-    private List<CookieEntity> cookies; // store cookies here
-    private String errorMessage;
+    private String status;
     private String url;
+    private String errorMessage;
 
-    public ScanResultEntity() {
-    }
+    // NEW: Grouped storage
+    private Map<String, List<CookieEntity>> cookiesBySubdomain;
 
+    // OLD: Keep for backward compatibility during migration
+    private List<CookieEntity> cookies;
 }

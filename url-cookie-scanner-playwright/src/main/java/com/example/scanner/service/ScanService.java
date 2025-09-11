@@ -3,6 +3,7 @@ package com.example.scanner.service;
 import com.example.scanner.config.ScannerConfigurationProperties;
 import com.example.scanner.dto.CookieCategorizationResponse;
 import com.example.scanner.dto.CookieDto;
+import com.example.scanner.dto.ScanStatusResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.SameSite;
@@ -10,6 +11,7 @@ import com.example.scanner.enums.ScanStatus;
 import com.example.scanner.enums.Source;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.ScannerException;
+import com.example.scanner.exception.TransactionNotFoundException;
 import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.mapper.ScanResultMapper;
 import com.example.scanner.repository.ScanResultRepository;
@@ -44,6 +46,7 @@ public class ScanService {
     private final CookieCategorizationService cookieCategorizationService;
     private final ScannerConfigurationProperties config;
     private final CookieScanMetrics metrics;
+
 
     @Lazy
     @Autowired
@@ -98,7 +101,6 @@ public class ScanService {
             result.setTransactionId(transactionId);
             result.setStatus(ScanStatus.PENDING.name());
             result.setUrl(normalizedUrl);
-            result.setCookies(new ArrayList<>());
 
             try {
                 repository.save(result);
@@ -275,7 +277,7 @@ public class ScanService {
                                 String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain(), cookie.getSubdomainName());
                                 if (!discoveredCookies.containsKey(cookieKey)) {
                                     discoveredCookies.put(cookieKey, cookie);
-                                    //categorizeWithExternalAPI(cookie);
+                                    categorizeWithExternalAPI(cookie);
                                     saveIncrementalCookieWithFlush(transactionId, cookie);
                                     scanMetrics.incrementCookiesFound(source.name());
                                     metrics.recordCookieDiscovered(source.name());
@@ -596,14 +598,7 @@ public class ScanService {
         }
     }
 
-    // Backward compatibility overload
-    private void performMaximumCookieDetection(String url, String transactionId,
-                                               ScanPerformanceTracker.ScanMetrics scanMetrics)
-            throws ScanExecutionException {
-        performMaximumCookieDetection(url, transactionId, scanMetrics, null);
-    }
-
-    // NEW: Helper method to determine subdomain name from URL
+    // Helper method to determine subdomain name from URL
     private String determineSubdomainNameFromUrl(String currentUrl, String mainUrl, List<String> subdomains) {
         try {
             String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
@@ -663,7 +658,7 @@ public class ScanService {
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        //categorizeWithExternalAPI(cookieDto);
+                        categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -697,7 +692,7 @@ public class ScanService {
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        //categorizeWithExternalAPI(cookieDto);
+                        categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -767,36 +762,36 @@ public class ScanService {
         try {
             ScanResultEntity result = repository.findById(transactionId).orElse(null);
             if (result != null) {
-                List<CookieEntity> currentCookies = result.getCookies();
-                if (currentCookies == null) {
-                    currentCookies = new ArrayList<>();
-                    result.setCookies(currentCookies);
+                // Initialize grouped structure if needed
+                if (result.getCookiesBySubdomain() == null) {
+                    result.setCookiesBySubdomain(new HashMap<>());
                 }
 
-                // FIXED: Include subdomainName in deduplication check
-                boolean exists = currentCookies.stream()
+                String subdomainName = cookieDto.getSubdomainName() != null ? cookieDto.getSubdomainName() : "main";
+
+                // Get or create subdomain cookie list
+                List<CookieEntity> subdomainCookies = result.getCookiesBySubdomain()
+                        .computeIfAbsent(subdomainName, k -> new ArrayList<>());
+
+                // Check for duplicates within this subdomain
+                boolean exists = subdomainCookies.stream()
                         .anyMatch(c -> c.getName().equals(cookieDto.getName()) &&
-                                Objects.equals(c.getDomain(), cookieDto.getDomain()) &&
-                                Objects.equals(c.getSubdomainName(), cookieDto.getSubdomainName()));
+                                Objects.equals(c.getDomain(), cookieDto.getDomain()));
 
                 if (!exists) {
                     CookieEntity cookieEntity = ScanResultMapper.cookieDtoToEntity(cookieDto);
-                    currentCookies.add(cookieEntity);
-                    result.setCookies(currentCookies);
+                    subdomainCookies.add(cookieEntity);
                     repository.save(result);
 
-                    log.debug("✅ Saved cookie: {} from domain: {} subdomain: {}",
-                            cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
+                    log.debug("✅ Saved cookie: {} to subdomain: {}", cookieDto.getName(), subdomainName);
                 } else {
-                    log.debug("⚠️ Duplicate cookie skipped: {} from domain: {} subdomain: {}",
-                            cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
+                    log.debug("⚠️ Duplicate cookie skipped: {} in subdomain: {}", cookieDto.getName(), subdomainName);
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to save cookie '{}': {}", cookieDto.getName(), e.getMessage());
         }
     }
-
 
     private CookieDto parseSetCookieHeader(String setCookieHeader, String scanUrl, String responseDomain, Source source) {
         try {
@@ -1318,6 +1313,7 @@ public class ScanService {
         return "An unexpected error occurred during scanning";
     }
 
+    // Don't remove(External Predict API call)
     private void categorizeWithExternalAPI(CookieDto cookie) {
         try {
             log.debug("Calling external API to categorize cookie: {}", cookie.getName());
@@ -1329,14 +1325,14 @@ public class ScanService {
                 cookie.setDescription(apiResponse.getDescription());
                 cookie.setDescription_gpt(apiResponse.getDescription_gpt());
 
-                log.info("✅ Cookie '{}' categorized by API: Category={}, Description={}",
+                log.info("Cookie '{}' categorized by API: Category={}, Description={}",
                         cookie.getName(), apiResponse.getCategory(), apiResponse.getDescription());
             } else {
                 cookie.setCategory(null);
                 cookie.setDescription(null);
                 cookie.setDescription_gpt(null);
 
-                log.warn("⚠️ API returned null for cookie '{}'", cookie.getName());
+                log.warn("API returned null for cookie '{}'", cookie.getName());
             }
 
         } catch (Exception e) {
@@ -1344,8 +1340,7 @@ public class ScanService {
             cookie.setDescription(null);
             cookie.setDescription_gpt(null);
 
-            log.error("❌ Failed to categorize cookie '{}' via API: {}", cookie.getName(), e.getMessage());
+            log.error("Failed to categorize cookie '{}' via API: {}", cookie.getName(), e.getMessage());
         }
     }
-
 }

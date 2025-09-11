@@ -136,18 +136,7 @@ public class CookieCategorizationService {
         }
     }
 
-    /**
-     * Recovery method - called when all retry attempts fail
-     */
-    @Recover
-    public Map<String, CookieCategorizationResponse> recoverFromApiFailure(Exception ex, List<String> cookieNames) throws CookieCategorizationException {
-        log.error("All retry attempts failed for cookie categorization: {}", ex.getMessage());
-        throw new CookieCategorizationException("Cookie categorization service is unavailable: " + ex.getMessage());
-    }
 
-    /**
-     * Get categorization for a single cookie
-     */
     public CookieCategorizationResponse categorizeSingleCookie(String cookieName) throws CookieCategorizationException, UrlValidationException {
         if (cookieName == null || cookieName.trim().isEmpty()) {
             throw new UrlValidationException(
@@ -160,7 +149,6 @@ public class CookieCategorizationService {
         return result.get(cookieName.trim());
     }
 
-    // Helper methods remain the same
     private Map<String, CookieCategorizationResponse> getCachedResults(List<String> cookieNames) {
         if (!cacheEnabled) {
             return Collections.emptyMap();
