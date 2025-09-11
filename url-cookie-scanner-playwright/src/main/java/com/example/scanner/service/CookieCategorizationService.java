@@ -93,7 +93,7 @@ public class CookieCategorizationService {
 
         } catch (Exception e) {
             log.error("Cookie categorization service failed: {}", e.getMessage(), e);
-            throw new CookieCategorizationException("Cookie categorization service is unavailable", e);
+            throw new CookieCategorizationException("Cookie categorization service is unavailable: " + e.getMessage());
         }
     }
 
@@ -142,7 +142,7 @@ public class CookieCategorizationService {
     @Recover
     public Map<String, CookieCategorizationResponse> recoverFromApiFailure(Exception ex, List<String> cookieNames) throws CookieCategorizationException {
         log.error("All retry attempts failed for cookie categorization: {}", ex.getMessage());
-        throw new CookieCategorizationException("Cookie categorization service is unavailable after retries", ex);
+        throw new CookieCategorizationException("Cookie categorization service is unavailable: " + ex.getMessage());
     }
 
     /**
@@ -150,7 +150,10 @@ public class CookieCategorizationService {
      */
     public CookieCategorizationResponse categorizeSingleCookie(String cookieName) throws CookieCategorizationException, UrlValidationException {
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException("Cookie name is required for categorization");
+            throw new UrlValidationException(
+                    "Cookie name is required for categorization",
+                    "categorizeSingleCookie called with null or empty cookieName parameter"
+            );
         }
 
         Map<String, CookieCategorizationResponse> result = categorizeCookies(List.of(cookieName.trim()));

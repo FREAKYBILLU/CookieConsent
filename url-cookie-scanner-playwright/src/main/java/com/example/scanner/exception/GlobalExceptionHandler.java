@@ -30,7 +30,8 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
+                ex.getUserMessage(),           // User-friendly: "Invalid URL provided"
+                ex.getDeveloperDetails(),      // Developer details: "URL validation failed: missing protocol"
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -38,32 +39,33 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error);
     }
 
+
     @ExceptionHandler(CookieNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCookieNotFoundException(CookieNotFoundException ex, HttpServletRequest request) {
         ErrorResponse errorResponse = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
+                ex.getUserMessage(),                           // User-friendly message
+                ex.getDeveloperDetails(),                      // Developer details
                 Instant.now(),
                 request.getRequestURI()
         );
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
-
     @ExceptionHandler(TransactionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleTransactionNotFound(TransactionNotFoundException ex, WebRequest request) {
         log.warn("Transaction not found: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getMessage(),  // CHANGED: Use exception's user-friendly message
+                ex.getUserMessage(),           // User-friendly: "The requested scan transaction was not found"
+                ex.getDeveloperDetails(),      // Developer details: "No scan record exists in database for ID: abc123"
                 Instant.now(),
                 request.getDescription(false)
         );
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
-
     // TECHNICAL EXCEPTIONS - Use custom user-friendly messages
 
     @ExceptionHandler(ScanExecutionException.class)
@@ -72,7 +74,8 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "Unable to complete the scan. Please try again later",  // KEPT: Custom user-friendly message
+                ex.getUserMessage(),           // User-friendly: "Unable to complete the scan. Please try again later"
+                ex.getDeveloperDetails(),      // Developer details: "Playwright timeout during page navigation"
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -86,7 +89,8 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                "Cookie categorization is temporarily unavailable. Your scan will continue without categorization",  // KEPT: Custom message
+                ex.getUserMessage(),                           // User-friendly
+                ex.getDeveloperDetails(),                      // Developer details
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -105,14 +109,14 @@ public class GlobalExceptionHandler {
             fieldErrors.put(fieldName, errorMessage);
         });
 
-        // Build user-friendly message with field details
         String fieldErrorDetails = fieldErrors.entrySet().stream()
                 .map(entry -> entry.getKey() + ": " + entry.getValue())
                 .collect(Collectors.joining(", "));
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
-                "Please fix the following errors: " + fieldErrorDetails,  // CHANGED: Include field details
+                "Please fix the following validation errors",   // User-friendly
+                "Validation failed for fields: " + fieldErrorDetails, // Developer details
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -126,7 +130,8 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.EXTERNAL_SERVICE_ERROR,
-                "An external service is temporarily unavailable. Please try again later",  // KEPT: Custom message
+                "An external service is temporarily unavailable. Please try again later", // User-friendly
+                "RestClient error: " + ex.getMessage(),        // Developer details
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -140,21 +145,22 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
-                "Please provide valid input parameters",
+                "Please provide valid input parameters",    // User-friendly
+                "Invalid argument: " + ex.getMessage(),     // Developer details
                 Instant.now(),
                 request.getDescription(false)
         );
 
         return ResponseEntity.badRequest().body(error);
     }
-
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, WebRequest request) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.INTERNAL_ERROR,
-                "Something went wrong on our end. Please try again later",  // KEPT: Generic friendly message
+                "Something went wrong on our end. Please try again later", // User-friendly
+                "Unexpected error: " + ex.getClass().getSimpleName() + " - " + ex.getMessage(), // Developer details
                 Instant.now(),
                 request.getDescription(false)
         );

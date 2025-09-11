@@ -23,12 +23,11 @@ public class UrlAndCookieUtil {
           "localhost", "test", "invalid", "example", "local"
   );
 
-  // Suspicious patterns that might indicate internal services
-  private static final Pattern INTERNAL_SERVICE_PATTERN = Pattern.compile(
-          ".*(admin|api|auth|internal|staging|dev|test|mgmt|management|console).*",
-          Pattern.CASE_INSENSITIVE
-  );
 
+  //blocks obvious internal services
+  private static final Pattern INTERNAL_SERVICE_PATTERN = Pattern.compile(
+          ".*(\\.|^)(internal|staging|dev|test|local|private)\\."
+  );
   // File extensions that shouldn't be scanned
   private static final Set<String> BLOCKED_EXTENSIONS = Set.of(
           "pdf", "doc", "docx", "xls", "xlsx", "zip", "rar", "exe", "dmg",

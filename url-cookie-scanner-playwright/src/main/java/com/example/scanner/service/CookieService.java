@@ -41,7 +41,10 @@ public class CookieService {
         }
 
         if (updateRequest == null || updateRequest.getCookieName() == null || updateRequest.getCookieName().trim().isEmpty()) {
-            throw new UrlValidationException("Cookie name is required for update");
+            throw new UrlValidationException(
+                    "Cookie name is required for update",
+                    "CookieUpdateRequest validation failed: cookieName is null or empty"
+            );
         }
 
         log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getCookieName(), transactionId);
@@ -79,11 +82,11 @@ public class CookieService {
             throw e;
         }catch (DataAccessException e) {
             log.error("Database error during cookie update for transactionId: {}", transactionId, e);
-            throw new ScanExecutionException("Database error during cookie update", e);
+            throw new ScanExecutionException("Database error during cookie update: " + e.getMessage());
         } catch (Exception e) {
             log.error("Unexpected error updating cookie '{}' for transactionId: {}",
                     updateRequest.getCookieName(), transactionId, e);
-            throw new ScanExecutionException("Unexpected error during cookie update: " + e.getMessage(), e);
+            throw new ScanExecutionException("Unexpected error during cookie update: " + e.getMessage());
         }
     }
 
@@ -94,11 +97,17 @@ public class CookieService {
             throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException("Transaction ID is required");
+            throw new UrlValidationException(
+                    "Transaction ID is required",
+                    "Method parameter validation failed: transactionId is null or empty"
+            );
         }
 
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException("Cookie name is required");
+            throw new UrlValidationException(
+                    "Cookie name is required",
+                    "Method parameter validation failed: cookieName is null or empty"
+            );
         }
 
         log.debug("Retrieving cookie '{}' for transactionId: {}", cookieName, transactionId);
@@ -148,7 +157,10 @@ public class CookieService {
             throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException("Transaction ID is required");
+            throw new UrlValidationException(
+                    "Transaction ID is required",
+                    "Method parameter validation failed: transactionId is null or empty"
+            );
         }
 
         log.debug("Retrieving all cookies for transactionId: {}", transactionId);
@@ -197,7 +209,10 @@ public class CookieService {
         if (!"COMPLETED".equals(scanResult.getStatus())) {
             String message = "Cannot update cookie for incomplete scan. Status: " + scanResult.getStatus();
             log.warn("Invalid scan status for transactionId {}: {}", transactionId, scanResult.getStatus());
-            throw new UrlValidationException("Scan must be completed before updating cookies. Current status: " + scanResult.getStatus());
+            throw new UrlValidationException(
+                    "Scan must be completed before updating cookies. Current status: " + scanResult.getStatus(),
+                    "Scan status validation failed for transactionId: " + transactionId + ", current status: " + scanResult.getStatus()
+            );
         }
     }
 
@@ -207,7 +222,10 @@ public class CookieService {
         if (cookies == null || cookies.isEmpty()) {
             String message = "No cookies found for transaction: " + transactionId;
             log.warn("No cookies available for update in transactionId: {}", transactionId);
-            throw new UrlValidationException("No cookies available for this transaction");
+            throw new UrlValidationException(
+                    "No cookies available for this transaction",
+                    "Cookie list validation failed: transaction " + transactionId + " has null or empty cookie list"
+            );
         }
 
         Optional<CookieEntity> cookieToUpdate = cookies.stream()
@@ -217,7 +235,7 @@ public class CookieService {
         if (cookieToUpdate.isEmpty()) {
             String message = "Cookie '" + updateRequest.getCookieName() + "' not found in transaction: " + transactionId;
             log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getCookieName(), transactionId);
-            throw new CookieNotFoundException("Cookie '" + updateRequest.getCookieName() + "' not found in transaction: " + transactionId);
+            throw new CookieNotFoundException(updateRequest.getCookieName(), transactionId);
         }
 
         // Update the cookie

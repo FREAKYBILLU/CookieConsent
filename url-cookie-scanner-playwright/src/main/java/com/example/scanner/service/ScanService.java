@@ -66,7 +66,10 @@ public class ScanService {
         try {
             ValidationResult validationResult = UrlAndCookieUtil.validateUrlForScanning(url);
             if (!validationResult.isValid()) {
-                throw new UrlValidationException(validationResult.getErrorMessage());
+                throw new UrlValidationException(
+                        "Invalid URL provided",
+                        validationResult.getErrorMessage()
+                );
             }
 
             String normalizedUrl = validationResult.getNormalizedUrl();
@@ -79,7 +82,10 @@ public class ScanService {
                         SubdomainValidationUtil.validateSubdomains(normalizedUrl, subdomains);
 
                 if (!subdomainValidation.isValid()) {
-                    throw new UrlValidationException("Subdomain validation failed: " + subdomainValidation.getErrorMessage());
+                    throw new UrlValidationException(
+                            "Invalid subdomains provided",
+                            "Subdomain validation failed: " + subdomainValidation.getErrorMessage()
+                    );
                 }
 
                 validatedSubdomains = subdomainValidation.getValidatedSubdomains();
@@ -99,7 +105,7 @@ public class ScanService {
                 metrics.recordScanStarted();
             } catch (Exception e) {
                 log.error("Failed to save scan result to database", e);
-                throw new ScanExecutionException("Failed to initialize scan", e);
+                throw new ScanExecutionException("Failed to initialize scan: " + e.getMessage());
             }
 
             log.info("Created new scan with transactionId={} for URL={} and {} subdomains",
@@ -114,7 +120,7 @@ public class ScanService {
             throw e;
         } catch (Exception e) {
             log.error("Unexpected error during scan initialization", e);
-            throw new ScanExecutionException("Failed to start scan", e);
+            throw new ScanExecutionException("Failed to start scan: " + e.getMessage());
         }
     }
 
@@ -266,10 +272,10 @@ public class ScanService {
                                 String subdomainName = determineSubdomainNameFromUrl(responseUrl, url, subdomains);
                                 cookie.setSubdomainName(subdomainName);
 
-                                String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain());
+                                String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain(), cookie.getSubdomainName());
                                 if (!discoveredCookies.containsKey(cookieKey)) {
                                     discoveredCookies.put(cookieKey, cookie);
-                                    categorizeWithExternalAPI(cookie);
+                                    //categorizeWithExternalAPI(cookie);
                                     saveIncrementalCookieWithFlush(transactionId, cookie);
                                     scanMetrics.incrementCookiesFound(source.name());
                                     metrics.recordCookieDiscovered(source.name());
@@ -298,8 +304,7 @@ public class ScanService {
             Response response = page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.NETWORKIDLE));
 
             if (response == null || !response.ok()) {
-                throw new ScanExecutionException("Failed to load page. Status: " +
-                        (response != null ? response.status() : "No response"), null);
+                throw new ScanExecutionException("Failed to load page. Status: " + (response != null ? response.status() : "No response"));
             }
 
             // Extended wait for all resources to load
@@ -585,7 +590,7 @@ public class ScanService {
         } catch (PlaywrightException e) {
             throw new ScanExecutionException("Playwright error during scan: " + e.getMessage(), e);
         } catch (Exception e) {
-            throw new ScanExecutionException("Unexpected error during scan: " + e.getMessage(), e);
+            throw new ScanExecutionException("Unexpected error during scan: " + e.getMessage());
         } finally {
             cleanupResources(context, browser, playwright);
         }
@@ -654,11 +659,11 @@ public class ScanService {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
                     cookieDto.setSubdomainName(subdomainName);
 
-                    String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain());
+                    String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeWithExternalAPI(cookieDto);
+                        //categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -688,11 +693,11 @@ public class ScanService {
             for (Cookie playwrightCookie : browserCookies) {
                 try {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
-                    String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain());
+                    String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeWithExternalAPI(cookieDto);
+                        //categorizeWithExternalAPI(cookieDto);
                         saveIncrementalCookieWithFlush(transactionId, cookieDto);
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
@@ -768,21 +773,30 @@ public class ScanService {
                     result.setCookies(currentCookies);
                 }
 
+                // FIXED: Include subdomainName in deduplication check
                 boolean exists = currentCookies.stream()
                         .anyMatch(c -> c.getName().equals(cookieDto.getName()) &&
-                                Objects.equals(c.getDomain(), cookieDto.getDomain()));
+                                Objects.equals(c.getDomain(), cookieDto.getDomain()) &&
+                                Objects.equals(c.getSubdomainName(), cookieDto.getSubdomainName()));
 
                 if (!exists) {
                     CookieEntity cookieEntity = ScanResultMapper.cookieDtoToEntity(cookieDto);
                     currentCookies.add(cookieEntity);
                     result.setCookies(currentCookies);
                     repository.save(result);
+
+                    log.debug("✅ Saved cookie: {} from domain: {} subdomain: {}",
+                            cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
+                } else {
+                    log.debug("⚠️ Duplicate cookie skipped: {} from domain: {} subdomain: {}",
+                            cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
                 }
             }
         } catch (Exception e) {
             log.warn("Failed to save cookie '{}': {}", cookieDto.getName(), e.getMessage());
         }
     }
+
 
     private CookieDto parseSetCookieHeader(String setCookieHeader, String scanUrl, String responseDomain, Source source) {
         try {
@@ -865,8 +879,9 @@ public class ScanService {
         }
     }
 
-    private String generateCookieKey(String name, String domain) {
-        return name + "@" + (domain != null ? domain.toLowerCase() : "");
+    private String generateCookieKey(String name, String domain, String subdomainName) {
+        return name + "@" + (domain != null ? domain.toLowerCase() : "") +
+                "#" + (subdomainName != null ? subdomainName : "main");
     }
 
     private void handleIframesAndEmbeds(Page page, String url, String transactionId,

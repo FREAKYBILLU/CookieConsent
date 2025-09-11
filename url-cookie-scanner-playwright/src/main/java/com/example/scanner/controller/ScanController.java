@@ -66,7 +66,10 @@ public class ScanController {
     List<String> subdomains = scanRequest.getSubDomain();
 
     if (url == null || url.trim().isEmpty()) {
-      throw new UrlValidationException("URL is required and cannot be empty");
+      throw new UrlValidationException(
+              "URL is required and cannot be empty",
+              "ScanRequestDto validation failed: url field is null or empty"
+      );
     }
 
     log.info("Received scan request for URL: {} with {} subdomains",
@@ -100,7 +103,7 @@ public class ScanController {
       throw e; // Let global handler manage it
     } catch (Exception e) {
       log.error("Unexpected error starting scan for URL: {} with subdomains: {}", url, subdomains, e);
-      throw new ScanExecutionException("Failed to initiate scan", e);
+      throw new ScanExecutionException("Failed to initiate scan: " + e.getMessage());
     }
   }
 
@@ -169,7 +172,7 @@ public class ScanController {
       throw e;
     } catch (Exception e) {
       log.error("Unexpected error retrieving status for transactionId: {}", transactionId, e);
-      throw new ScanExecutionException("Failed to retrieve scan status", e);
+      throw new ScanExecutionException("Failed to retrieve scan status: " + e.getMessage());
     }
   }
 
@@ -217,7 +220,7 @@ public class ScanController {
       throw e;
     } catch (Exception e) {
       log.error("Error processing cookie update request for transactionId: {}", transactionId, e);
-      throw new ScanExecutionException("Failed to update cookie", e);
+      throw new ScanExecutionException("Failed to update cookie: " + e.getMessage());
     }
   }
 
