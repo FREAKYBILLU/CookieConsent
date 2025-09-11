@@ -18,10 +18,9 @@ public class ErrorResponse {
 
     public ErrorResponse() {}
 
-    public ErrorResponse(String errorCode, String message, String details, Instant timestamp, String path) {
+    public ErrorResponse(String errorCode, String message, Instant timestamp, String path) {
         this.errorCode = errorCode;
         this.message = message;
-        this.details = details;
         this.timestamp = timestamp;
         this.path = path;
     }

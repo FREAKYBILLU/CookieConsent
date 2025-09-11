@@ -1,6 +1,8 @@
 package com.example.scanner.exception;
 
+import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.ErrorResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -15,6 +17,7 @@ import org.springframework.web.context.request.WebRequest;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -27,13 +30,24 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getUserMessage(),
-                ex.getMessage(),
+                "Please provide a valid URL and try again",
                 Instant.now(),
                 request.getDescription(false)
         );
 
         return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(CookieNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleCookieNotFoundException(CookieNotFoundException ex, HttpServletRequest request) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                ex.getErrorCode(),
+                "The requested cookie was not found in this transaction",
+                Instant.now(),
+                request.getRequestURI()
+        );
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
 
     @ExceptionHandler(TransactionNotFoundException.class)
@@ -42,8 +56,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getUserMessage(),
-                ex.getMessage(),
+                "The scan transaction you're looking for doesn't exist",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -57,8 +70,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getUserMessage(),
-                "Internal error during scan execution",
+                "Unable to complete the scan. Please try again later",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -72,8 +84,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getUserMessage(),
-                "Cookie categorization service unavailable",
+                "Cookie categorization is temporarily unavailable. Your scan will continue without categorization",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -93,9 +104,8 @@ public class GlobalExceptionHandler {
         });
 
         ErrorResponse error = new ErrorResponse(
-                "VALIDATION_ERROR",
-                "Request validation failed",
-                fieldErrors.toString(),
+                ErrorCodes.VALIDATION_ERROR,
+                "Please check your request data and fix the validation errors",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -108,9 +118,8 @@ public class GlobalExceptionHandler {
         log.error("External API call failed: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
-                "EXTERNAL_API_ERROR",
-                "External service temporarily unavailable",
-                "Failed to communicate with external service",
+                ErrorCodes.EXTERNAL_SERVICE_ERROR,
+                "An external service is temporarily unavailable. Please try again later",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -123,9 +132,8 @@ public class GlobalExceptionHandler {
         log.warn("Invalid argument: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
-                "INVALID_ARGUMENT",
-                "Invalid request parameter",
-                ex.getMessage(),
+                ErrorCodes.VALIDATION_ERROR,
+                "Please provide valid input parameters",
                 Instant.now(),
                 request.getDescription(false)
         );
@@ -138,9 +146,8 @@ public class GlobalExceptionHandler {
         log.error("Unexpected error: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
-                "INTERNAL_ERROR",
-                "An unexpected error occurred",
-                "Internal server error",
+                ErrorCodes.INTERNAL_ERROR,
+                "Something went wrong on our end. Please try again later",
                 Instant.now(),
                 request.getDescription(false)
         );

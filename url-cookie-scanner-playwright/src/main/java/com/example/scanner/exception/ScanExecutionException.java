@@ -1,11 +1,13 @@
 package com.example.scanner.exception;
 
+import com.example.scanner.constants.ErrorCodes;
+
 public class ScanExecutionException extends ScannerException {
     public ScanExecutionException(String message, Throwable cause) {
-        super("SCAN_EXECUTION_ERROR", message, "An error occurred during website scanning", cause);
+        super(ErrorCodes.INTERNAL_ERROR, message, "An error occurred during website scanning", cause);
     }
 
     public ScanExecutionException(String message) {
-        super("SCAN_EXECUTION_ERROR", message, "An error occurred during website scanning");
+        super(ErrorCodes.INTERNAL_ERROR, message, "An error occurred during website scanning");
     }
 }

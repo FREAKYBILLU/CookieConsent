@@ -4,8 +4,10 @@ import com.example.scanner.dto.CookieUpdateRequest;
 import com.example.scanner.dto.CookieUpdateResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
+import com.example.scanner.exception.CookieNotFoundException;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
+import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.repository.ScanResultRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,14 +34,14 @@ public class CookieService {
      */
     @Transactional
     public CookieUpdateResponse updateCookie(String transactionId, CookieUpdateRequest updateRequest)
-            throws TransactionNotFoundException, ScanExecutionException {
+            throws TransactionNotFoundException, ScanExecutionException, CookieNotFoundException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
         }
 
         if (updateRequest == null || updateRequest.getCookieName() == null || updateRequest.getCookieName().trim().isEmpty()) {
-            throw new IllegalArgumentException("Cookie update request and cookie name are required");
+            throw new UrlValidationException("Cookie name is required for update");
         }
 
         log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getCookieName(), transactionId);
@@ -72,10 +74,10 @@ public class CookieService {
         } catch (TransactionNotFoundException e) {
             log.warn("Transaction not found for cookie update: {}", transactionId);
             throw e;
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid request for cookie update: {}", e.getMessage());
-            return CookieUpdateResponse.failure(transactionId, updateRequest.getCookieName(), e.getMessage());
-        } catch (DataAccessException e) {
+        } catch (CookieNotFoundException e) {
+            log.warn("Cookie not found for update: {}", e.getMessage());
+            throw e;
+        }catch (DataAccessException e) {
             log.error("Database error during cookie update for transactionId: {}", transactionId, e);
             throw new ScanExecutionException("Database error during cookie update", e);
         } catch (Exception e) {
@@ -89,14 +91,14 @@ public class CookieService {
      * Get a specific cookie details from a transaction
      */
     public Optional<CookieEntity> getCookie(String transactionId, String cookieName)
-            throws TransactionNotFoundException, ScanExecutionException {
+            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Transaction ID cannot be null or empty");
+            throw new UrlValidationException("Transaction ID is required");
         }
 
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new IllegalArgumentException("Cookie name cannot be null or empty");
+            throw new UrlValidationException("Cookie name is required");
         }
 
         log.debug("Retrieving cookie '{}' for transactionId: {}", cookieName, transactionId);
@@ -143,10 +145,10 @@ public class CookieService {
      * Get all cookies for a transaction
      */
     public List<CookieEntity> getAllCookies(String transactionId)
-            throws TransactionNotFoundException, ScanExecutionException {
+            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new IllegalArgumentException("Transaction ID cannot be null or empty");
+            throw new UrlValidationException("Transaction ID is required");
         }
 
         log.debug("Retrieving all cookies for transactionId: {}", transactionId);
@@ -191,21 +193,21 @@ public class CookieService {
         }
     }
 
-    private void validateScanStatus(ScanResultEntity scanResult, String transactionId) {
+    private void validateScanStatus(ScanResultEntity scanResult, String transactionId) throws UrlValidationException {
         if (!"COMPLETED".equals(scanResult.getStatus())) {
             String message = "Cannot update cookie for incomplete scan. Status: " + scanResult.getStatus();
             log.warn("Invalid scan status for transactionId {}: {}", transactionId, scanResult.getStatus());
-            throw new IllegalArgumentException(message);
+            throw new UrlValidationException("Scan must be completed before updating cookies. Current status: " + scanResult.getStatus());
         }
     }
 
-    private CookieEntity findAndUpdateCookie(ScanResultEntity scanResult, CookieUpdateRequest updateRequest, String transactionId) {
+    private CookieEntity findAndUpdateCookie(ScanResultEntity scanResult, CookieUpdateRequest updateRequest, String transactionId) throws CookieNotFoundException, UrlValidationException {
         List<CookieEntity> cookies = scanResult.getCookies();
 
         if (cookies == null || cookies.isEmpty()) {
             String message = "No cookies found for transaction: " + transactionId;
             log.warn("No cookies available for update in transactionId: {}", transactionId);
-            throw new IllegalArgumentException(message);
+            throw new UrlValidationException("No cookies available for this transaction");
         }
 
         Optional<CookieEntity> cookieToUpdate = cookies.stream()
@@ -215,7 +217,7 @@ public class CookieService {
         if (cookieToUpdate.isEmpty()) {
             String message = "Cookie '" + updateRequest.getCookieName() + "' not found in transaction: " + transactionId;
             log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getCookieName(), transactionId);
-            throw new IllegalArgumentException(message);
+            throw new CookieNotFoundException("Cookie '" + updateRequest.getCookieName() + "' not found in transaction: " + transactionId);
         }
 
         // Update the cookie

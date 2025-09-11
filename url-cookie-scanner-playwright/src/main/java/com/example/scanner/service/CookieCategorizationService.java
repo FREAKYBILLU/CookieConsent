@@ -3,6 +3,7 @@ package com.example.scanner.service;
 import com.example.scanner.dto.CookieCategorizationRequest;
 import com.example.scanner.dto.CookieCategorizationResponse;
 import com.example.scanner.exception.CookieCategorizationException;
+import com.example.scanner.exception.UrlValidationException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -54,7 +55,7 @@ public class CookieCategorizationService {
     /**
      * Categorize cookies with retry mechanism
      */
-    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames) {
+    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames) throws CookieCategorizationException {
         if (cookieNames == null || cookieNames.isEmpty()) {
             log.debug("No cookie names provided for categorization");
             return Collections.emptyMap();
@@ -91,8 +92,8 @@ public class CookieCategorizationService {
             return allResults;
 
         } catch (Exception e) {
-            log.error("Error during cookie categorization: {}", e.getMessage(), e);
-            return Collections.emptyMap(); // Return empty map instead of throwing exception
+            log.error("Cookie categorization service failed: {}", e.getMessage(), e);
+            throw new CookieCategorizationException("Cookie categorization service is unavailable", e);
         }
     }
 
@@ -104,7 +105,7 @@ public class CookieCategorizationService {
             maxAttempts = 3,
             backoff = @Backoff(delay = 1000, multiplier = 2.0, maxDelay = 10000)
     )
-    public Map<String, CookieCategorizationResponse> callCategorizationApiWithRetry(List<String> cookieNames) {
+    public Map<String, CookieCategorizationResponse> callCategorizationApiWithRetry(List<String> cookieNames) throws CookieCategorizationException {
         log.debug("Calling categorization API for cookies: {}", cookieNames);
 
         try {
@@ -131,7 +132,7 @@ public class CookieCategorizationService {
 
         } catch (Exception e) {
             log.error("API call failed: {}", e.getMessage());
-            throw e; // Let @Retryable handle this
+            throw e;
         }
     }
 
@@ -139,19 +140,17 @@ public class CookieCategorizationService {
      * Recovery method - called when all retry attempts fail
      */
     @Recover
-    public Map<String, CookieCategorizationResponse> recoverFromApiFailure(Exception ex, List<String> cookieNames) {
-        log.error("All retry attempts failed for cookie categorization. Returning empty results. Error: {}", ex.getMessage());
-
-        // Return empty map or default categorizations
-        return Collections.emptyMap();
+    public Map<String, CookieCategorizationResponse> recoverFromApiFailure(Exception ex, List<String> cookieNames) throws CookieCategorizationException {
+        log.error("All retry attempts failed for cookie categorization: {}", ex.getMessage());
+        throw new CookieCategorizationException("Cookie categorization service is unavailable after retries", ex);
     }
 
     /**
      * Get categorization for a single cookie
      */
-    public CookieCategorizationResponse categorizeSingleCookie(String cookieName) {
+    public CookieCategorizationResponse categorizeSingleCookie(String cookieName) throws CookieCategorizationException, UrlValidationException {
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            return null;
+            throw new UrlValidationException("Cookie name is required for categorization");
         }
 
         Map<String, CookieCategorizationResponse> result = categorizeCookies(List.of(cookieName.trim()));
@@ -179,16 +178,16 @@ public class CookieCategorizationService {
         return cachedResults;
     }
 
-    private Map<String, CookieCategorizationResponse> parseApiResponse(ResponseEntity<String> response, List<String> requestedCookies) {
+    private Map<String, CookieCategorizationResponse> parseApiResponse(ResponseEntity<String> response, List<String> requestedCookies) throws CookieCategorizationException {
         try {
             if (!response.getStatusCode().is2xxSuccessful()) {
-                throw new RuntimeException("API returned status: " + response.getStatusCode());
+                throw new CookieCategorizationException("External categorization API returned error status: " + response.getStatusCode());
             }
 
             String responseBody = response.getBody();
             log.info("Testing {}", responseBody);
             if (responseBody == null || responseBody.trim().isEmpty()) {
-                throw new RuntimeException("Empty response from API");
+                throw new CookieCategorizationException("External categorization API returned empty response");
             }
 
             List<CookieCategorizationResponse> responses = objectMapper.readValue(
@@ -207,7 +206,7 @@ public class CookieCategorizationService {
 
         } catch (Exception e) {
             log.error("Error parsing API response: {}", e.getMessage());
-            throw new RuntimeException("Failed to parse response", e);
+            throw new CookieCategorizationException("Failed to parse categorization API response", e);
         }
     }
 

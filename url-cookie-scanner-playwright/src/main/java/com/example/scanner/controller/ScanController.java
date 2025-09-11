@@ -23,6 +23,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
+import com.example.scanner.exception.CookieNotFoundException;
+
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -188,7 +190,7 @@ public class ScanController {
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
           @Parameter(description = "Cookie update request containing name, category, and description", required = true)
-          @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException {
+          @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException {
 
     if (transactionId == null || transactionId.trim().isEmpty()) {
       throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
@@ -210,6 +212,9 @@ public class ScanController {
         return ResponseEntity.badRequest().body(response);
       }
 
+    } catch (CookieNotFoundException e) {
+      log.warn("Cookie not found for update: {}", e.getMessage());
+      throw e;
     } catch (Exception e) {
       log.error("Error processing cookie update request for transactionId: {}", transactionId, e);
       throw new ScanExecutionException("Failed to update cookie", e);
