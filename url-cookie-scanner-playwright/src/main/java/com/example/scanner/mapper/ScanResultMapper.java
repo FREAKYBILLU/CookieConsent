@@ -9,6 +9,7 @@ import com.example.scanner.enums.Source;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -65,18 +66,20 @@ public class ScanResultMapper {
         entity.setErrorMessage(dto.getErrorMessage());
         entity.setUrl(dto.getUrl());
 
+        // Group flat cookie list by subdomain
         if (dto.getCookies() != null) {
-            List<CookieEntity> cookieEntities = dto.getCookies()
+            Map<String, List<CookieEntity>> cookiesBySubdomain = dto.getCookies()
                     .stream()
                     .map(ScanResultMapper::cookieDtoToEntity)
-                    .collect(Collectors.toList());
-            entity.setCookies(cookieEntities);
+                    .collect(Collectors.groupingBy(
+                            cookie -> cookie.getSubdomainName() != null ? cookie.getSubdomainName() : "main"
+                    ));
+            entity.setCookiesBySubdomain(cookiesBySubdomain);
         }
 
         return entity;
     }
 
-    // Convert ScanResultEntity to ScanResultDto
     public static ScanResultDto toDto(ScanResultEntity entity) {
         ScanResultDto dto = new ScanResultDto();
         dto.setId(entity.getId());
@@ -85,12 +88,14 @@ public class ScanResultMapper {
         dto.setErrorMessage(entity.getErrorMessage());
         dto.setUrl(entity.getUrl());
 
-        if (entity.getCookies() != null) {
-            List<CookieDto> cookieDtos = entity.getCookies()
+        // Flatten grouped cookies to single list for DTO
+        if (entity.getCookiesBySubdomain() != null) {
+            List<CookieDto> allCookies = entity.getCookiesBySubdomain().values()
                     .stream()
+                    .flatMap(List::stream)
                     .map(ScanResultMapper::cookieEntityToDto)
                     .collect(Collectors.toList());
-            dto.setCookies(cookieDtos);
+            dto.setCookies(allCookies);
         }
 
         return dto;

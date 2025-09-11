@@ -46,6 +46,11 @@ public class ScanService {
     private final CookieCategorizationService cookieCategorizationService;
     private final ScannerConfigurationProperties config;
     private final CookieScanMetrics metrics;
+    // Add this field to ScanService class
+    private final Map<String, CookieDto> allDiscoveredCookies = new ConcurrentHashMap<>();
+
+    private final Map<String, CookieDto> cookiesAwaitingCategorization = new ConcurrentHashMap<>();
+
 
 
     @Lazy
@@ -162,8 +167,8 @@ public class ScanService {
             metrics.recordScanCompleted(totalDuration);
             scanMetrics.logSummary(transactionId);
 
-            log.info("MAXIMUM DETECTION scan COMPLETED for transactionId={} with {} cookies in {}ms",
-                    transactionId, result.getCookies().size(), totalDuration.toMillis());
+            log.info("MAXIMUM DETECTION scan COMPLETED for transactionId={} in {}ms",
+                    transactionId, totalDuration.toMillis());
 
         } catch (Exception e) {
             scanMetrics.markFailed(e.getMessage());
@@ -585,7 +590,7 @@ public class ScanService {
             scanMetrics.setScanPhase("FINAL_CAPTURE");
             page.waitForTimeout(8000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-
+            categorizeAllCookiesAtOnce();
             log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}, Subdomains scanned: {}",
                     discoveredCookies.size(), processedUrls.size(), subdomains != null ? subdomains.size() : 0);
 
@@ -1315,32 +1320,45 @@ public class ScanService {
 
     // Don't remove(External Predict API call)
     private void categorizeWithExternalAPI(CookieDto cookie) {
+        // Just store the cookie for later categorization
+        cookiesAwaitingCategorization.put(cookie.getName(), cookie);
+        log.debug("Stored cookie '{}' for categorization. Total stored: {}",
+                cookie.getName(), cookiesAwaitingCategorization.size());
+    }
+
+    private void categorizeAllCookiesAtOnce() {
+        if (cookiesAwaitingCategorization.isEmpty()) {
+            log.info("No cookies found to categorize");
+            return;
+        }
+
         try {
-            log.debug("Calling external API to categorize cookie: {}", cookie.getName());
+            List<String> cookieNames = new ArrayList<>(cookiesAwaitingCategorization.keySet());
+            log.info("Categorizing {} cookies with ONE API call", cookieNames.size());
 
-            CookieCategorizationResponse apiResponse = cookieCategorizationService.categorizeSingleCookie(cookie.getName());
+            // Make single API call for all cookies
+            Map<String, CookieCategorizationResponse> results =
+                    cookieCategorizationService.categorizeCookies(cookieNames);
 
-            if (apiResponse != null) {
-                cookie.setCategory(apiResponse.getCategory());
-                cookie.setDescription(apiResponse.getDescription());
-                cookie.setDescription_gpt(apiResponse.getDescription_gpt());
+            // Apply categorization results to cookies
+            for (Map.Entry<String, CookieCategorizationResponse> entry : results.entrySet()) {
+                String cookieName = entry.getKey();
+                CookieCategorizationResponse response = entry.getValue();
+                CookieDto cookie = cookiesAwaitingCategorization.get(cookieName);
 
-                log.info("Cookie '{}' categorized by API: Category={}, Description={}",
-                        cookie.getName(), apiResponse.getCategory(), apiResponse.getDescription());
-            } else {
-                cookie.setCategory(null);
-                cookie.setDescription(null);
-                cookie.setDescription_gpt(null);
-
-                log.warn("API returned null for cookie '{}'", cookie.getName());
+                if (cookie != null && response != null) {
+                    cookie.setCategory(response.getCategory());
+                    cookie.setDescription(response.getDescription());
+                    cookie.setDescription_gpt(response.getDescription_gpt());
+                }
             }
 
-        } catch (Exception e) {
-            cookie.setCategory(null);
-            cookie.setDescription(null);
-            cookie.setDescription_gpt(null);
+            log.info("Successfully categorized {} cookies", cookieNames.size());
+            cookiesAwaitingCategorization.clear();
 
-            log.error("Failed to categorize cookie '{}' via API: {}", cookie.getName(), e.getMessage());
+        } catch (Exception e) {
+            log.error("Cookie categorization failed: {}", e.getMessage());
+            cookiesAwaitingCategorization.clear();
         }
     }
 }

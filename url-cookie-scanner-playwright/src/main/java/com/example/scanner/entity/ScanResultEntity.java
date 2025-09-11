@@ -19,6 +19,4 @@ public class ScanResultEntity {
     // NEW: Grouped storage
     private Map<String, List<CookieEntity>> cookiesBySubdomain;
 
-    // OLD: Keep for backward compatibility during migration
-    private List<CookieEntity> cookies;
 }

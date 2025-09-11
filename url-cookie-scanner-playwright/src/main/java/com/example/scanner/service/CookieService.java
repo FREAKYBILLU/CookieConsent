@@ -1,22 +1,26 @@
 package com.example.scanner.service;
 
+import com.example.scanner.dto.AddCookieRequest;
+import com.example.scanner.dto.AddCookieResponse;
 import com.example.scanner.dto.CookieUpdateRequest;
 import com.example.scanner.dto.CookieUpdateResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
+import com.example.scanner.enums.SameSite;
+import com.example.scanner.enums.Source;
 import com.example.scanner.exception.CookieNotFoundException;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
 import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.repository.ScanResultRepository;
+import com.example.scanner.util.UrlAndCookieUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 public class CookieService {
@@ -80,7 +84,7 @@ public class CookieService {
         } catch (CookieNotFoundException e) {
             log.warn("Cookie not found for update: {}", e.getMessage());
             throw e;
-        }catch (DataAccessException e) {
+        } catch (DataAccessException e) {
             log.error("Database error during cookie update for transactionId: {}", transactionId, e);
             throw new ScanExecutionException("Database error during cookie update: " + e.getMessage());
         } catch (Exception e) {
@@ -120,24 +124,27 @@ public class CookieService {
             }
 
             ScanResultEntity scanResult = scanResultOpt.get();
-            List<CookieEntity> cookies = scanResult.getCookies();
 
-            if (cookies == null || cookies.isEmpty()) {
+            // Search across all subdomains since cookies are now grouped
+            if (scanResult.getCookiesBySubdomain() == null || scanResult.getCookiesBySubdomain().isEmpty()) {
                 log.debug("No cookies found for transaction: {}", transactionId);
                 return Optional.empty();
             }
 
-            Optional<CookieEntity> foundCookie = cookies.stream()
-                    .filter(cookie -> cookieName.equals(cookie.getName()))
-                    .findFirst();
+            // Search through all subdomain cookie lists
+            for (List<CookieEntity> cookies : scanResult.getCookiesBySubdomain().values()) {
+                Optional<CookieEntity> foundCookie = cookies.stream()
+                        .filter(cookie -> cookieName.equals(cookie.getName()))
+                        .findFirst();
 
-            if (foundCookie.isPresent()) {
-                log.debug("Cookie '{}' found for transactionId: {}", cookieName, transactionId);
-            } else {
-                log.debug("Cookie '{}' not found for transactionId: {}", cookieName, transactionId);
+                if (foundCookie.isPresent()) {
+                    log.debug("Cookie '{}' found for transactionId: {}", cookieName, transactionId);
+                    return foundCookie;
+                }
             }
 
-            return foundCookie;
+            log.debug("Cookie '{}' not found for transactionId: {}", cookieName, transactionId);
+            return Optional.empty();
 
         } catch (TransactionNotFoundException e) {
             throw e;
@@ -173,15 +180,17 @@ public class CookieService {
             }
 
             ScanResultEntity scanResult = scanResultOpt.get();
-            List<CookieEntity> cookies = scanResult.getCookies();
 
-            if (cookies == null) {
-                log.debug("No cookies found for transaction: {}", transactionId);
-                return List.of();
+            // Flatten all cookies from all subdomains into one list
+            List<CookieEntity> allCookies = new ArrayList<>();
+            if (scanResult.getCookiesBySubdomain() != null) {
+                for (List<CookieEntity> subdomainCookies : scanResult.getCookiesBySubdomain().values()) {
+                    allCookies.addAll(subdomainCookies);
+                }
             }
 
-            log.debug("Found {} cookies for transactionId: {}", cookies.size(), transactionId);
-            return cookies;
+            log.debug("Found {} cookies for transactionId: {}", allCookies.size(), transactionId);
+            return allCookies;
 
         } catch (TransactionNotFoundException e) {
             throw e;
@@ -217,9 +226,15 @@ public class CookieService {
     }
 
     private CookieEntity findAndUpdateCookie(ScanResultEntity scanResult, CookieUpdateRequest updateRequest, String transactionId) throws CookieNotFoundException, UrlValidationException {
-        List<CookieEntity> cookies = scanResult.getCookies();
+        // Get all cookies from all subdomains for searching
+        List<CookieEntity> allCookies = new ArrayList<>();
+        if (scanResult.getCookiesBySubdomain() != null) {
+            for (List<CookieEntity> subdomainCookies : scanResult.getCookiesBySubdomain().values()) {
+                allCookies.addAll(subdomainCookies);
+            }
+        }
 
-        if (cookies == null || cookies.isEmpty()) {
+        if (allCookies.isEmpty()) {
             String message = "No cookies found for transaction: " + transactionId;
             log.warn("No cookies available for update in transactionId: {}", transactionId);
             throw new UrlValidationException(
@@ -228,7 +243,7 @@ public class CookieService {
             );
         }
 
-        Optional<CookieEntity> cookieToUpdate = cookies.stream()
+        Optional<CookieEntity> cookieToUpdate = allCookies.stream()
                 .filter(cookie -> updateRequest.getCookieName().equals(cookie.getName()))
                 .findFirst();
 
@@ -265,5 +280,209 @@ public class CookieService {
             log.error("Failed to save updated scan result for transactionId: {}", transactionId, e);
             throw new DataAccessException("Failed to save cookie updates to database", e) {};
         }
+    }
+
+    @Transactional
+    public AddCookieResponse addCookie(String transactionId, AddCookieRequest addRequest)
+            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
+
+        if (transactionId == null || transactionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Transaction ID cannot be null or empty");
+        }
+
+        if (addRequest == null) {
+            throw new UrlValidationException(
+                    "Cookie information is required",
+                    "AddCookieRequest is null"
+            );
+        }
+
+        log.info("Adding cookie '{}' to transactionId: {} in subdomain: {}",
+                addRequest.getName(), transactionId, addRequest.getSubdomainName());
+
+        try {
+            // Find the scan result by transaction ID
+            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(transactionId);
+
+            if (scanResultOpt.isEmpty()) {
+                throw new TransactionNotFoundException(transactionId);
+            }
+
+            ScanResultEntity scanResult = scanResultOpt.get();
+
+            // Validate that we can add cookies (scan doesn't need to be completed for manual additions)
+            if ("FAILED".equals(scanResult.getStatus())) {
+                throw new UrlValidationException(
+                        "Cannot add cookies to a failed scan",
+                        "Scan status validation failed for transactionId: " + transactionId + ", status: FAILED"
+                );
+            }
+
+            // Validate subdomain name
+            String subdomainName = validateAndNormalizeSubdomainName(addRequest.getSubdomainName());
+            addRequest.setSubdomainName(subdomainName);
+
+            // Validate cookie domain against scan URL
+            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), addRequest.getDomain(), subdomainName);
+
+            // Check for duplicate cookie
+            if (cookieExists(scanResult, addRequest)) {
+                throw new UrlValidationException(
+                        "Cookie already exists in this subdomain",
+                        "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + subdomainName
+                );
+            }
+
+            // Create the new cookie entity
+            CookieEntity newCookie = createCookieEntityFromRequest(addRequest, scanResult.getUrl());
+
+            // Add cookie to the subdomain group
+            addCookieToSubdomain(scanResult, newCookie, subdomainName);
+
+            // Save the updated scan result
+            saveScanResult(scanResult, transactionId);
+
+            log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
+                    addRequest.getName(), transactionId, subdomainName);
+
+            return AddCookieResponse.success(transactionId, addRequest.getName(),
+                    addRequest.getDomain(), subdomainName);
+
+        } catch (TransactionNotFoundException | UrlValidationException e) {
+            log.warn("Validation failed for adding cookie '{}' to transactionId: {}: {}",
+                    addRequest.getName(), transactionId, e.getMessage());
+            throw e;
+        } catch (DataAccessException e) {
+            log.error("Database error during cookie addition for transactionId: {}", transactionId, e);
+            throw new ScanExecutionException("Database error during cookie addition: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error adding cookie '{}' to transactionId: {}",
+                    addRequest.getName(), transactionId, e);
+            throw new ScanExecutionException("Unexpected error during cookie addition: " + e.getMessage());
+        }
+    }
+
+// Helper methods
+
+    private String validateAndNormalizeSubdomainName(String subdomainName) throws UrlValidationException {
+        if (subdomainName == null || subdomainName.trim().isEmpty()) {
+            return "main";
+        }
+
+        String normalized = subdomainName.trim().toLowerCase();
+
+        // Validate subdomain name format
+        if (!normalized.matches("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$") && !"main".equals(normalized)) {
+            throw new UrlValidationException(
+                    "Invalid subdomain name format",
+                    "Subdomain name must contain only lowercase letters, numbers, and hyphens: " + subdomainName
+            );
+        }
+
+        return normalized;
+    }
+
+    private void validateCookieDomainAgainstScanUrl(String scanUrl, String cookieDomain, String subdomainName)
+            throws UrlValidationException {
+        try {
+            String scanRootDomain = UrlAndCookieUtil.extractRootDomain(scanUrl);
+
+            // Clean cookie domain (remove leading dot if present)
+            String cleanCookieDomain = cookieDomain.startsWith(".") ?
+                    cookieDomain.substring(1) : cookieDomain;
+
+            String cookieRootDomain = UrlAndCookieUtil.extractRootDomain(cleanCookieDomain);
+
+            // Cookie domain must belong to the same root domain as the scan URL
+            if (!scanRootDomain.equalsIgnoreCase(cookieRootDomain)) {
+                throw new UrlValidationException(
+                        "Cookie domain must belong to the same root domain as the scanned URL",
+                        String.format("Cookie domain '%s' does not belong to scan domain '%s'",
+                                cookieDomain, scanRootDomain)
+                );
+            }
+
+            log.debug("Cookie domain validation passed: {} belongs to scan domain {}",
+                    cookieDomain, scanRootDomain);
+
+        } catch (Exception e) {
+            throw new UrlValidationException(
+                    "Invalid cookie domain format",
+                    "Cookie domain validation failed: " + e.getMessage()
+            );
+        }
+    }
+
+    private boolean cookieExists(ScanResultEntity scanResult, AddCookieRequest addRequest) {
+        if (scanResult.getCookiesBySubdomain() == null) {
+            return false;
+        }
+
+        List<CookieEntity> subdomainCookies = scanResult.getCookiesBySubdomain()
+                .get(addRequest.getSubdomainName());
+
+        if (subdomainCookies == null) {
+            return false;
+        }
+
+        return subdomainCookies.stream()
+                .anyMatch(cookie ->
+                        cookie.getName().equals(addRequest.getName()) &&
+                                Objects.equals(cookie.getDomain(), addRequest.getDomain())
+                );
+    }
+
+    private CookieEntity createCookieEntityFromRequest(AddCookieRequest request, String scanUrl) {
+        // Parse enums
+        SameSite sameSite = null;
+        if (request.getSameSite() != null) {
+            try {
+                sameSite = SameSite.valueOf(request.getSameSite().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                sameSite = SameSite.LAX; // Default fallback
+            }
+        }
+
+        Source source = null;
+        if (request.getSource() != null) {
+            try {
+                source = Source.valueOf(request.getSource().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                source = Source.FIRST_PARTY; // Default fallback
+            }
+        }
+
+        return new CookieEntity(
+                request.getName(),
+                scanUrl,
+                request.getDomain(),
+                request.getPath() != null ? request.getPath() : "/",
+                request.getExpires(),
+                request.isSecure(),
+                request.isHttpOnly(),
+                sameSite,
+                source,
+                request.getCategory(),
+                request.getDescription(),
+                request.getDescription_gpt(),
+                request.getSubdomainName()
+        );
+    }
+
+    private void addCookieToSubdomain(ScanResultEntity scanResult, CookieEntity cookie, String subdomainName) {
+        // Initialize the map if it doesn't exist
+        if (scanResult.getCookiesBySubdomain() == null) {
+            scanResult.setCookiesBySubdomain(new HashMap<>());
+        }
+
+        // Get or create the subdomain cookie list
+        List<CookieEntity> subdomainCookies = scanResult.getCookiesBySubdomain()
+                .computeIfAbsent(subdomainName, k -> new ArrayList<>());
+
+        // Add the cookie
+        subdomainCookies.add(cookie);
+
+        log.debug("Added cookie '{}' to subdomain '{}'. Subdomain now has {} cookies.",
+                cookie.getName(), subdomainName, subdomainCookies.size());
     }
 }

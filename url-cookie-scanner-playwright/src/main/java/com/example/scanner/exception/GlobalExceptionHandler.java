@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -153,6 +154,32 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.badRequest().body(error);
     }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleJsonParseError(HttpMessageNotReadableException ex, WebRequest request) {
+        log.warn("JSON parsing failed: {}", ex.getMessage());
+
+        String userFriendlyMessage = "Invalid request format. Please check your JSON syntax.";
+        String details = "JSON parsing error: " + ex.getMessage();
+
+        // Extract specific field errors if possible
+        if (ex.getMessage().contains("Boolean")) {
+            userFriendlyMessage = "Invalid boolean value. Use true or false only.";
+        } else if (ex.getMessage().contains("Unrecognized token")) {
+            userFriendlyMessage = "Invalid JSON format. Check for typos in field values.";
+        }
+
+        ErrorResponse error = new ErrorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                userFriendlyMessage,
+                details,
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.badRequest().body(error);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, WebRequest request) {
         log.error("Unexpected error: {}", ex.getMessage(), ex);

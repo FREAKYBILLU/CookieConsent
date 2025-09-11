@@ -1,9 +1,6 @@
 package com.example.scanner.controller;
 
-import com.example.scanner.dto.CookieUpdateRequest;
-import com.example.scanner.dto.CookieUpdateResponse;
-import com.example.scanner.dto.ScanRequestDto;
-import com.example.scanner.dto.ScanStatusResponse;
+import com.example.scanner.dto.*;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.exception.ScanExecutionException;
@@ -279,5 +276,50 @@ public class ScanController {
     healthInfo.put("features", features);
 
     return ResponseEntity.ok(healthInfo);
+  }
+
+  @Operation(
+          summary = "Add Cookie to Scan Transaction",
+          description = "Manually adds a cookie to a specific transaction and subdomain. " +
+                  "The cookie domain must belong to the same root domain as the scanned URL."
+  )
+  @ApiResponse(
+          responseCode = "200",
+          description = "Cookie added successfully",
+          content = @Content(schema = @Schema(implementation = AddCookieResponse.class))
+  )
+  @ApiResponse(responseCode = "400", description = "Invalid request data or duplicate cookie")
+  @ApiResponse(responseCode = "404", description = "Transaction not found")
+  @ApiResponse(responseCode = "500", description = "Internal server error")
+  @PostMapping("/transaction/{transactionId}/cookies")
+  public ResponseEntity<Map<String, Object>> addCookie(
+          @Parameter(description = "Transaction ID from the scan", required = true)
+          @PathVariable("transactionId") String transactionId,
+          @Parameter(description = "Cookie information to add", required = true)
+          @Valid @RequestBody AddCookieRequest addRequest) throws ScanExecutionException, TransactionNotFoundException, UrlValidationException {
+
+    if (transactionId == null || transactionId.trim().isEmpty()) {
+      throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
+    }
+
+    log.info("Received request to add cookie '{}' to transactionId: {} in subdomain: '{}'",
+            addRequest.getName(), transactionId, addRequest.getSubdomainName());
+
+    // Call service - if no exception thrown, it means success
+    AddCookieResponse response = cookieService.addCookie(transactionId, addRequest);
+
+    log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
+            addRequest.getName(), transactionId, addRequest.getSubdomainName());
+
+    // Return success response
+    Map<String, Object> successResponse = new HashMap<>();
+    successResponse.put("success", true);
+    successResponse.put("message", response.getMessage());
+    successResponse.put("transactionId", response.getTransactionId());
+    successResponse.put("name", response.getName());
+    successResponse.put("domain", response.getDomain());
+    successResponse.put("subdomainName", response.getSubdomainName());
+
+    return ResponseEntity.ok(successResponse);
   }
 }
