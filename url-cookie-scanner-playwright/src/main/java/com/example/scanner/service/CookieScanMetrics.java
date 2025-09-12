@@ -9,6 +9,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 @Component
@@ -157,6 +159,11 @@ class ScanPerformanceTracker {
         private int iframesProcessed = 0;
         private String scanPhase = "INITIALIZING";
         private String errorMessage;
+        private int interactions = 0;
+
+        public void incrementInteractions() {
+            this.interactions++;
+        }
 
         public ScanMetrics() {
             this.startTime = Instant.now();
@@ -164,6 +171,16 @@ class ScanPerformanceTracker {
 
         public void markCompleted() {
             this.endTime = Instant.now();
+        }
+
+        private final Map<String, Object> customMetrics = new ConcurrentHashMap<>();
+
+        public void addCustomMetric(String key, Object value) {
+            customMetrics.put(key, value);
+        }
+
+        public Object getCustomMetric(String key) {
+            return customMetrics.get(key);
         }
 
         public void markFailed(String error) {
