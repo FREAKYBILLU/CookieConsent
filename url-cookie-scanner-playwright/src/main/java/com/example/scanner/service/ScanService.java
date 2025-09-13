@@ -1,6 +1,8 @@
 package com.example.scanner.service;
 
 import com.example.scanner.config.ScannerConfigurationProperties;
+import com.example.scanner.config.StoragePatternsConfig;
+import com.example.scanner.config.TrackingPatternsConfig;
 import com.example.scanner.dto.CookieCategorizationResponse;
 import com.example.scanner.dto.CookieDto;
 import com.example.scanner.dto.ScanStatusResponse;
@@ -21,6 +23,7 @@ import com.example.scanner.util.UrlAndCookieUtil.ValidationResult;
 import com.example.scanner.util.SubdomainValidationUtil;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.Cookie;
+import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.WaitUntilState;
 
 import org.slf4j.Logger;
@@ -46,16 +49,17 @@ public class ScanService {
     private final CookieCategorizationService cookieCategorizationService;
     private final ScannerConfigurationProperties config;
     private final CookieScanMetrics metrics;
-    // Add this field to ScanService class
+    private final TrackingPatternsConfig trackingPatterns;
+    private final StoragePatternsConfig storagePatternsConfig;
     private final Map<String, CookieDto> allDiscoveredCookies = new ConcurrentHashMap<>();
 
     private final Map<String, CookieDto> cookiesAwaitingCategorization = new ConcurrentHashMap<>();
 
     // ====== Deep crawl configuration (tune these) ======
-    private static final int DEEP_CRAWL_MAX_DEPTH = 4;       // how deep per branch
-    private static final int DEEP_CRAWL_MAX_PAGES = 60;      // total pages across crawl
-    private static final int DEEP_CRAWL_MAX_PAGES_PER_HOST = 10; // pages per host/subdomain
-    private static final int LINKS_PER_PAGE = 12;            // how many links to extract per page
+    private static final int DEEP_CRAWL_MAX_DEPTH = 2;
+    private static final int DEEP_CRAWL_MAX_PAGES = 15;
+    private static final int DEEP_CRAWL_MAX_PAGES_PER_HOST = 3;
+    private static final int LINKS_PER_PAGE = 5;
 
     // small helper for crawl stack
     private static class UrlDepth {
@@ -64,7 +68,6 @@ public class ScanService {
         UrlDepth(String url, int depth) { this.url = url; this.depth = depth; }
     }
 
-
     @Lazy
     @Autowired
     private ScanService self;
@@ -72,11 +75,19 @@ public class ScanService {
     public ScanService(ScanResultRepository repository,
                        CookieCategorizationService cookieCategorizationService,
                        ScannerConfigurationProperties config,
-                       CookieScanMetrics metrics) {
+                       CookieScanMetrics metrics, TrackingPatternsConfig trackingPatterns, StoragePatternsConfig storagePatternsConfig){
         this.repository = repository;
         this.cookieCategorizationService = cookieCategorizationService;
         this.config = config;
         this.metrics = metrics;
+        this.trackingPatterns = trackingPatterns;
+        this.storagePatternsConfig = storagePatternsConfig;
+        log.info("=== TRACKING PATTERNS LOADED ===");
+        log.info("File extensions count: {}", trackingPatterns.getUrlPatterns().getFileExtensions().size());
+        log.info("File extensions: {}", trackingPatterns.getUrlPatterns().getFileExtensions());
+        log.info("Endpoints count: {}", trackingPatterns.getUrlPatterns().getEndpoints().size());
+        log.info("ID patterns count: {}", trackingPatterns.getParameterPatterns().getIdPatterns().size());
+        log.info("Short cryptic patterns: {}", trackingPatterns.getParameterPatterns().getShortCryptic());
     }
 
     // NEW: Main method with subdomain support
@@ -143,12 +154,6 @@ public class ScanService {
         }
     }
 
-    // ORIGINAL: Single URL method for backward compatibility
-    public String startScan(String url) throws UrlValidationException, ScanExecutionException {
-        return startScan(url, null);
-    }
-
-    // MODIFIED: Added subdomains parameter
     @Async
     public void runScanAsync(String transactionId, String url, List<String> subdomains) {
         log.info("Starting MAXIMUM COOKIE DETECTION scan for transactionId={} URL={} with {} subdomains",
@@ -206,13 +211,6 @@ public class ScanService {
         }
     }
 
-    // Backward compatibility overload
-    @Async
-    public void runScanAsync(String transactionId, String url) {
-        runScanAsync(transactionId, url, null);
-    }
-
-    // MODIFIED: Added subdomains parameter
     private void performMaximumCookieDetection(String url, String transactionId,
                                                ScanPerformanceTracker.ScanMetrics scanMetrics,
                                                List<String> subdomains)
@@ -223,7 +221,6 @@ public class ScanService {
         BrowserContext context = null;
 
         Map<String, CookieDto> discoveredCookies = new ConcurrentHashMap<>();
-        Map<String, CookieDto> cookiesAwaitingCategorizationLocal = new ConcurrentHashMap<>();
         Set<String> processedUrls = new HashSet<>();
 
         try {
@@ -232,7 +229,7 @@ public class ScanService {
 
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
                     .setHeadless(true)
-                    .setTimeout(90000)
+                    .setTimeout(120000)
                     .setSlowMo(200);
 
             browser = playwright.chromium().launch(launchOptions);
@@ -246,10 +243,11 @@ public class ScanService {
                     .setPermissions(Arrays.asList("geolocation", "notifications"));
 
             context = browser.newContext(contextOptions);
-            context.setDefaultTimeout(90000);
-            context.setDefaultNavigationTimeout(90000);
+            context.setDefaultTimeout(30000);
+            context.setDefaultNavigationTimeout(30000);
 
             // ENHANCED response monitoring - ALL HEADERS
+            // ENHANCED response monitoring - MORE comprehensive header checking
             context.onResponse(response -> {
                 try {
                     scanMetrics.incrementNetworkRequests();
@@ -258,37 +256,30 @@ public class ScanService {
 
                     log.debug("Response from: {} with {} headers", responseUrl, headers.size());
 
-                    // Check ALL header variations for cookies
+                    // Check ALL headers for cookie-related content
                     for (Map.Entry<String, String> header : headers.entrySet()) {
                         String headerName = header.getKey().toLowerCase();
                         String headerValue = header.getValue();
 
-                        if (headerName.contains("cookie") || headerName.equals("set-cookie")) {
-                            log.info("COOKIE HEADER FOUND: {} = {}", headerName, headerValue);
+                        // COMPLIANCE-FOCUSED: Only process headers that matter for privacy compliance
+                        if (headerName.equals("set-cookie") ||
+                                headerName.equals("cookie") ||
+                                headerName.equals("x-set-cookie") ||
+                                (headerName.contains("auth") && headerValue.length() > 10) ||
+                                (headerName.contains("session") && headerValue.length() > 10) ||
+                                (headerName.contains("token") && headerValue.length() > 20)) {
+
+                            log.info("COMPLIANCE-RELEVANT HEADER: {} = {}", headerName, headerValue.substring(0, Math.min(50, headerValue.length())));
 
                             String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
                             String responseRoot = UrlAndCookieUtil.extractRootDomain(responseUrl);
 
-                            Source source = siteRoot.equalsIgnoreCase(responseRoot)
-                                    ? Source.FIRST_PARTY
-                                    : Source.THIRD_PARTY;
-
-                            // GENERIC THIRD-PARTY DETECTION
-                            if (source == Source.THIRD_PARTY) {
-                                log.info("THIRD-PARTY COOKIE RESPONSE: {} from {}", headerName, responseUrl);
-
-                                // Extra wait for third-party responses to settle
-                                try {
-                                    Thread.sleep(500);
-                                } catch (InterruptedException e) {
-                                    Thread.currentThread().interrupt();
-                                }
-                            }
-
-                            List<CookieDto> headerCookies = parseAllCookieHeaders(headerValue, responseUrl, responseRoot, source);
+                            // ONLY process if it's from the main domain (compliance focus)
+                            if (siteRoot.equalsIgnoreCase(responseRoot)) {
+                                Source source = Source.FIRST_PARTY;
+                                List<CookieDto> headerCookies = parseAllCookieHeaders(headerValue, responseUrl, responseRoot, source);
 
                             for (CookieDto cookie : headerCookies) {
-                                // Set subdomain name based on response URL
                                 String subdomainName = determineSubdomainNameFromUrl(responseUrl, url, subdomains);
                                 cookie.setSubdomainName(subdomainName);
 
@@ -299,12 +290,28 @@ public class ScanService {
                                     saveIncrementalCookieWithFlush(transactionId, cookie);
                                     scanMetrics.incrementCookiesFound(source.name());
                                     metrics.recordCookieDiscovered(source.name());
-                                    log.info("ADDED HTTP COOKIE: {} from {} (Source: {}, Subdomain: {})",
+                                    log.info("ADDED HEADER COOKIE: {} from {} (Source: {}, Subdomain: {})",
                                             cookie.getName(), responseUrl, source, subdomainName);
                                 }
                             }
                         }
+                    }}
+
+                    // Check for tracking responses and extract URL parameters
+                    if (isTrackingResponse(responseUrl)) {
+                        log.info("GENERIC TRACKING RESPONSE: {}", responseUrl);
+                        extractTrackingDataFromUrl(responseUrl, url, discoveredCookies, transactionId, scanMetrics, subdomains);
+
+                        // Add extra wait for tracking responses
+                        if (response.status() == 200) {
+                            try {
+                                Thread.sleep(1000);
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        }
                     }
+
                 } catch (Exception e) {
                     log.warn("Error processing response cookies: {}", e.getMessage());
                 }
@@ -321,50 +328,168 @@ public class ScanService {
             // === PHASE 1: INITIAL LOAD WITH EXTENDED WAIT ===
             scanMetrics.setScanPhase("LOADING_PAGE");
             log.info("=== PHASE 1: Loading main page with extended wait ===");
-            Response response = page.navigate(url, new Page.NavigateOptions().setWaitUntil(WaitUntilState.NETWORKIDLE));
-
+            Response response = null;
+            try {
+                // Try networkidle first (30 second timeout)
+                response = page.navigate(url, new Page.NavigateOptions()
+                        .setWaitUntil(WaitUntilState.NETWORKIDLE)
+                        .setTimeout(30000));
+            } catch (TimeoutError e) {
+                log.warn("Networkidle timeout, trying with domcontentloaded for {}", url);
+                try {
+                    // Fallback to domcontentloaded (faster but less complete)
+                    response = page.navigate(url, new Page.NavigateOptions()
+                            .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
+                            .setTimeout(15000));
+                } catch (TimeoutError e2) {
+                    log.warn("Domcontentloaded timeout, trying basic load for {}", url);
+                    // Last resort - just wait for basic load
+                    response = page.navigate(url, new Page.NavigateOptions()
+                            .setWaitUntil(WaitUntilState.LOAD)
+                            .setTimeout(10000));
+                }
+            }
             if (response == null || !response.ok()) {
                 throw new ScanExecutionException("Failed to load page. Status: " + (response != null ? response.status() : "No response"));
             }
 
-            // Extended wait for all resources to load
-            page.waitForTimeout(8000);
+            page.waitForTimeout(1000);
 
-            // SPECIAL WAIT FOR EMBEDDED CONTENT
+            // AGGRESSIVE: Multiple cookie capture passes
+            for (int pass = 1; pass <= 3; pass++) {
+                log.info("Cookie capture pass {} of 3", pass);
+                captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+
+                if (pass < 3) {
+                    page.waitForTimeout(2000); // Wait between passes
+                }
+            }
+
             if ((Boolean) page.evaluate("document.querySelectorAll('iframe, embed, object').length > 0")) {
                 log.info("Embedded content detected - extending wait time");
-                page.waitForTimeout(5000);
+                page.waitForTimeout(3000);
             }
 
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+//            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics);
 
-            // === PHASE 2: FORCE EXTERNAL RESOURCE LOADING ===
+            // === PHASE 2: GENERIC EXTERNAL RESOURCE LOADING ===
             scanMetrics.setScanPhase("LOADING_EXTERNAL_RESOURCES");
-            log.info("=== PHASE 2: Force loading external tracking resources ===");
+            log.info("=== PHASE 2: Generic external resource detection and triggering ===");
 
             page.evaluate("""
-                // Force load common tracking services
-                (function() {
-                    // Create tracking pixels manually
-                    let trackingUrls = [
-                        'https://www.google-analytics.com/collect?v=1&t=pageview&tid=UA-123456-1&cid=555',
-                        'https://analytics.google.com/analytics/web/',
-                        'https://googleads.g.doubleclick.net/pagead/viewthroughconversion/123456/',
-                        'https://www.facebook.com/tr?id=123456&ev=PageView&noscript=1'
-                    ];
-                    
-                    trackingUrls.forEach(url => {
-                        let img = document.createElement('img');
-                        img.src = url;
+    // ENHANCED: Generic pixel tracker and authentication detection
+    (function() {
+        console.log('Starting enhanced resource detection...');
+        
+        // 1. Find ALL external resources
+        const allExternalResources = Array.from(document.querySelectorAll(`
+            script[src], img[src], iframe[src], link[href], 
+            embed[src], object[data], video[src], audio[src],
+            [src*="//"], [href*="//"], [data*="//"]
+        `)).filter(el => {
+            const url = el.src || el.href || el.data || '';
+            return url && typeof url === 'string' && url.includes('//') && !url.includes(window.location.hostname);
+        });
+        
+        console.log('Found external resources:', allExternalResources.length);
+        
+        // 2. Extract unique external domains
+        const externalDomains = [...new Set(
+            allExternalResources.map(el => {
+                try {
+                    const url = el.src || el.href || el.data || '';
+                    if (url && typeof url === 'string') {
+                        return new URL(url).origin;
+                    }
+                    return null;
+                } catch(e) { 
+                    return null; 
+                }
+            }).filter(Boolean)
+        )];
+        
+        console.log('Unique external domains:', externalDomains.length);
+        
+        // 3. GENERIC: Comprehensive pixel patterns
+        const pixelPatterns = [
+            '/c.gif', '/px.gif', '/pixel.gif', '/collect', '/beacon',
+            '/track', '/analytics', '/log', '/hit', '/event',
+            '/p.gif', '/b.gif', '/i.gif', '/1x1.gif', '/pixel.png',
+            '/tr', '/impression', '/click', '/conversion'
+        ];
+        
+        const trackingParams = [
+            '?t=' + Date.now(),
+            '?r=' + Math.random(),
+            '?pid=' + Math.random().toString(36).substr(2, 9),
+            '?uid=' + Math.random().toString(36).substr(2, 16),
+            '?v=1&t=pageview',
+            '?action=pageview',
+            '?event=page_view',
+            ''
+        ];
+        
+        // 4. GENERIC: Common authentication endpoints
+        const authEndpoints = [
+            '/oauth/authorize', '/auth/login', '/sso', '/login',
+            '/connect', '/token', '/me', '/userinfo'
+        ];
+        
+        // Try pixel patterns on ALL external domains
+        externalDomains.forEach(domain => {
+            pixelPatterns.forEach(pattern => {
+                trackingParams.forEach(params => {
+                    try {
+                        const img = document.createElement('img');
+                        img.src = domain + pattern + params;
                         img.style.display = 'none';
                         img.style.width = '1px';
                         img.style.height = '1px';
+                        img.onload = () => console.log('Pixel loaded:', domain + pattern);
+                        img.onerror = () => {};
                         document.body.appendChild(img);
-                    });
-                    
-                    console.log('External resources loaded');
-                })();
-            """);
+                    } catch(e) {}
+                });
+            });
+            
+            // Try authentication endpoints (for cookie setting)
+            authEndpoints.forEach(endpoint => {
+                try {
+                    const img = document.createElement('img');
+                    img.src = domain + endpoint + '?check=' + Date.now();
+                    img.style.display = 'none';
+                    img.style.width = '1px';
+                    img.style.height = '1px';
+                    img.onerror = () => {};
+                    document.body.appendChild(img);
+                } catch(e) {}
+            });
+        });
+        
+        // 5. Trigger existing resources more aggressively
+        allExternalResources.forEach(resource => {
+            try {
+                ['load', 'loadstart', 'loadend', 'progress'].forEach(eventType => {
+                    resource.dispatchEvent(new Event(eventType, {bubbles: true}));
+                });
+                
+                if (resource.tagName === 'SCRIPT' && resource.src) {
+                    const newScript = document.createElement('script');
+                    newScript.src = resource.src + (resource.src.includes('?') ? '&' : '?') + 
+                                   'cache_bust=' + Date.now();
+                    document.head.appendChild(newScript);
+                }
+            } catch(e) {}
+        });
+        
+        console.log('Enhanced resource detection completed');
+    })();
+""");
+
+            // LONGER WAIT: Give more time for aggressive pixel loading
+            page.waitForTimeout(3000); // Increased from 5000
+            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
 
             page.waitForTimeout(5000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
@@ -425,193 +550,304 @@ public class ScanService {
             if (consentHandled) {
                 page.waitForTimeout(5000);
                 captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+                captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics);
+                log.info("Captured storage after consent handling");
             }
 
-            // === PHASE 4: INTENSIVE USER SIMULATION ===
-            scanMetrics.setScanPhase("USER_INTERACTIONS");
-            log.info("=== PHASE 4: Intensive user interaction simulation ===");
+            // === NEW: GENERIC AUTHENTICATION FLOW DETECTION ===
+            scanMetrics.setScanPhase("AUTHENTICATION_DETECTION");
+            log.info("=== PHASE 3.5: Generic authentication flow detection ===");
+            detectAndTriggerAuthenticationFlows(page, url, transactionId, discoveredCookies, scanMetrics);
+            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics); // NEW
+            log.info("Captured storage after authentication triggers");
 
-            // Multi-stage scrolling with analytics triggers
-            for (int i = 0; i <= 10; i++) {
-                double scrollPercent = i * 0.1;
+            // === NEW: SOCIAL WIDGET DETECTION ===
+            scanMetrics.setScanPhase("SOCIAL_WIDGETS");
+            log.info("=== PHASE 3.6: Social widget detection ===");
+            detectAndTriggerSocialWidgets(page, url, transactionId, discoveredCookies, scanMetrics);
+            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics); // NEW
+            log.info("Captured storage after social widget detection");
+
+            // === PHASE 4: AGGRESSIVE USER SIMULATION ===
+            scanMetrics.setScanPhase("USER_INTERACTIONS");
+            log.info("=== PHASE 4: Aggressive user interaction simulation ===");
+
+            // AGGRESSIVE: More comprehensive scrolling
+            // AGGRESSIVE: More comprehensive scrolling
+            for (int i = 0; i <= 8; i++) {
+                double scrollPercent = i * 0.05;
                 page.evaluate(String.format("window.scrollTo(0, document.body.scrollHeight * %f)", scrollPercent));
 
-                // Trigger scroll events
                 page.evaluate("""
-                    window.dispatchEvent(new Event('scroll'));
-                    if (typeof gtag === 'function') {
-                        gtag('event', 'scroll', {
-                            percent_scrolled: Math.round(window.pageYOffset / document.body.scrollHeight * 100)
-                        });
-                    }
-                """);
+        window.dispatchEvent(new Event('scroll'));
+        window.dispatchEvent(new Event('resize'));
+        
+        if (typeof gtag === 'function') {
+            gtag('event', 'scroll', {
+                percent_scrolled: Math.round(window.pageYOffset / document.body.scrollHeight * 100)
+            });
+        }
+    """);
 
-                page.waitForTimeout(500);
+                page.waitForTimeout(300);
+
+                // NEW: Capture storage every 2 scroll steps
+                if (i % 2 == 0 && i > 0) {
+                    captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics);
+                    log.debug("Captured storage at scroll step {}", i);
+                }
             }
 
-            // Mouse movements and clicks
-            page.mouse().move(200, 200);
-            page.waitForTimeout(300);
-            page.mouse().move(800, 400);
-            page.waitForTimeout(300);
-            page.mouse().move(400, 600);
+            // AGGRESSIVE: Click on more elements
+            page.evaluate("""
+            // Find and interact with MORE element types
+            const interactiveSelectors = [
+                'button', 'a', 'input', 'textarea', 'select',
+                '[onclick]', '[role="button"]', '[tabindex]',
+                '.btn', '.button', '.link', '.nav-item',
+                'nav *', 'header *', 'footer *',
+                '[data-*]', '[id*="button"]', '[class*="click"]'
+            ];
+            
+            interactiveSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    Array.from(elements).slice(0, 5).forEach(el => {
+                        try {
+                            // Multiple interaction types
+                            ['mouseover', 'mouseenter', 'focus', 'click'].forEach(eventType => {
+                                el.dispatchEvent(new MouseEvent(eventType, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }));
+                            });
+                        } catch(e) {}
+                    });
+                } catch(e) {}
+            });
+        """);
 
-            page.waitForTimeout(3000);
+            // AGGRESSIVE: Mouse movements in more patterns
+            for (int i = 0; i < 4; i++) {
+                int x = 200 + (i * 100);
+                int y = 200 + (i * 50);
+                page.mouse().move(x, y);
+                page.waitForTimeout(200);
+            }
+
+            page.waitForTimeout(5000); // Longer wait after interactions
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics); // NEW
+            log.info("Captured storage after user interactions");
 
             // === PHASE 5: ANALYTICS EVENT BOMBING ===
             scanMetrics.setScanPhase("TRIGGERING_ANALYTICS");
-            log.info("=== PHASE 5: Analytics event bombing ===");
+            log.info("=== PHASE 5: Generic analytics event triggering ===");
 
             page.evaluate("""
-                // Fire all possible analytics events
-                let events = ['pageview', 'click', 'scroll', 'engagement', 'conversion', 'purchase'];
-                
-                events.forEach(eventName => {
-                    // Google Analytics
-                    if (typeof gtag === 'function') {
-                        gtag('event', eventName, {
-                            event_category: 'engagement',
-                            event_label: 'cookie_scan',
-                            value: 1
-                        });
-                    }
+    // GENERIC - Trigger whatever analytics functions exist on the page
+    (function() {
+        console.log('Starting generic analytics triggering...');
+        
+        // Common analytics function names to look for
+        const analyticsFunctions = [
+            'gtag', 'ga', '_gaq', 'fbq', '_fbq', 'analytics', 'track',
+            'mixpanel', 'amplitude', '_paq', 'snowplow', 'segment'
+        ];
+        
+        // Try to trigger existing analytics functions
+        analyticsFunctions.forEach(funcName => {
+            if (typeof window[funcName] === 'function') {
+                try {
+                    console.log('Found analytics function:', funcName);
                     
-                    if (typeof ga === 'function') {
-                        ga('send', 'event', 'engagement', eventName, 'cookie_scan', 1);
+                    // Try common event patterns for each function type
+                    if (funcName === 'gtag') {
+                        window[funcName]('event', 'page_view');
+                        window[funcName]('event', 'scroll', {percent_scrolled: 50});
+                    } else if (funcName.includes('fb')) {
+                        window[funcName]('track', 'PageView');
+                    } else if (funcName === 'ga') {
+                        window[funcName]('send', 'pageview');
+                        window[funcName]('send', 'event', 'engagement', 'scroll', 'generic', 1);
+                    } else {
+                        // Generic function call
+                        window[funcName]('send', 'pageview');
                     }
-                    
-                    // Facebook Pixel
-                    if (typeof fbq === 'function') {
-                        fbq('track', 'CustomEvent', {eventName: eventName});
-                    }
-                });
-                
-                // Dispatch DOM events
-                ['load', 'DOMContentLoaded', 'resize', 'focus', 'blur', 'beforeunload'].forEach(evt => {
-                    window.dispatchEvent(new Event(evt));
-                });
-                
-                // Force cookie creation
-                document.cookie = 'test_cookie=1; path=/';
-                document.cookie = 'analytics_test=engaged; path=/';
-                
-                console.log('Analytics bombing completed');
-            """);
+                } catch(e) {
+                    console.log('Error calling', funcName, ':', e.message);
+                }
+            }
+        });
+        
+        // Generic DOM event triggering
+        const events = ['scroll', 'click', 'focus', 'blur', 'load', 'resize', 'beforeunload'];
+        events.forEach(eventType => {
+            try {
+                window.dispatchEvent(new Event(eventType, {bubbles: true}));
+            } catch(e) {}
+        });
+        
+        // Trigger any custom tracking events found in page
+        if (window.dataLayer && Array.isArray(window.dataLayer)) {
+            window.dataLayer.push({'event': 'generic_page_view'});
+        }
+        
+        console.log('Generic analytics triggering completed');
+    })();
+""");
 
             page.waitForTimeout(5000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics); // NEW
+            log.info("Captured storage after user interactions");
 
             // === PHASE 6: SUBDOMAIN AND CROSS-DOMAIN REQUESTS ===
             scanMetrics.setScanPhase("CROSS_DOMAIN_REQUESTS");
             log.info("=== PHASE 6: Cross-domain and subdomain requests ===");
 
             // Generic subdomain detection for any domain
+            // GENERIC - Dynamic subdomain discovery
             String rootDomain = UrlAndCookieUtil.extractRootDomain(url);
-            String[] commonSubdomains = {"www", "api", "app", "mobile", "m", "accounts", "secure", "login"};
-
-            for (String subdomain : commonSubdomains) {
-                try {
-                    String subdomainUrl = url.startsWith("https") ? "https://" : "http://";
-                    subdomainUrl += subdomain + "." + rootDomain;
-
-                    log.info("Trying subdomain: {}", subdomainUrl);
-                    page.navigate(subdomainUrl, new Page.NavigateOptions().setTimeout(8000));
-                    page.waitForTimeout(2000);
-                    captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-                    break; // Only try first successful one
-                } catch (Exception e) {
-                    log.debug("Failed to visit subdomain: {}", e.getMessage());
-                }
-            }
+//            List<String> discoveredSubdomainHosts = discoverSubdomainsFromPage(page, rootDomain);
+//
+//            for (String subdomainHost : discoveredSubdomainHosts) {
+//                try {
+//                    String subdomainUrl = url.startsWith("https") ? "https://" : "http://";
+//                    subdomainUrl += subdomainHost;
+//
+//                    log.info("Trying dynamically discovered subdomain: {}", subdomainUrl);
+//                    page.navigate(subdomainUrl, new Page.NavigateOptions().setTimeout(8000));
+//                    page.waitForTimeout(2000);
+//                    captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+//                    break; // Only try first successful one
+//                } catch (Exception e) {
+//                    log.debug("Failed to visit discovered subdomain: {}", e.getMessage());
+//                }
+//            }
 
             // === PHASE 7: HYPERLINK DISCOVERY AND SCANNING ===
-            discoverAndScanHyperlinks(page, url, transactionId, discoveredCookies, scanMetrics);
-
-            try {
-                // use config if you want; otherwise pass a fixed depth
-                int deepDepth = Math.min(DEEP_CRAWL_MAX_DEPTH, 4); // tune as required
-                performDeepCrawl(page, context, url, transactionId, discoveredCookies, scanMetrics, deepDepth);
-            } catch (Exception e) {
-                log.warn("Deep crawl failed: {}", e.getMessage());
-            }
+//            discoverAndScanHyperlinks(page, url, transactionId, discoveredCookies, scanMetrics);
+//
+//            try {
+//                // use config if you want; otherwise pass a fixed depth
+//                int deepDepth = Math.min(DEEP_CRAWL_MAX_DEPTH, 4); // tune as required
+//                performDeepCrawl(page, context, url, transactionId, discoveredCookies, scanMetrics, deepDepth);
+//            } catch (Exception e) {
+//                log.warn("Deep crawl failed: {}", e.getMessage());
+//            }
 
 
             // === PHASE 8: IFRAME AND EMBED DETECTION ===
             handleIframesAndEmbeds(page, url, transactionId, discoveredCookies, scanMetrics);
 
             // === NEW PHASE 9: SCAN PROVIDED SUBDOMAINS ===
+            // === COMPLIANCE-FOCUSED SUBDOMAIN SCANNING ===
             if (subdomains != null && !subdomains.isEmpty()) {
-                scanMetrics.setScanPhase("SCANNING_SUBDOMAINS");
-                log.info("=== PHASE 9: Scanning {} provided subdomains ===", subdomains.size());
+                // LIMIT: Only scan essential subdomains for compliance
+                int maxSubdomainsToScan = Math.min(subdomains.size(), 2); // Maximum 2 subdomains
 
-                for (int i = 0; i < subdomains.size(); i++) {
+                scanMetrics.setScanPhase("SCANNING_SUBDOMAINS");
+                log.info("=== COMPLIANCE: Scanning {} essential subdomains (limited from {}) ===",
+                        maxSubdomainsToScan, subdomains.size());
+
+                for (int i = 0; i < maxSubdomainsToScan; i++) {
                     String subdomain = subdomains.get(i);
                     String subdomainName = SubdomainValidationUtil.extractSubdomainName(subdomain, rootDomain);
 
-                    log.info("=== SUBDOMAIN {}/{}: {} (Name: {}) ===", i+1, subdomains.size(), subdomain, subdomainName);
+                    log.info("=== ESSENTIAL SUBDOMAIN {}/{}: {} (Name: {}) ===",
+                            i+1, maxSubdomainsToScan, subdomain, subdomainName);
 
                     try {
-                        // Navigate to subdomain in SAME browser session
+                        // FASTER NAVIGATION: Use DOMCONTENTLOADED instead of NETWORKIDLE
                         Response subdomainResponse = page.navigate(subdomain, new Page.NavigateOptions()
-                                .setWaitUntil(WaitUntilState.NETWORKIDLE)
-                                .setTimeout(30000));
+                                .setWaitUntil(WaitUntilState.DOMCONTENTLOADED) // FASTER
+                                .setTimeout(15000)); // SHORTER timeout
 
                         if (subdomainResponse != null && subdomainResponse.ok()) {
-                            page.waitForTimeout(8000);
+                            // SHORTER WAIT: 3 seconds instead of 8
+                            page.waitForTimeout(3000);
 
-                            // Capture initial cookies
+                            // ESSENTIAL CAPTURES ONLY
                             captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
                                     transactionId, scanMetrics, subdomainName);
 
-                            // Basic consent and interaction for subdomain
+                            // COMPLIANCE-FOCUSED: Capture storage immediately
+                            captureStorageItemsSelectively(page, subdomain, discoveredCookies, transactionId, scanMetrics);
+
+                            // SIMPLIFIED CONSENT: Quick attempt only
                             try {
-                                boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page, 10000);
+                                boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page, 5000); // SHORTER
                                 if (subdomainConsentHandled) {
-                                    page.waitForTimeout(3000);
+                                    page.waitForTimeout(2000); // SHORTER wait
                                     captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
                                             transactionId, scanMetrics, subdomainName);
+                                    captureStorageItemsSelectively(page, subdomain, discoveredCookies, transactionId, scanMetrics);
+                                    log.info("Captured cookies after consent on subdomain: {}", subdomainName);
                                 }
-
-                                // Quick scroll and interaction
-                                page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)");
-                                page.waitForTimeout(2000);
-                                page.evaluate("window.scrollTo(0, 0)");
-                                page.waitForTimeout(1000);
-
-                                // Trigger some analytics events
-                                page.evaluate("""
-                                    if (typeof gtag === 'function') {
-                                        gtag('event', 'page_view');
-                                    }
-                                    window.dispatchEvent(new Event('scroll'));
-                                """);
-                                page.waitForTimeout(2000);
-
-                                // Final capture for this subdomain
-                                captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
-                                        transactionId, scanMetrics, subdomainName);
-
                             } catch (Exception e) {
-                                log.debug("Subdomain interaction failed for {}: {}", subdomain, e.getMessage());
+                                log.debug("Subdomain consent handling failed for {}: {}", subdomain, e.getMessage());
                             }
 
-                            log.info("Completed scanning subdomain: {} (Total cookies so far: {})",
+                            // SKIP: No extensive scrolling, clicking, analytics bombing
+                            // These create noise for compliance scanning
+
+                            log.info("Completed essential scanning of subdomain: {} (Total cookies: {})",
                                     subdomain, discoveredCookies.size());
+
                         } else {
-                            log.warn("Failed to load subdomain: {} (Status: {})", subdomain,
+                            log.warn("Failed to load essential subdomain: {} (Status: {})", subdomain,
                                     subdomainResponse != null ? subdomainResponse.status() : "No response");
                         }
                     } catch (Exception e) {
-                        log.warn("Error scanning subdomain {}: {}", subdomain, e.getMessage());
+                        log.warn("Error scanning essential subdomain {}: {}", subdomain, e.getMessage());
                     }
+                }
+
+                // INFORMATION: Log what was skipped
+                if (subdomains.size() > maxSubdomainsToScan) {
+                    log.info("COMPLIANCE: Skipped {} subdomains for focused scanning",
+                            subdomains.size() - maxSubdomainsToScan);
                 }
             }
 
-            // === FINAL CAPTURE ===
+            // === AGGRESSIVE FINAL CAPTURE ===
             scanMetrics.setScanPhase("FINAL_CAPTURE");
-            page.waitForTimeout(8000);
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+            log.info("=== AGGRESSIVE: Multiple final cookie captures ===");
+
+            // Capture cookies multiple times with different waits
+            int[] waitTimes = {1000, 3000}; // Different wait intervals
+            for (int i = 0; i < waitTimes.length; i++) {
+                log.info("Final capture pass {} of {}, waiting {}ms", i+1, waitTimes.length, waitTimes[i]);
+                page.waitForTimeout(waitTimes[i]);
+
+                int beforeCount = discoveredCookies.size();
+                captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
+                int afterCount = discoveredCookies.size();
+
+                log.info("Final pass {} captured {} new cookies (total: {})",
+                        i+1, afterCount - beforeCount, afterCount);
+            }
+
+            // FINAL: One more aggressive resource trigger
+            page.evaluate("""
+            // Final attempt to trigger any remaining tracking
+            Array.from(document.querySelectorAll('*')).forEach(el => {
+                ['focus', 'blur', 'mouseover', 'mouseout'].forEach(event => {
+                    try {
+                        el.dispatchEvent(new Event(event, {bubbles: true}));
+                    } catch(e) {}
+                });
+            });
+            
+            // Final scroll and resize triggers
+            window.dispatchEvent(new Event('beforeunload'));
+            window.dispatchEvent(new Event('pagehide'));
+        """);
+
+            page.waitForTimeout(5000);
+
             categorizeAllCookiesAtOnce();
             log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}, Subdomains scanned: {}",
                     discoveredCookies.size(), processedUrls.size(), subdomains != null ? subdomains.size() : 0);
@@ -622,6 +858,44 @@ public class ScanService {
             throw new ScanExecutionException("Unexpected error during scan: " + e.getMessage());
         } finally {
             cleanupResources(context, browser, playwright);
+        }
+    }
+
+    private void performFormInteractionWithStorageCapture(Page page, String url, String transactionId,
+                                                          Map<String, CookieDto> discoveredCookies,
+                                                          ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        try {
+            log.info("=== COMPLIANCE: Form interaction with real-time storage capture ===");
+
+            // Find and interact with forms
+            page.evaluate("""
+            const forms = document.querySelectorAll('form');
+            const inputs = document.querySelectorAll('input[type="text"], input[type="email"], input[type="search"]');
+            
+            forms.forEach(form => {
+                try {
+                    ['focus', 'mouseover'].forEach(eventType => {
+                        form.dispatchEvent(new Event(eventType, {bubbles: true}));
+                    });
+                } catch(e) {}
+            });
+            
+            inputs.forEach(input => {
+                try {
+                    input.focus();
+                    input.dispatchEvent(new Event('focus', {bubbles: true}));
+                    input.dispatchEvent(new Event('input', {bubbles: true}));
+                } catch(e) {}
+            });
+        """);
+
+            page.waitForTimeout(2000);
+
+            // Capture storage after form interactions
+            captureStorageItemsSelectively(page, url, discoveredCookies, transactionId, scanMetrics);
+
+        } catch (Exception e) {
+            log.debug("Error in form interaction monitoring: {}", e.getMessage());
         }
     }
 
@@ -701,7 +975,144 @@ public class ScanService {
         }
     }
 
-    // === ALL YOUR ORIGINAL METHODS - UNCHANGED ===
+    // === NEW GENERIC AUTHENTICATION DETECTION ===
+    private void detectAndTriggerAuthenticationFlows(Page page, String url, String transactionId,
+                                                     Map<String, CookieDto> discoveredCookies,
+                                                     ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        try {
+            log.info("=== GENERIC: Detecting authentication flows ===");
+
+            // Detect and interact with authentication elements
+            List<String> authTriggers = (List<String>) page.evaluate("""
+            // Generic OAuth and authentication detection
+            Array.from(document.querySelectorAll(`
+                a[href*="oauth"], a[href*="login"], a[href*="signin"], a[href*="sign-in"],
+                a[href*="auth"], a[href*="sso"], a[href*="account"], 
+                button[class*="login"], button[class*="signin"], button[class*="auth"],
+                [data-provider], [data-oauth], [class*="oauth"], [id*="oauth"],
+                [href*="google"], [href*="facebook"], [href*="microsoft"], [href*="linkedin"],
+                [href*="twitter"], [href*="github"], [href*="apple"]
+            `))
+            .map(el => {
+                const text = (el.textContent || el.innerText || '').toLowerCase();
+                const href = el.href || '';
+                const classes = el.className || '';
+                
+                return {
+                    text: text,
+                    href: href,
+                    type: el.tagName.toLowerCase(),
+                    classes: classes
+                };
+            })
+            .filter(item => item.href || item.text.includes('login') || item.text.includes('sign'))
+            .slice(0, 10);
+        """);
+
+            log.info("Found {} authentication triggers", authTriggers.size());
+
+            // Simulate clicking authentication elements (without completing login)
+            page.evaluate("""
+            // Generic authentication trigger simulation
+            const authSelectors = [
+                'a[href*="oauth"]', 'a[href*="login"]', 'a[href*="signin"]',
+                'button[class*="login"]', '[data-provider]', '[class*="oauth"]'
+            ];
+            
+            authSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    Array.from(elements).slice(0, 3).forEach(el => {
+                        try {
+                            // Trigger authentication-related events
+                            ['mouseover', 'mouseenter', 'focus'].forEach(eventType => {
+                                el.dispatchEvent(new MouseEvent(eventType, {
+                                    bubbles: true,
+                                    cancelable: true,
+                                    view: window
+                                }));
+                            });
+                            
+                            // Scroll element into view to trigger lazy loading
+                            el.scrollIntoView({behavior: 'smooth', block: 'center'});
+                            
+                        } catch(e) {
+                            console.debug('Auth trigger error:', e.message);
+                        }
+                    });
+                } catch(e) {}
+            });
+        """);
+
+            page.waitForTimeout(3000);
+            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
+
+        } catch (Exception e) {
+            log.debug("Error in authentication flow detection: {}", e.getMessage());
+        }
+    }
+
+    // === NEW SOCIAL WIDGET DETECTION ===
+    private void detectAndTriggerSocialWidgets(Page page, String url, String transactionId,
+                                               Map<String, CookieDto> discoveredCookies,
+                                               ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        try {
+            log.info("=== GENERIC: Detecting social widgets ===");
+
+            // Detect social sharing buttons and widgets
+            page.evaluate("""
+            // Generic social widget detection and triggering
+            const socialSelectors = [
+                // Facebook
+                '.fb-like', '.fb-share', '[data-href*="facebook"]', 'iframe[src*="facebook"]',
+                // LinkedIn  
+                '.linkedin-share', '[data-provider="linkedin"]', 'iframe[src*="linkedin"]',
+                // Twitter
+                '.twitter-share', '[data-provider="twitter"]', 'iframe[src*="twitter"]',
+                // Generic social
+                '[class*="social"]', '[class*="share"]', '[data-social]'
+            ];
+            
+            socialSelectors.forEach(selector => {
+                try {
+                    const elements = document.querySelectorAll(selector);
+                    Array.from(elements).forEach(el => {
+                        try {
+                            // Trigger social widget events
+                            ['load', 'focus', 'mouseover'].forEach(eventType => {
+                                el.dispatchEvent(new Event(eventType, {bubbles: true}));
+                            });
+                            
+                            // Scroll into view for lazy loading
+                            el.scrollIntoView({behavior: 'smooth', block: 'center'});
+                            
+                        } catch(e) {}
+                    });
+                } catch(e) {}
+            });
+            
+            // Force load common social tracking pixels
+            const socialDomains = [
+                'connect.facebook.net', 'platform.linkedin.com', 'platform.twitter.com'
+            ];
+            
+            socialDomains.forEach(domain => {
+                try {
+                    const script = document.createElement('script');
+                    script.src = 'https://' + domain + '/track?t=' + Date.now();
+                    script.onerror = () => {}; // Suppress errors
+                    document.head.appendChild(script);
+                } catch(e) {}
+            });
+        """);
+
+            page.waitForTimeout(4000);
+            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
+
+        } catch (Exception e) {
+            log.debug("Error in social widget detection: {}", e.getMessage());
+        }
+    }
 
     private void captureBrowserCookiesEnhanced(BrowserContext context, String scanUrl,
                                                Map<String, CookieDto> discoveredCookies, String transactionId,
@@ -740,6 +1151,9 @@ public class ScanService {
         List<CookieDto> cookies = new ArrayList<>();
 
         try {
+            // AGGRESSIVE: Try multiple parsing strategies
+
+            // Strategy 1: Standard comma-separated parsing
             String[] cookieParts = cookieHeader.split(",(?=\\s*[^;]*=)");
 
             for (String cookiePart : cookieParts) {
@@ -751,18 +1165,57 @@ public class ScanService {
                     }
                 }
             }
+
+            // Strategy 2: If no cookies found, try semicolon separation
+            if (cookies.isEmpty()) {
+                String[] semiColonParts = cookieHeader.split(";");
+                for (String part : semiColonParts) {
+                    if (part.contains("=")) {
+                        CookieDto cookie = parseSetCookieHeader(part.trim(), scanUrl, responseDomain, source);
+                        if (cookie != null) {
+                            cookies.add(cookie);
+                        }
+                    }
+                }
+            }
+
+            // Strategy 3: If still no cookies, try space separation
+            if (cookies.isEmpty()) {
+                String[] spaceParts = cookieHeader.split("\\s+");
+                for (String part : spaceParts) {
+                    if (part.contains("=") && !part.contains("http")) {
+                        CookieDto cookie = parseSetCookieHeader(part.trim(), scanUrl, responseDomain, source);
+                        if (cookie != null) {
+                            cookies.add(cookie);
+                        }
+                    }
+                }
+            }
+
+            // Strategy 4: If header doesn't look like standard cookie, create generic cookie
+//            if (cookies.isEmpty() && cookieHeader.length() > 0 && cookieHeader.length() < 100) {
+//                // Might be a tracking ID or session token
+//                String cookieName = "header_value_" + Math.abs(cookieHeader.hashCode());
+//                CookieDto genericCookie = new CookieDto(
+//                        cookieName, scanUrl, responseDomain, "/", null,
+//                        false, false, null, source
+//                );
+//                genericCookie.setDescription("Non-standard header value: " + cookieHeader.substring(0, Math.min(50, cookieHeader.length())));
+//                cookies.add(genericCookie);
+//            }
+
         } catch (Exception e) {
             log.warn("Error parsing cookie headers: {}", e.getMessage());
-            CookieDto cookie = parseSetCookieHeader(cookieHeader, scanUrl, responseDomain, source);
-            if (cookie != null) {
-                cookies.add(cookie);
+
+            // Fallback: Create a single cookie from the entire header
+            CookieDto fallbackCookie = parseSetCookieHeader(cookieHeader, scanUrl, responseDomain, source);
+            if (fallbackCookie != null) {
+                cookies.add(fallbackCookie);
             }
         }
 
         return cookies;
     }
-
-
 
     private CookieDto mapPlaywrightCookie(Cookie playwrightCookie, String scanUrl, String siteRoot) {
         Instant expiry = playwrightCookie.expires != null ?
@@ -911,11 +1364,96 @@ public class ScanService {
                                         ScanPerformanceTracker.ScanMetrics scanMetrics) {
         try {
             scanMetrics.setScanPhase("IFRAME_DETECTION");
-            log.info("=== PHASE 8: Detecting and processing iframes/embeds ===");
+            log.info("=== PHASE 8: ENHANCED iframe/embed detection ===");
+
+            page.waitForTimeout(3000);
 
             List<IframeInfo> iframes = detectAllIframes(page);
             log.info("Found {} iframes/embeds on page", iframes.size());
 
+            // ENHANCED: Better frame processing
+            for (Frame frame : page.frames()) {
+                try {
+                    String frameUrl = frame.url();
+                    if (frameUrl == null || frameUrl.equals("about:blank") || frameUrl.equals(url)) {
+                        continue;
+                    }
+
+                    log.info("Processing frame: {}", frameUrl);
+
+                    try {
+                        frame.waitForLoadState(LoadState.NETWORKIDLE,
+                                new Frame.WaitForLoadStateOptions().setTimeout(10000));
+                    } catch (Exception e) {
+                        log.debug("Frame load timeout: {}", frameUrl);
+                    }
+
+                    // ENHANCED: Generic authentication iframe detection
+                    try {
+                        frame.evaluate("""
+                        // Generic authentication detection within iframe
+                        if (window.location.hostname.includes('login') || 
+                            window.location.hostname.includes('auth') ||
+                            window.location.hostname.includes('oauth') ||
+                            document.title.toLowerCase().includes('sign') ||
+                            document.title.toLowerCase().includes('login')) {
+                            
+                            // Trigger authentication events
+                            window.dispatchEvent(new Event('load'));
+                            window.dispatchEvent(new Event('focus'));
+                            
+                            // Try to find and interact with auth elements
+                            const authElements = document.querySelectorAll(`
+                                button, input[type="submit"], [role="button"],
+                                a[href*="continue"], a[href*="next"]
+                            `);
+                            
+                            authElements.forEach(el => {
+                                try {
+                                    ['mouseover', 'focus'].forEach(eventType => {
+                                        el.dispatchEvent(new MouseEvent(eventType, {
+                                            bubbles: true, cancelable: true, view: window
+                                        }));
+                                    });
+                                } catch(e) {}
+                            });
+                        }
+                    """);
+                    } catch (Exception e) {
+                        // Cross-origin iframe, ignore
+                    }
+
+                    // Capture cookies from this frame
+                    List<Cookie> frameCookies = page.context().cookies(frameUrl);
+                    String frameRoot = UrlAndCookieUtil.extractRootDomain(frameUrl);
+                    String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
+                    Source frameSource = siteRoot.equalsIgnoreCase(frameRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
+
+                    for (Cookie frameCookie : frameCookies) {
+                        CookieDto cookieDto = mapPlaywrightCookie(frameCookie, frameUrl, frameRoot);
+                        cookieDto.setSource(frameSource);
+
+                        String subdomainName = determineSubdomainNameFromUrl(frameUrl, url, null);
+                        cookieDto.setSubdomainName(subdomainName);
+
+                        String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
+                        if (!discoveredCookies.containsKey(cookieKey)) {
+                            discoveredCookies.put(cookieKey, cookieDto);
+                            categorizeWithExternalAPI(cookieDto);
+                            saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                            scanMetrics.incrementCookiesFound(frameSource.name());
+                            metrics.recordCookieDiscovered(frameSource.name());
+                            log.info("ADDED FRAME COOKIE: {} from {} (Source: {})",
+                                    cookieDto.getName(), frameUrl, frameSource);
+                        }
+                    }
+
+                } catch (Exception e) {
+                    log.debug("Error processing frame {}", e.getMessage());
+                }
+            }
+
+            // Continue with existing iframe processing
             interactWithAllIframes(page, iframes);
             page.waitForTimeout(3000);
             captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
@@ -929,7 +1467,7 @@ public class ScanService {
             captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
 
         } catch (Exception e) {
-            log.warn("Error during iframe detection: {}", e.getMessage());
+            log.warn("Error during enhanced iframe detection: {}", e.getMessage());
         }
     }
 
@@ -1165,7 +1703,7 @@ public class ScanService {
                     captureBrowserCookiesEnhanced(context, curUrl, discoveredCookies, transactionId, scanMetrics);
 
                     // Capture local/session storage which sometimes holds id tokens / digital caches
-                    captureStorageItems(page, curUrl, discoveredCookies, transactionId, scanMetrics);
+                    //captureStorageItems(page, curUrl, discoveredCookies, transactionId, scanMetrics);
 
                     // Let existing context.onResponse pick up Set-Cookie headers for 3rd-party responses
                     // Now extract links to continue crawling
@@ -1224,129 +1762,124 @@ public class ScanService {
     }
 
     // Capture localStorage & sessionStorage into your cookie model (will be saved and categorized like cookies)
-    @SuppressWarnings("unchecked")
-    private void captureStorageItems(Page page,
-                                     String scanUrl,
-                                     Map<String, CookieDto> discoveredCookies,
-                                     String transactionId,
-                                     ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            Object evalRes = page.evaluate("""
-            (() => {
-                const out = { local: {}, session: {} };
-                try {
-                    for (let i = 0; i < localStorage.length; i++) {
-                        const k = localStorage.key(i);
-                        out.local[k] = localStorage.getItem(k);
-                    }
-                } catch(e) {}
-                try {
-                    for (let i = 0; i < sessionStorage.length; i++) {
-                        const k = sessionStorage.key(i);
-                        out.session[k] = sessionStorage.getItem(k);
-                    }
-                } catch(e) {}
-                return out;
-            })();
-        """);
-
-            if (!(evalRes instanceof Map)) return;
-            Map<String, Object> storageMap = (Map<String, Object>) evalRes;
-            Map<String, Object> local = (Map<String, Object>) storageMap.getOrDefault("local", Collections.emptyMap());
-            Map<String, Object> session = (Map<String, Object>) storageMap.getOrDefault("session", Collections.emptyMap());
-
-            String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
-            String subdomainName = SubdomainValidationUtil.extractSubdomainName(scanUrl, siteRoot);
-
-            // Save localStorage items
-            for (Map.Entry<String, Object> e : local.entrySet()) {
-                try {
-                    String key = e.getKey();
-                    String val = e.getValue() != null ? e.getValue().toString() : "";
-                    String name = "localStorage:" + key;
-                    String cookieKey = generateCookieKey(name, siteRoot, subdomainName);
-                    if (!discoveredCookies.containsKey(cookieKey)) {
-                        CookieDto dto = new CookieDto(name, scanUrl, siteRoot, "/", null, false, false, null, Source.UNKNOWN);
-                        dto.setDescription(val); // store raw value in description to inspect later
-                        dto.setSubdomainName(subdomainName);
-                        discoveredCookies.put(cookieKey, dto);
-                        categorizeWithExternalAPI(dto);
-                        saveIncrementalCookieWithFlush(transactionId, dto);
-                        scanMetrics.incrementCookiesFound(dto.getSource().name());
-                        metrics.recordCookieDiscovered(dto.getSource().name());
-                        log.info("ADDED localStorage item as cookie-like: {} (subdomain {})", name, subdomainName);
-                    }
-                } catch (Exception ignored) {}
-            }
-
-            // Save sessionStorage items
-            for (Map.Entry<String, Object> e : session.entrySet()) {
-                try {
-                    String key = e.getKey();
-                    String val = e.getValue() != null ? e.getValue().toString() : "";
-                    String name = "sessionStorage:" + key;
-                    String cookieKey = generateCookieKey(name, siteRoot, subdomainName);
-                    if (!discoveredCookies.containsKey(cookieKey)) {
-                        CookieDto dto = new CookieDto(name, scanUrl, siteRoot, "/", null, false, false, null, Source.UNKNOWN);
-                        dto.setDescription(val);
-                        dto.setSubdomainName(subdomainName);
-                        discoveredCookies.put(cookieKey, dto);
-                        categorizeWithExternalAPI(dto);
-                        saveIncrementalCookieWithFlush(transactionId, dto);
-                        scanMetrics.incrementCookiesFound(dto.getSource().name());
-                        metrics.recordCookieDiscovered(dto.getSource().name());
-                        log.info("ADDED sessionStorage item as cookie-like: {} (subdomain {})", name, subdomainName);
-                    }
-                } catch (Exception ignored) {}
-            }
-
-        } catch (Exception e) {
-            log.debug("Error capturing storage items for {}: {}", scanUrl, e.getMessage());
-        }
-    }
-
-
+//    @SuppressWarnings("unchecked")
+//    private void captureStorageItems(Page page,
+//                                     String scanUrl,
+//                                     Map<String, CookieDto> discoveredCookies,
+//                                     String transactionId,
+//                                     ScanPerformanceTracker.ScanMetrics scanMetrics) {
+//        try {
+//            Object evalRes = page.evaluate("""
+//            (() => {
+//                const out = { local: {}, session: {} };
+//                try {
+//                    for (let i = 0; i < localStorage.length; i++) {
+//                        const k = localStorage.key(i);
+//                        out.local[k] = localStorage.getItem(k);
+//                    }
+//                } catch(e) {}
+//                try {
+//                    for (let i = 0; i < sessionStorage.length; i++) {
+//                        const k = sessionStorage.key(i);
+//                        out.session[k] = sessionStorage.getItem(k);
+//                    }
+//                } catch(e) {}
+//                return out;
+//            })();
+//        """);
+//
+//            if (!(evalRes instanceof Map)) return;
+//            Map<String, Object> storageMap = (Map<String, Object>) evalRes;
+//            Map<String, Object> local = (Map<String, Object>) storageMap.getOrDefault("local", Collections.emptyMap());
+//            Map<String, Object> session = (Map<String, Object>) storageMap.getOrDefault("session", Collections.emptyMap());
+//
+//            String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
+//            String subdomainName = SubdomainValidationUtil.extractSubdomainName(scanUrl, siteRoot);
+//
+//            // Save localStorage items
+//            for (Map.Entry<String, Object> e : local.entrySet()) {
+//                try {
+//                    String key = e.getKey();
+//                    String val = e.getValue() != null ? e.getValue().toString() : "";
+//                    String name = "localStorage:" + key;
+//                    String cookieKey = generateCookieKey(name, siteRoot, subdomainName);
+//                    if (!discoveredCookies.containsKey(cookieKey)) {
+//                        CookieDto dto = new CookieDto(name, scanUrl, siteRoot, "/", null, false, false, null, Source.UNKNOWN);
+//                        dto.setDescription(val); // store raw value in description to inspect later
+//                        dto.setSubdomainName(subdomainName);
+//                        discoveredCookies.put(cookieKey, dto);
+//                        categorizeWithExternalAPI(dto);
+//                        saveIncrementalCookieWithFlush(transactionId, dto);
+//                        scanMetrics.incrementCookiesFound(dto.getSource().name());
+//                        metrics.recordCookieDiscovered(dto.getSource().name());
+//                        log.info("ADDED localStorage item as cookie-like: {} (subdomain {})", name, subdomainName);
+//                    }
+//                } catch (Exception ignored) {}
+//            }
+//
+//            // Save sessionStorage items
+//            for (Map.Entry<String, Object> e : session.entrySet()) {
+//                try {
+//                    String key = e.getKey();
+//                    String val = e.getValue() != null ? e.getValue().toString() : "";
+//                    String name = "sessionStorage:" + key;
+//                    String cookieKey = generateCookieKey(name, siteRoot, subdomainName);
+//                    if (!discoveredCookies.containsKey(cookieKey)) {
+//                        CookieDto dto = new CookieDto(name, scanUrl, siteRoot, "/", null, false, false, null, Source.UNKNOWN);
+//                        dto.setDescription(val);
+//                        dto.setSubdomainName(subdomainName);
+//                        discoveredCookies.put(cookieKey, dto);
+//                        categorizeWithExternalAPI(dto);
+//                        saveIncrementalCookieWithFlush(transactionId, dto);
+//                        scanMetrics.incrementCookiesFound(dto.getSource().name());
+//                        metrics.recordCookieDiscovered(dto.getSource().name());
+//                        log.info("ADDED sessionStorage item as cookie-like: {} (subdomain {})", name, subdomainName);
+//                    }
+//                } catch (Exception ignored) {}
+//            }
+//
+//        } catch (Exception e) {
+//            log.debug("Error capturing storage items for {}: {}", scanUrl, e.getMessage());
+//        }
+//    }
 
     private List<String> discoverPriorityLinks(Page page, String rootDomain) {
         Set<String> priorityLinks = new LinkedHashSet<>();
 
         try {
-            String[] priorityPatterns = {
-                    "login", "signin", "sign-in", "log-in",
-                    "account", "accounts", "myaccount", "my-account",
-                    "profile", "user", "dashboard", "settings",
-                    "checkout", "cart", "order", "payment", "billing",
-                    "register", "signup", "sign-up", "join",
-                    "preferences", "privacy", "security"
-            };
+            // GENERIC - Use discovered important pages instead of hardcoded patterns
+            List<String> importantPages = discoverImportantPages(page, rootDomain);
+            priorityLinks.addAll(importantPages);
 
-            for (String pattern : priorityPatterns) {
-                try {
-                    List<String> links = (List<String>) page.evaluate(String.format("""
-                        Array.from(document.querySelectorAll('a[href]'))
-                            .filter(a => {
-                                const href = a.href.toLowerCase();
-                                const text = (a.textContent || '').toLowerCase();
-                                return href.includes('%s') || text.includes('%s');
-                            })
-                            .map(a => a.href)
-                            .filter(href => href.startsWith('http'))
-                            .slice(0, 3);
-                    """, pattern, pattern));
+// Also add any links that contain common important keywords
+            try {
+                List<String> keywordLinks = (List<String>) page.evaluate("""
+        Array.from(document.querySelectorAll('a[href]'))
+            .filter(a => {
+                const href = a.href.toLowerCase();
+                const text = (a.textContent || '').toLowerCase();
+                const title = (a.title || '').toLowerCase();
+                
+                return ['login', 'account', 'profile', 'dashboard', 'settings', 
+                        'checkout', 'cart', 'register', 'signup'].some(keyword => 
+                    href.includes(keyword) || text.includes(keyword) || title.includes(keyword)
+                );
+            })
+            .map(a => a.href)
+            .filter(href => href.startsWith('http'))
+            .slice(0, 5);
+    """);
 
-                    for (String link : links) {
-                        String linkDomain = UrlAndCookieUtil.extractRootDomain(link);
-                        if (rootDomain.equals(linkDomain)) {
-                            priorityLinks.add(link);
-                            if (priorityLinks.size() >= 10) break;
-                        }
+                for (String link : keywordLinks) {
+                    String linkDomain = UrlAndCookieUtil.extractRootDomain(link);
+                    if (rootDomain.equals(linkDomain)) {
+                        priorityLinks.add(link);
+                        if (priorityLinks.size() >= 10) break;
                     }
-
-                } catch (Exception e) {
-                    log.debug("Error finding links for pattern '{}': {}", pattern, e.getMessage());
                 }
 
-                if (priorityLinks.size() >= 10) break;
+            } catch (Exception e) {
+                log.debug("Error finding keyword-based links: {}", e.getMessage());
             }
 
         } catch (Exception e) {
@@ -1579,6 +2112,420 @@ public class ScanService {
         } catch (Exception e) {
             log.error("Cookie categorization failed: {}", e.getMessage());
             cookiesAwaitingCategorization.clear();
+        }
+    }
+
+    private List<String> discoverSubdomainsFromPage(Page page, String rootDomain) {
+        try {
+            log.debug("Discovering subdomains dynamically for domain: {}", rootDomain);
+
+            List<String> discoveredSubdomains = (List<String>) page.evaluate(String.format("""
+            Array.from(document.querySelectorAll('a[href], script[src], link[href], img[src], iframe[src]'))
+                .map(el => el.href || el.src || el.getAttribute('href') || el.getAttribute('src'))
+                .filter(url => url && typeof url === 'string' && (url.startsWith('http') || url.startsWith('https')))
+                .map(url => {
+                    try { 
+                        return new URL(url).hostname.toLowerCase(); 
+                    } catch(e) { 
+                        return null; 
+                    }
+                })
+                .filter(host => host && typeof host === 'string' && host.includes('.'))
+                .filter(host => host.endsWith('.%s') && host !== '%s')
+                .filter((host, index, arr) => arr.indexOf(host) === index)
+                .slice(0, 10);
+            """, rootDomain, rootDomain));
+
+            log.info("Discovered {} dynamic subdomains: {}", discoveredSubdomains.size(), discoveredSubdomains);
+            return discoveredSubdomains;
+
+        } catch (Exception e) {
+            log.debug("Error discovering subdomains dynamically: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+    /**
+     * GENERIC - Discover important pages from navigation instead of hardcoded patterns
+     */
+    private List<String> discoverImportantPages(Page page, String rootDomain) {
+        try {
+            log.debug("Discovering important pages dynamically for domain: {}", rootDomain);
+
+            List<String> importantPages = (List<String>) page.evaluate("""
+            // Look for navigation links and important sections
+            Array.from(document.querySelectorAll(`
+                nav a, .nav a, .navigation a, .navbar a,
+                .menu a, .main-menu a, header a,
+                .footer a, .important a, .primary a,
+                [role="navigation"] a, .site-nav a,
+                .top-menu a, .breadcrumb a
+            `))
+            .map(a => a.href)
+            .filter(href => href && (href.startsWith('http') || href.startsWith('https')))
+            .filter((href, index, arr) => arr.indexOf(href) === index)
+            .slice(0, 15);
+        """);
+
+            // Filter to same domain only
+            List<String> sameDomainPages = new ArrayList<>();
+            for (String pageUrl : importantPages) {
+                try {
+                    String pageDomain = UrlAndCookieUtil.extractRootDomain(pageUrl);
+                    if (rootDomain.equalsIgnoreCase(pageDomain)) {
+                        sameDomainPages.add(pageUrl);
+                        if (sameDomainPages.size() >= 10) break;
+                    }
+                } catch (Exception e) {
+                    // Skip invalid URLs
+                }
+            }
+
+            log.info("Discovered {} important pages: {}", sameDomainPages.size(), sameDomainPages);
+            return sameDomainPages;
+
+        } catch (Exception e) {
+            log.debug("Error discovering important pages: {}", e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    private boolean isTrackingResponse(String url) {
+        String lowerUrl = url.toLowerCase();
+
+        // Check file extensions from config
+        boolean hasTrackingExtension = trackingPatterns.getUrlPatterns()
+                .getFileExtensions().stream()
+                .anyMatch(lowerUrl::contains);
+
+        // Check endpoints from config
+        boolean hasTrackingEndpoint = trackingPatterns.getUrlPatterns()
+                .getEndpoints().stream()
+                .anyMatch(lowerUrl::contains);
+
+        // Check single character files from config
+        boolean hasSingleCharFile = trackingPatterns.getUrlPatterns()
+                .getSingleCharFiles().stream()
+                .anyMatch(pattern -> lowerUrl.matches(".*" + pattern + ".*"));
+
+        // Check domain prefixes from config
+        boolean hasTrackingDomainPrefix = trackingPatterns.getUrlPatterns()
+                .getDomainPrefixes().stream()
+                .anyMatch(lowerUrl::contains);
+
+        // Check special patterns from config
+        boolean hasSpecialPattern = trackingPatterns.getUrlPatterns()
+                .getSpecialPatterns().stream()
+                .anyMatch(lowerUrl::contains);
+
+        // Check if URL has parameters (potential tracking)
+        boolean hasParameters = (lowerUrl.contains("?") || lowerUrl.contains("&")) &&
+                (lowerUrl.contains("="));
+
+        // Check for single letter subdomains (like c.bing.com)
+        boolean hasSingleLetterSubdomain = url.matches("https?://[a-z]\\.[a-z]+\\.[a-z]+.*");
+
+        // Check for numeric paths
+        boolean hasNumericPath = url.matches(".*://[^/]+/\\d+$");
+
+        return hasTrackingExtension || hasTrackingEndpoint || hasSingleCharFile ||
+                hasTrackingDomainPrefix || hasSpecialPattern || hasParameters ||
+                hasSingleLetterSubdomain || hasNumericPath;
+    }
+
+    // GENERIC: Extract tracking data from any URL parameters
+    private void extractTrackingDataFromUrl(String responseUrl, String mainUrl,
+                                            Map<String, CookieDto> discoveredCookies,
+                                            String transactionId,
+                                            ScanPerformanceTracker.ScanMetrics scanMetrics,
+                                            List<String> subdomains) {
+        try {
+            java.net.URL parsedUrl = new java.net.URL(responseUrl);
+            String query = parsedUrl.getQuery();
+            if (query != null && !query.isEmpty()) {
+                String[] params = query.split("&");
+                for (String param : params) {
+                    if (param.contains("=")) {
+                        String[] parts = param.split("=", 2);
+                        String paramName = parts[0];
+                        String paramValue = parts.length > 1 ? parts[1] : "";
+
+                        // Use config patterns to detect tracking parameters
+                        if (looksLikeTrackingParameter(paramName, paramValue)) {
+                            log.info("GENERIC TRACKING PARAM: {} = {}", paramName, paramValue);
+
+                            String cookieName = "param_" + paramName;
+                            String responseDomain = parsedUrl.getHost();
+                            String siteRoot = UrlAndCookieUtil.extractRootDomain(mainUrl);
+                            String responseRoot = UrlAndCookieUtil.extractRootDomain(responseUrl);
+                            Source source = siteRoot.equalsIgnoreCase(responseRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
+
+                            CookieDto trackingCookie = new CookieDto(
+                                    cookieName, responseUrl, responseDomain, "/", null,
+                                    false, false, null, source
+                            );
+                            trackingCookie.setDescription("Tracking parameter: " + paramValue);
+                            String subdomainName = determineSubdomainNameFromUrl(responseUrl, mainUrl, subdomains);
+                            trackingCookie.setSubdomainName(subdomainName);
+
+//                            String cookieKey = generateCookieKey(cookieName, responseDomain, subdomainName);
+//                            if (!discoveredCookies.containsKey(cookieKey)) {
+//                                discoveredCookies.put(cookieKey, trackingCookie);
+//                                categorizeWithExternalAPI(trackingCookie);
+//                                saveIncrementalCookieWithFlush(transactionId, trackingCookie);
+//                                scanMetrics.incrementCookiesFound(source.name());
+//                                metrics.recordCookieDiscovered(source.name());
+//                                log.info("ADDED GENERIC TRACKING PARAM: {} from {}",
+//                                        cookieName, responseUrl);
+//                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error extracting generic tracking data: {}", e.getMessage());
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private void captureStorageItemsSelectively(Page page,
+                                                String scanUrl,
+                                                Map<String, CookieDto> discoveredCookies,
+                                                String transactionId,
+                                                ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        try {
+            log.info("=== SELECTIVE: Capturing tracking-pattern storage items ===");
+
+            // Get ALL storage items first (no filtering in JavaScript)
+            Object evalRes = page.evaluate("""
+            (() => {
+                const out = { local: {}, session: {} };
+                try {
+                    for (let i = 0; i < localStorage.length; i++) {
+                        const k = localStorage.key(i);
+                        out.local[k] = localStorage.getItem(k);
+                    }
+                } catch(e) {}
+                
+                try {
+                    for (let i = 0; i < sessionStorage.length; i++) {
+                        const k = sessionStorage.key(i);
+                        out.session[k] = sessionStorage.getItem(k);
+                    }
+                } catch(e) {}
+                
+                return out;
+            })();
+        """);
+
+            if (!(evalRes instanceof Map)) return;
+            Map<String, Object> storageMap = (Map<String, Object>) evalRes;
+            Map<String, Object> local = (Map<String, Object>) storageMap.getOrDefault("local", Collections.emptyMap());
+            Map<String, Object> session = (Map<String, Object>) storageMap.getOrDefault("session", Collections.emptyMap());
+
+            String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
+            String subdomainName = SubdomainValidationUtil.extractSubdomainName(scanUrl, siteRoot);
+
+            // NOW filter on the Java side using your config
+            processStorageItemsWithConfigFiltering(local, "localStorage", scanUrl, siteRoot, subdomainName, discoveredCookies, transactionId, scanMetrics);
+            processStorageItemsWithConfigFiltering(session, "sessionStorage", scanUrl, siteRoot, subdomainName, discoveredCookies, transactionId, scanMetrics);
+
+            log.info("Config-based storage capture completed");
+
+        } catch (Exception e) {
+            log.debug("Error capturing storage items: {}", e.getMessage());
+        }
+    }
+
+    private void processStorageItemsWithConfigFiltering(Map<String, Object> items, String storageType, String scanUrl,
+                                                        String siteRoot, String subdomainName, Map<String, CookieDto> discoveredCookies,
+                                                        String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        for (Map.Entry<String, Object> entry : items.entrySet()) {
+            try {
+                String key = entry.getKey();
+
+                // USE YOUR CONFIG HERE - this is where the real filtering happens
+                if (!isTrackingPattern(key, storagePatternsConfig)) {
+                    log.debug("Skipping non-tracking storage item: {}", key);
+                    continue;
+                }
+
+                String val = entry.getValue() != null ? entry.getValue().toString() : "";
+                String cookieKey = generateCookieKey(key, siteRoot, subdomainName);
+
+                if (!discoveredCookies.containsKey(cookieKey)) {
+                    CookieDto dto = new CookieDto(key, scanUrl, siteRoot, "/", null, false, false, null, Source.FIRST_PARTY);
+                    dto.setDescription(storageType + ": " + (val.length() > 50 ? val.substring(0, 50) + "..." : val));
+                    dto.setSubdomainName(subdomainName);
+                    discoveredCookies.put(cookieKey, dto);
+                    categorizeWithExternalAPI(dto);
+                    saveIncrementalCookieWithFlush(transactionId, dto);
+                    scanMetrics.incrementCookiesFound(dto.getSource().name());
+                    metrics.recordCookieDiscovered(dto.getSource().name());
+                    log.info("ADDED CONFIG-FILTERED {}: {} (subdomain {})", storageType, key, subdomainName);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private boolean isTrackingPattern(String key, StoragePatternsConfig config) {
+        if (key == null || key.trim().isEmpty()) return false;
+
+        if (config == null) {
+            log.warn("StoragePatternsConfig is null, falling back to basic patterns");
+            return key.length() <= 5 || key.startsWith("_");
+        }
+
+        // Check known tracking keys (direct property)
+        if (config.getKnownTrackingKeys() != null) {
+            for (String knownKey : config.getKnownTrackingKeys()) {
+                if (key.contains(knownKey)) {
+                    log.debug("Key '{}' matches known tracking key: {}", key, knownKey);
+                    return true;
+                }
+            }
+        }
+
+        var generic = config.getGeneric();
+        if (generic == null) {
+            log.debug("Generic patterns not configured");
+            return false;
+        }
+
+        // Check short keys
+        var shortKeys = generic.getShortKeys();
+        if (shortKeys != null) {
+            int keyLength = key.length();
+            if (keyLength >= shortKeys.getMinLength() && keyLength <= shortKeys.getMaxLength()) {
+                log.debug("Key '{}' matches short key pattern (length: {})", key, keyLength);
+                return true;
+            }
+        }
+
+        // Check regex patterns
+        if (generic.getRegexPatterns() != null) {
+            for (String pattern : generic.getRegexPatterns()) {
+                try {
+                    if (key.matches(pattern)) {
+                        log.debug("Key '{}' matches regex pattern: {}", key, pattern);
+                        return true;
+                    }
+                } catch (Exception e) {
+                    log.warn("Invalid regex pattern '{}': {}", pattern, e.getMessage());
+                }
+            }
+        }
+
+        // Check keyword patterns
+        if (generic.getKeywordPatterns() != null) {
+            String lowerKey = key.toLowerCase();
+            for (String keyword : generic.getKeywordPatterns()) {
+                if (lowerKey.contains(keyword.toLowerCase())) {
+                    log.debug("Key '{}' matches keyword pattern: {}", key, keyword);
+                    return true;
+                }
+            }
+        }
+
+        // Check prefix patterns
+        if (generic.getPrefixPatterns() != null) {
+            for (String prefix : generic.getPrefixPatterns()) {
+                if (key.startsWith(prefix)) {
+                    log.debug("Key '{}' matches prefix pattern: {}", key, prefix);
+                    return true;
+                }
+            }
+        }
+
+        log.debug("Key '{}' does not match any tracking patterns", key);
+        return false;
+    }
+
+    private void processStorageItems(Map<String, Object> items, String storageType, String scanUrl,
+                                     String siteRoot, String subdomainName, Map<String, CookieDto> discoveredCookies,
+                                     String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
+        for (Map.Entry<String, Object> entry : items.entrySet()) {
+            try {
+                String key = entry.getKey();
+                String val = entry.getValue() != null ? entry.getValue().toString() : "";
+                String cookieKey = generateCookieKey(key, siteRoot, subdomainName);
+
+                if (!discoveredCookies.containsKey(cookieKey)) {
+                    CookieDto dto = new CookieDto(key, scanUrl, siteRoot, "/", null, false, false, null, Source.FIRST_PARTY);
+                    dto.setDescription(storageType + ": " + (val.length() > 50 ? val.substring(0, 50) + "..." : val));
+                    dto.setSubdomainName(subdomainName);
+                    discoveredCookies.put(cookieKey, dto);
+                    categorizeWithExternalAPI(dto);
+                    saveIncrementalCookieWithFlush(transactionId, dto);
+                    scanMetrics.incrementCookiesFound(dto.getSource().name());
+                    metrics.recordCookieDiscovered(dto.getSource().name());
+                    log.info("ADDED GENERIC {}: {} (subdomain {})", storageType, key, subdomainName);
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private boolean looksLikeTrackingParameter(String name, String value) {
+        String lowerName = name.toLowerCase();
+
+        // Check all parameter pattern categories from config
+        boolean matchesIdPattern = trackingPatterns.getParameterPatterns()
+                .getIdPatterns().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesSessionAuth = trackingPatterns.getParameterPatterns()
+                .getSessionAuth().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesTrackingAnalytics = trackingPatterns.getParameterPatterns()
+                .getTrackingAnalytics().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesPageContent = trackingPatterns.getParameterPatterns()
+                .getPageContent().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesUserDevice = trackingPatterns.getParameterPatterns()
+                .getUserDevice().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesShortCryptic = trackingPatterns.getParameterPatterns()
+                .getShortCryptic().stream()
+                .anyMatch(pattern -> lowerName.equals(pattern.toLowerCase()));
+
+        boolean matchesTimePattern = trackingPatterns.getParameterPatterns()
+                .getTimePatterns().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        boolean matchesRandomCache = trackingPatterns.getParameterPatterns()
+                .getRandomCache().stream()
+                .anyMatch(pattern -> lowerName.contains(pattern.toLowerCase()));
+
+        // Check value patterns from config
+        boolean matchesValuePattern = trackingPatterns.getValuePatterns()
+                .getRegexPatterns().stream()
+                .anyMatch(pattern -> value.matches(pattern));
+
+        boolean matchesBooleanValue = trackingPatterns.getValuePatterns()
+                .getBooleanValues().stream()
+                .anyMatch(pattern -> value.equalsIgnoreCase(pattern));
+
+        // Basic size check
+        boolean hasValidSize = (name.length() >= 1 && value.length() >= 1);
+
+        return hasValidSize && (matchesIdPattern || matchesSessionAuth || matchesTrackingAnalytics ||
+                matchesPageContent || matchesUserDevice || matchesShortCryptic ||
+                matchesTimePattern || matchesRandomCache || matchesValuePattern ||
+                matchesBooleanValue);
+    }
+
+    private void testStoragePatterns() {
+        log.info("=== TESTING STORAGE PATTERNS ===");
+
+        String[] testKeys = {"s7", "_c", "hsb", "12345", "ABC", "track_id", "$session", "verylongkeyname"};
+
+        for (String testKey : testKeys) {
+            boolean matches = isTrackingPattern(testKey, storagePatternsConfig);
+            log.info("Pattern test: '{}' -> {}", testKey, matches);
         }
     }
 }
