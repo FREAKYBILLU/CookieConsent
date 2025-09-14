@@ -1,6 +1,5 @@
 package com.example.scanner.util;
 
-import com.example.scanner.exception.UrlValidationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +41,7 @@ public class SubdomainValidationUtil {
                 String trimmedSubdomain = subdomain.trim();
 
                 try {
-                    // Validate subdomain URL format
+                    // FIXED: Use the same comprehensive validation as main URL
                     UrlAndCookieUtil.ValidationResult subdomainValidation =
                             UrlAndCookieUtil.validateUrlForScanning(trimmedSubdomain);
 
@@ -51,8 +50,11 @@ public class SubdomainValidationUtil {
                         continue;
                     }
 
-                    // Extract root domain from subdomain
-                    String subdomainRootDomain = UrlAndCookieUtil.extractRootDomain(trimmedSubdomain);
+                    // Use the normalized URL from validation
+                    String normalizedSubdomainUrl = subdomainValidation.getNormalizedUrl();
+
+                    // Extract root domain from validated subdomain
+                    String subdomainRootDomain = UrlAndCookieUtil.extractRootDomain(normalizedSubdomainUrl);
 
                     // Check if subdomain belongs to the same root domain
                     if (!mainRootDomain.equalsIgnoreCase(subdomainRootDomain)) {
@@ -61,18 +63,19 @@ public class SubdomainValidationUtil {
                     }
 
                     // Check if it's actually a subdomain (not the same as main domain)
-                    String mainHost = extractHost(mainUrl);
-                    String subdomainHost = extractHost(trimmedSubdomain);
+                    String mainHost = extractHostSafely(mainUrl);
+                    String subdomainHost = extractHostSafely(normalizedSubdomainUrl);
 
-                    if (mainHost.equalsIgnoreCase(subdomainHost)) {
+                    if (mainHost != null && mainHost.equalsIgnoreCase(subdomainHost)) {
                         invalidSubdomains.add(trimmedSubdomain + " - Subdomain cannot be the same as the main URL");
                         continue;
                     }
 
-                    validatedSubdomains.add(subdomainValidation.getNormalizedUrl());
-                    log.info("Valid subdomain: {} (root: {})", trimmedSubdomain, subdomainRootDomain);
+                    validatedSubdomains.add(normalizedSubdomainUrl);
+                    log.info("Valid subdomain: {} -> {} (root: {})", trimmedSubdomain, normalizedSubdomainUrl, subdomainRootDomain);
 
                 } catch (Exception e) {
+                    log.warn("Error validating subdomain {}: {}", trimmedSubdomain, e.getMessage());
                     invalidSubdomains.add(trimmedSubdomain + " - Validation error: " + e.getMessage());
                 }
             }
@@ -82,7 +85,7 @@ public class SubdomainValidationUtil {
                 return ValidationResult.invalid(errorMessage);
             }
 
-            log.info("Validated {} subdomains for domain: {}", validatedSubdomains.size(), mainRootDomain);
+            log.info("Successfully validated {} subdomains for domain: {}", validatedSubdomains.size(), mainRootDomain);
             return ValidationResult.valid(validatedSubdomains);
 
         } catch (Exception e) {
@@ -92,13 +95,31 @@ public class SubdomainValidationUtil {
     }
 
     /**
-     * Extract host from URL
+     * FIXED: Extract host from URL with proper protocol handling
      */
-    private static String extractHost(String url) throws URISyntaxException {
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            url = "https://" + url;
+    private static String extractHostSafely(String url) {
+        try {
+            String normalizedUrl;
+
+            // Handle protocol properly (same logic as main URL validation)
+            if (url.contains("://")) {
+                String protocol = url.substring(0, url.indexOf("://")).toLowerCase();
+                if (!protocol.equals("http") && !protocol.equals("https")) {
+                    return null; // Invalid protocol
+                }
+                normalizedUrl = url;
+            } else {
+                normalizedUrl = "https://" + url;
+            }
+
+            URI uri = new URI(normalizedUrl);
+            String host = uri.getHost();
+            return host != null ? host.toLowerCase() : null;
+
+        } catch (URISyntaxException e) {
+            log.warn("Failed to extract host from URL: {} - {}", url, e.getMessage());
+            return null;
         }
-        return new URI(url).getHost().toLowerCase();
     }
 
     /**
@@ -106,9 +127,16 @@ public class SubdomainValidationUtil {
      */
     public static boolean isSubdomainOf(String url, String rootDomain) {
         try {
-            String urlRootDomain = UrlAndCookieUtil.extractRootDomain(url);
+            // Use comprehensive validation first
+            UrlAndCookieUtil.ValidationResult validation = UrlAndCookieUtil.validateUrlForScanning(url);
+            if (!validation.isValid()) {
+                return false;
+            }
+
+            String urlRootDomain = UrlAndCookieUtil.extractRootDomain(validation.getNormalizedUrl());
             return rootDomain.equalsIgnoreCase(urlRootDomain);
         } catch (Exception e) {
+            log.warn("Error checking if {} is subdomain of {}: {}", url, rootDomain, e.getMessage());
             return false;
         }
     }
@@ -119,13 +147,14 @@ public class SubdomainValidationUtil {
      */
     public static String extractSubdomainName(String url, String rootDomain) {
         try {
-            String host = extractHost(url);
+            String host = extractHostSafely(url);
+            if (host == null) {
+                return "unknown";
+            }
 
             // Remove root domain from host to get subdomain part
             if (host.endsWith("." + rootDomain)) {
                 String subdomainPart = host.substring(0, host.length() - rootDomain.length() - 1);
-
-                // Handle cases like "www" or "api.v1"
                 return subdomainPart.isEmpty() ? "main" : subdomainPart;
             }
 
@@ -140,6 +169,19 @@ public class SubdomainValidationUtil {
             log.warn("Error extracting subdomain name from {}: {}", url, e.getMessage());
             return "unknown";
         }
+    }
+
+    /**
+     * Additional utility: Validate subdomain naming conventions
+     */
+    public static boolean isValidSubdomainName(String subdomainName) {
+        if (subdomainName == null || subdomainName.trim().isEmpty()) {
+            return false;
+        }
+
+        // Check for valid subdomain naming (letters, numbers, hyphens)
+        return subdomainName.matches("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$")
+                && subdomainName.length() <= 63;
     }
 
     /**

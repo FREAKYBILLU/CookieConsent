@@ -1,13 +1,119 @@
+# ============================================================================
+# COMPREHENSIVE CMP-GRADE TRACKING DETECTION CONFIGURATION
+# Based on analysis of OneTrust, CookieBot, Termly, UserCentrics and others
+# ============================================================================
+
+# Storage Patterns Detection (localStorage/sessionStorage)
 storage-patterns:
+  # Known tracking keys from major CMPs
+  knownTrackingKeys:
+    # Google Analytics Family
+    - "_ga"
+    - "_gid"
+    - "_gat"
+    - "__utm"
+    - "_gads"
+    - "_gac_"
+    - "_gcl_"
+    
+    # Adobe Analytics
+    - "s_vi"
+    - "s_fid"
+    - "s_cc"
+    - "s_sq"
+    - "s_ecid"
+    - "AMCV_"
+    - "AMCVS_"
+    
+    # Facebook/Meta
+    - "_fbp"
+    - "_fbc"
+    - "fr"
+    - "_fb"
+    - "facebook_"
+    
+    # Microsoft/Bing
+    - "MUID"
+    - "MUIDB"
+    - "_EDGE"
+    - "SRM_"
+    - "MR"
+    - "MC1"
+    - "MS0"
+    
+    # LinkedIn
+    - "bcookie"
+    - "li_at"
+    - "liap"
+    - "li_sugr"
+    - "bscookie"
+    - "AnalyticsSyncHistory"
+    - "lms_"
+    
+    # Common Tracking Patterns
+    - "s7"
+    - "_c"
+    - "hsb"
+    - "CookieSyncExpiry"
+    - "BT_AA_DETECTION"
+    - "weaRecentLocation"
+    - "authRecordTrail"
+    - "digital-id-cache"
+    - "user-id"
+    - "visitor-id"
+    - "session-id"
+    - "tracking-id"
+    - "analytics-id"
+    - "conversion-id"
+    - "campaign-data"
+    - "pixel-data"
+    - "fingerprint"
+    - "device-id"
+    
+    # HubSpot
+    - "hubspotutk"
+    - "__hstc"
+    - "__hssc"
+    - "__hssrc"
+    
+    # Marketo
+    - "_mkto_trk"
+    
+    # Salesforce Pardot
+    - "visitor_id"
+    - "pi_opt_in"
+    - "lpv"
+
+  # Generic pattern rules
   generic:
     shortKeys:
-      maxLength: 5
       minLength: 1
+      maxLength: 8
+    
     regexPatterns:
+      # Basic short patterns
       - "^[a-z0-9_]{1,8}$"
       - "^[A-Z]{2,8}$"
       - "^\\d+$"
       - "[;:=]"
+      
+      # Specific tracking patterns
+      - "^BT_[A-Z_]+$"           # BT_AA_DETECTION etc
+      - "^.*Expiry$"             # CookieSyncExpiry etc
+      - "^auth.*Trail$"          # authRecordTrail etc
+      - "^wea[A-Z][a-z]+$"       # weaRecentLocation etc
+      - "^_[a-z]{1,4}$"          # _ga, _gid, _c, etc
+      - "^[a-z]\\d+$"            # s7, h1, etc
+      - "^digital-.*cache$"      # digital-id-cache etc
+      - "^(user|visitor|session|tracking|analytics|conversion|campaign)-.*"
+      - "^.*-(id|key|token|data|cache)$"
+      
+      # UUID and hash patterns
+      - "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+      - "^[A-Fa-f0-9]{32}$"
+      - "^[A-Fa-f0-9]{40}$"
+      - "^[A-Za-z0-9+/]{22}==$"
+
     keywordPatterns:
       - "track"
       - "analytics"
@@ -15,22 +121,39 @@ storage-patterns:
       - "user"
       - "id"
       - "uuid"
+      - "sync"
+      - "detection"
+      - "recent"
+      - "location"
+      - "trail"
+      - "expiry"
+      - "cache"
+      - "fingerprint"
+      - "device"
+      - "visitor"
+      - "conversion"
+      - "campaign"
+      - "pixel"
+      - "beacon"
+      - "segment"
+      - "audience"
+      - "profile"
+
     prefixPatterns:
       - "_"
       - "$"
-  knownTrackingKeys:
-    - "s7"
-    - "_c"
-    - "hsb"
-    - "_ga"
-    - "utma"
-    - "fbsr"
-    - "_fbp"
-    - "li_"
-    - "_tt"
-    - "sc_"
+      - "__"
+      - "BT_"
+      - "GA_"
+      - "FB_"
+      - "LI_"
+      - "s_"
+      - "AMCV_"
+
+# Comprehensive Tracking Pattern Detection
 tracking:
   patterns:
+    # URL Patterns for tracking detection
     url-patterns:
       file-extensions:
         - ".gif"
@@ -40,7 +163,11 @@ tracking:
         - ".ico"
         - ".webp"
         - ".svg"
+        - ".woff"
+        - ".woff2"
+
       endpoints:
+        # Generic tracking endpoints
         - "pixel"
         - "collect"
         - "track"
@@ -61,6 +188,30 @@ tracking:
         - "sync"
         - "match"
         - "redirect"
+        - "activity"
+        - "pagead"
+        - "ads"
+        - "tr"  # Facebook pixel
+        - "collect"  # Google Analytics
+        - "b"  # Many tracking pixels
+        
+        # Service-specific endpoints
+        - "gtag"
+        - "ga"
+        - "fbq"
+        - "_fbq"
+        - "omniture"
+        - "adobe"
+        - "pardot"
+        - "marketo"
+        - "hubspot"
+        - "mixpanel"
+        - "amplitude"
+        - "hotjar"
+        - "crazyegg"
+        - "fullstory"
+        - "logrocket"
+
       single-char-files:
         - "/[a-z]\\.gif"
         - "/[a-z]\\.png"
@@ -69,6 +220,15 @@ tracking:
         - "/tr\\."
         - "/img\\."
         - "/pix\\."
+        - "/c\\.gif"
+        - "/b\\.gif"
+        - "/1x1\\."
+        - "/clear\\."
+        - "/transparent\\."
+        - "/spacer\\."
+        - "/blank\\."
+        - "/invisible\\."
+
       domain-prefixes:
         - "ads."
         - "ad."
@@ -88,6 +248,13 @@ tracking:
         - "assets."
         - "media."
         - "content."
+        - "widget."
+        - "embed."
+        - "tag."
+        - "tags."
+        - "gtm."
+        - "ga."
+
       special-patterns:
         - "favicon"
         - "1x1"
@@ -97,6 +264,15 @@ tracking:
         - "blank"
         - "empty"
         - "invisible"
+        - "tracking"
+        - "monitor"
+        - "measure"
+        - "count"
+        - "ping"
+        - "check"
+        - "test"
+
+    # Parameter patterns for URL analysis
     parameter-patterns:
       id-patterns:
         - "id"
@@ -116,6 +292,12 @@ tracking:
         - "lid"
         - "did"
         - "nid"
+        - "uuid"
+        - "guid"
+        - "hash"
+        - "key"
+        - "token"
+
       session-auth:
         - "session"
         - "auth"
@@ -125,6 +307,12 @@ tracking:
         - "hash"
         - "signature"
         - "sign"
+        - "csrf"
+        - "xsrf"
+        - "nonce"
+        - "state"
+        - "code"
+
       tracking-analytics:
         - "track"
         - "analytics"
@@ -140,6 +328,12 @@ tracking:
         - "click"
         - "impression"
         - "conversion"
+        - "goal"
+        - "funnel"
+        - "segment"
+        - "dimension"
+        - "custom"
+
       page-content:
         - "page"
         - "url"
@@ -155,6 +349,10 @@ tracking:
         - "medium"
         - "campaign"
         - "term"
+        - "keyword"
+        - "query"
+        - "search"
+
       user-device:
         - "user"
         - "client"
@@ -169,6 +367,11 @@ tracking:
         - "display"
         - "color"
         - "depth"
+        - "language"
+        - "locale"
+        - "timezone"
+        - "encoding"
+
       short-cryptic:
         - "v"
         - "t"
@@ -179,15 +382,38 @@ tracking:
         - "r"
         - "c"
         - "a"
+        - "d"
+        - "f"
+        - "g"
+        - "h"
+        - "i"
+        - "j"
+        - "k"
+        - "l"
+        - "m"
+        - "n"
+        - "o"
+        - "w"
+        - "x"
+        - "y"
+        - "z"
+
       time-patterns:
         - "time"
         - "timestamp"
+        - "ts"
         - "date"
         - "created"
         - "updated"
         - "modified"
         - "expires"
+        - "expiry"
         - "ttl"
+        - "duration"
+        - "interval"
+        - "delay"
+        - "timeout"
+
       random-cache:
         - "random"
         - "rnd"
@@ -195,16 +421,49 @@ tracking:
         - "nonce"
         - "cache"
         - "bust"
+        - "buster"
         - "version"
         - "build"
+        - "rev"
+        - "hash"
+        - "checksum"
+        - "etag"
+
+    # Value pattern analysis
     value-patterns:
       regex-patterns:
-        - "[a-fA-F0-9-]{8,}"
-        - "\\d{8,}"
-        - "[a-zA-Z0-9]{10,}"
-        - "\\d{13}"
-        - "[a-fA-F0-9]{32}"
-        - "[a-fA-F0-9]{40}"
+        # Common ID formats
+        - "[a-fA-F0-9-]{8,}"          # Hex IDs
+        - "\\d{8,}"                   # Numeric IDs
+        - "[a-zA-Z0-9]{10,}"          # Alphanumeric IDs
+        - "\\d{13}"                   # Timestamps
+        - "[a-fA-F0-9]{32}"           # MD5 hashes
+        - "[a-fA-F0-9]{40}"           # SHA1 hashes
+        - "[a-fA-F0-9]{64}"           # SHA256 hashes
+        
+        # Google Analytics patterns
+        - "GA1\\.[0-9]\\.[0-9]+\\.[0-9]+"
+        - "^\\d+\\.\\d+$"
+        
+        # Facebook pixel patterns  
+        - "fb\\.[0-9]\\.[0-9]+\\.[0-9]+"
+        
+        # Base64 patterns
+        - "^[A-Za-z0-9+/]{4,}={0,2}$"
+        
+        # JWT patterns
+        - "^[A-Za-z0-9-_]+\\.[A-Za-z0-9-_]+\\.[A-Za-z0-9-_.+/=]*$"
+        
+        # UUID patterns
+        - "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+        
+        # URL-encoded patterns
+        - "%[0-9A-Fa-f]{2}"
+        
+        # JSON-like structures
+        - "^\\{.*\\}$"
+        - "^\\[.*\\]$"
+
       boolean-values:
         - "true"
         - "false"
@@ -212,3 +471,194 @@ tracking:
         - "0"
         - "yes"
         - "no"
+        - "on"
+        - "off"
+        - "enabled"
+        - "disabled"
+        - "active"
+        - "inactive"
+
+# Advanced Detection Patterns
+advanced-detection:
+  # Pixel tracker detection
+  pixel-patterns:
+    file-extensions:
+      - "favicon.ico"
+      - "px.gif"
+      - "c.gif"
+      - "b.gif"
+      - "t.gif"
+      - "1x1.gif"
+      - "1x1.png"
+      - "clear.gif"
+      - "transparent.gif"
+      - "invisible.gif"
+      - "spacer.gif"
+      - "blank.gif"
+      - "pixel.gif"
+      - "track.gif"
+      - "beacon.gif"
+
+    domains:
+      - "ad.doubleclick.net"
+      - "ad-delivery.net"
+      - "c.msn.com"
+      - "c.bing.com"
+      - "google-analytics.com"
+      - "googletagmanager.com"
+      - "facebook.com"
+      - "connect.facebook.net"
+      - "linkedin.com"
+      - "ads.twitter.com"
+      - "analytics.tiktok.com"
+      - "pinterest.com"
+      - "snapchat.com"
+      - "reddit.com"
+      - "amazon-adsystem.com"
+      - "adsystem.amazon.com"
+
+    url-patterns:
+      - "\\.(gif|png|jpg|jpeg)\\?.*track"
+      - "/(pixel|track|beacon|analytics|collect)\\.(gif|png|jpg)?"
+      - "/1x1\\.(gif|png)|/transparent\\.(gif|png)"
+      - "/c\\.gif"
+      - "/b\\.gif"
+      - "/tr\\?"
+      - "/pixel\\?"
+      - "/track\\?"
+      - "/collect\\?"
+      - "/beacon\\?"
+      - "/impression\\?"
+      - "/view\\?"
+      - "/click\\?"
+
+  # Canvas fingerprinting detection
+  canvas-fingerprinting:
+    api-calls:
+      - "canvas.getContext"
+      - "toDataURL"
+      - "getImageData"
+      - "fillText"
+      - "strokeText"
+      - "arc"
+      - "fillRect"
+
+    text-patterns:
+      - "BrowserLeaks"
+      - "Canvas fingerprint"
+      - "Alphabetic character sequences"
+      - "Mixed font rendering"
+      - "Special characters"
+
+  # WebRTC leak detection
+  webrtc-detection:
+    api-usage:
+      - "RTCPeerConnection"
+      - "webkitRTCPeerConnection"
+      - "mozRTCPeerConnection"
+      - "createOffer"
+      - "createAnswer"
+      - "setLocalDescription"
+
+    stun-servers:
+      - "stun.l.google.com:19302"
+      - "stun1.l.google.com:19302"
+      - "stun2.l.google.com:19302"
+      - "stun3.l.google.com:19302"
+      - "stun4.l.google.com:19302"
+
+  # Device fingerprinting
+  fingerprint-apis:
+    navigator-properties:
+      - "userAgent"
+      - "language"
+      - "languages"
+      - "platform"
+      - "hardwareConcurrency"
+      - "deviceMemory"
+      - "cookieEnabled"
+      - "doNotTrack"
+      - "plugins"
+      - "mimeTypes"
+
+    screen-properties:
+      - "screen.width"
+      - "screen.height"
+      - "screen.availWidth"
+      - "screen.availHeight"
+      - "screen.colorDepth"
+      - "screen.pixelDepth"
+      - "devicePixelRatio"
+
+    webgl-properties:
+      - "renderer"
+      - "vendor"
+      - "version"
+      - "shading_language_version"
+      - "extensions"
+
+# Known Service Patterns
+service-patterns:
+  google:
+    analytics:
+      cookies: ["_ga", "_gid", "_gat", "__utm.*"]
+      domains: ["google-analytics.com", "googletagmanager.com"]
+      api-objects: ["gtag", "ga", "dataLayer"]
+      category: "analytics"
+
+    advertising:
+      cookies: ["IDE", "DSID", "_gads", "_gcl_.*", "test_cookie"]
+      domains: ["doubleclick.net", "googlesyndication.com", "googleadservices.com"]
+      api-objects: ["googletag"]
+      category: "advertising"
+
+  facebook:
+    pixel:
+      cookies: ["_fbp", "_fbc", "fr", "datr", "sb"]
+      domains: ["facebook.com", "connect.facebook.net"]
+      api-objects: ["fbq", "_fbq"]
+      category: "advertising"
+
+  adobe:
+    analytics:
+      cookies: ["s_vi", "s_fid", "AMCV_.*", "s_cc", "s_sq"]
+      domains: ["omtrdc.net", "2o7.net", "demdex.net"]
+      api-objects: ["s", "AppMeasurement"]
+      category: "analytics"
+
+  microsoft:
+    advertising:
+      cookies: ["MUID", "MUIDB", "_EDGE_.*", "SRM_.*"]
+      domains: ["bing.com", "msn.com", "microsoft.com"]
+      category: "advertising"
+
+  linkedin:
+    tracking:
+      cookies: ["bcookie", "li_at", "liap", "bscookie"]
+      domains: ["linkedin.com", "ads.linkedin.com"]
+      category: "advertising"
+
+  hubspot:
+    analytics:
+      cookies: ["hubspotutk", "__hstc", "__hssc", "__hssrc"]
+      domains: ["track.hubspot.com", "forms.hubspot.com"]
+      category: "analytics"
+
+# Detection Confidence Scoring (for pattern matching only)
+confidence-scoring:
+  high-confidence:
+    - known-tracking-cookies: 0.95
+    - official-service-domains: 0.9
+    - pixel-tracker-characteristics: 0.9
+    - fingerprinting-api-usage: 0.85
+
+  medium-confidence:
+    - pattern-matching: 0.7
+    - behavioral-heuristics: 0.65
+    - third-party-context: 0.6
+    - suspicious-parameters: 0.55
+
+  low-confidence:
+    - generic-patterns: 0.4
+    - ambiguous-naming: 0.3
+    - insufficient-context: 0.2

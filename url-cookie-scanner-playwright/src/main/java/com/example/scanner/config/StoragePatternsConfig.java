@@ -13,8 +13,8 @@ import java.util.List;
 @Setter
 public class StoragePatternsConfig {
 
+    private List<String> knownTrackingKeys;
     private Generic generic;
-    private List<String> knownTrackingKeys;  // Move this up one level
 
     @Getter
     @Setter
@@ -27,8 +27,8 @@ public class StoragePatternsConfig {
         @Getter
         @Setter
         public static class ShortKeys {
-            private int maxLength;
             private int minLength;
+            private int maxLength;
         }
     }
 }

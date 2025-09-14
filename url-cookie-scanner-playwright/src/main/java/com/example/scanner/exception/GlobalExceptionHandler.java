@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.HttpHeaders;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -161,16 +163,35 @@ public class GlobalExceptionHandler {
 
         String userFriendlyMessage = "Invalid request format. Please check your JSON syntax.";
         String details = "JSON parsing error: " + ex.getMessage();
+        String errorCode = ErrorCodes.VALIDATION_ERROR;
 
-        // Extract specific field errors if possible
-        if (ex.getMessage().contains("Boolean")) {
+        // Check for duplicate key errors
+        if (ex.getCause() instanceof com.fasterxml.jackson.core.JsonParseException) {
+            com.fasterxml.jackson.core.JsonParseException jsonEx =
+                    (com.fasterxml.jackson.core.JsonParseException) ex.getCause();
+
+            if (jsonEx.getMessage() != null && jsonEx.getMessage().toLowerCase().contains("duplicate")) {
+                userFriendlyMessage = "Duplicate keys detected in request. Each field must appear only once.";
+                details = "Duplicate JSON key found: " + jsonEx.getMessage();
+                errorCode = ErrorCodes.VALIDATION_ERROR;
+                log.warn("Duplicate key attack attempt detected: {}", jsonEx.getMessage());
+            }
+        }
+        // Your existing specific error handling
+        else if (ex.getMessage().contains("Boolean")) {
             userFriendlyMessage = "Invalid boolean value. Use true or false only.";
         } else if (ex.getMessage().contains("Unrecognized token")) {
             userFriendlyMessage = "Invalid JSON format. Check for typos in field values.";
         }
+        // Check for other duplicate key patterns in the main exception message
+        else if (ex.getMessage() != null && ex.getMessage().toLowerCase().contains("duplicate")) {
+            userFriendlyMessage = "Duplicate keys detected in request. Each field must appear only once.";
+            details = "Duplicate JSON key detected in request body";
+            log.warn("Duplicate key attack attempt detected: {}", ex.getMessage());
+        }
 
         ErrorResponse error = new ErrorResponse(
-                ErrorCodes.VALIDATION_ERROR,
+                errorCode,
                 userFriendlyMessage,
                 details,
                 Instant.now(),
@@ -193,5 +214,38 @@ public class GlobalExceptionHandler {
         );
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(
+            HttpRequestMethodNotSupportedException ex,
+            WebRequest request) {
+
+        log.warn("Method not supported: {} for {}", ex.getMethod(), request.getDescription(false));
+
+        // Get supported methods
+        String supportedMethods = ex.getSupportedHttpMethods() != null
+                ? ex.getSupportedHttpMethods().stream()
+                .map(Object::toString)
+                .collect(Collectors.joining(", "))
+                : "GET, POST";
+
+        ErrorResponse error = new ErrorResponse(
+                ErrorCodes.VALIDATION_ERROR, // or create METHOD_NOT_SUPPORTED
+                "HTTP method '" + ex.getMethod() + "' is not supported for this endpoint",
+                "Supported methods: " + supportedMethods + ". Request: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        // Set proper Allow header for OPTIONS requests
+        HttpHeaders headers = new HttpHeaders();
+        if (ex.getSupportedHttpMethods() != null) {
+            headers.setAllow(ex.getSupportedHttpMethods());
+        }
+
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .headers(headers)
+                .body(error);
     }
 }

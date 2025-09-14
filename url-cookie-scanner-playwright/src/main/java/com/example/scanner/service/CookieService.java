@@ -51,6 +51,20 @@ public class CookieService {
             );
         }
 
+        if (updateRequest.getCategory() == null || updateRequest.getCategory().trim().isEmpty()) {
+            throw new UrlValidationException(
+                    "Category is required for update",
+                    "CookieUpdateRequest validation failed: Category is null or empty"
+            );
+        }
+
+        if (updateRequest.getDescription() == null || updateRequest.getDescription().trim().isEmpty()) {
+            throw new UrlValidationException(
+                    "Description is required for update",
+                    "CookieUpdateRequest validation failed: Description is null or empty"
+            );
+        }
+
         log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getCookieName(), transactionId);
 
         try {

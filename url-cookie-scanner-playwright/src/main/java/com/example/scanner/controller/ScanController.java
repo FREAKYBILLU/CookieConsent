@@ -221,7 +221,7 @@ public class ScanController {
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
           @Parameter(description = "Cookie update request containing name, category, and description", required = true)
-          @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException {
+          @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
 
     if (transactionId == null || transactionId.trim().isEmpty()) {
       throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
@@ -243,9 +243,12 @@ public class ScanController {
         return ResponseEntity.badRequest().body(response);
       }
 
-    } catch (CookieNotFoundException e) {
-      log.warn("Cookie not found for update: {}", e.getMessage());
+    } catch (CookieNotFoundException | TransactionNotFoundException e) {
+      log.warn("Field validation error found for update: {}", e.getMessage());
       throw e;
+    }  catch (UrlValidationException e) {
+        log.warn("Cookie not found for update: {}", e.getMessage());
+        throw e;
     } catch (Exception e) {
       log.error("Error processing cookie update request for transactionId: {}", transactionId, e);
       throw new ScanExecutionException("Failed to update cookie: " + e.getMessage());

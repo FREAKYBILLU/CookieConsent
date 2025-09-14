@@ -333,20 +333,20 @@ public class ScanService {
                 // Try networkidle first (30 second timeout)
                 response = page.navigate(url, new Page.NavigateOptions()
                         .setWaitUntil(WaitUntilState.NETWORKIDLE)
-                        .setTimeout(30000));
+                        .setTimeout(90000));
             } catch (TimeoutError e) {
                 log.warn("Networkidle timeout, trying with domcontentloaded for {}", url);
                 try {
                     // Fallback to domcontentloaded (faster but less complete)
                     response = page.navigate(url, new Page.NavigateOptions()
                             .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
-                            .setTimeout(15000));
+                            .setTimeout(45000));
                 } catch (TimeoutError e2) {
                     log.warn("Domcontentloaded timeout, trying basic load for {}", url);
                     // Last resort - just wait for basic load
                     response = page.navigate(url, new Page.NavigateOptions()
                             .setWaitUntil(WaitUntilState.LOAD)
-                            .setTimeout(10000));
+                            .setTimeout(30000));
                 }
             }
             if (response == null || !response.ok()) {
@@ -2375,9 +2375,10 @@ public class ScanService {
             return key.length() <= 5 || key.startsWith("_");
         }
 
-        // Check known tracking keys (direct property)
-        if (config.getKnownTrackingKeys() != null) {
-            for (String knownKey : config.getKnownTrackingKeys()) {
+        // Check known tracking keys (direct property under storage-patterns)
+        var knownTrackingKeys = config.getKnownTrackingKeys();
+        if (knownTrackingKeys != null) {
+            for (String knownKey : knownTrackingKeys) {
                 if (key.contains(knownKey)) {
                     log.debug("Key '{}' matches known tracking key: {}", key, knownKey);
                     return true;
@@ -2385,6 +2386,7 @@ public class ScanService {
             }
         }
 
+        // Check generic patterns (direct property under storage-patterns)
         var generic = config.getGeneric();
         if (generic == null) {
             log.debug("Generic patterns not configured");
@@ -2402,8 +2404,9 @@ public class ScanService {
         }
 
         // Check regex patterns
-        if (generic.getRegexPatterns() != null) {
-            for (String pattern : generic.getRegexPatterns()) {
+        var regexPatterns = generic.getRegexPatterns();
+        if (regexPatterns != null) {
+            for (String pattern : regexPatterns) {
                 try {
                     if (key.matches(pattern)) {
                         log.debug("Key '{}' matches regex pattern: {}", key, pattern);
@@ -2416,9 +2419,10 @@ public class ScanService {
         }
 
         // Check keyword patterns
-        if (generic.getKeywordPatterns() != null) {
+        var keywordPatterns = generic.getKeywordPatterns();
+        if (keywordPatterns != null) {
             String lowerKey = key.toLowerCase();
-            for (String keyword : generic.getKeywordPatterns()) {
+            for (String keyword : keywordPatterns) {
                 if (lowerKey.contains(keyword.toLowerCase())) {
                     log.debug("Key '{}' matches keyword pattern: {}", key, keyword);
                     return true;
@@ -2427,8 +2431,9 @@ public class ScanService {
         }
 
         // Check prefix patterns
-        if (generic.getPrefixPatterns() != null) {
-            for (String prefix : generic.getPrefixPatterns()) {
+        var prefixPatterns = generic.getPrefixPatterns();
+        if (prefixPatterns != null) {
+            for (String prefix : prefixPatterns) {
                 if (key.startsWith(prefix)) {
                     log.debug("Key '{}' matches prefix pattern: {}", key, prefix);
                     return true;
@@ -2439,7 +2444,6 @@ public class ScanService {
         log.debug("Key '{}' does not match any tracking patterns", key);
         return false;
     }
-
     private void processStorageItems(Map<String, Object> items, String storageType, String scanUrl,
                                      String siteRoot, String subdomainName, Map<String, CookieDto> discoveredCookies,
                                      String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {

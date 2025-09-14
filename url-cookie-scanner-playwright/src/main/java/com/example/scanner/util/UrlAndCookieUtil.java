@@ -5,8 +5,13 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 import com.google.common.net.InternetDomainName;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.regex.Matcher;
 
 public class UrlAndCookieUtil {
+
+  private static final Pattern PROTOCOL_PATTERN = Pattern.compile("^([a-zA-Z][a-zA-Z0-9+.-]*):.*");
 
   // Private IP ranges (RFC 1918, RFC 4193, etc.)
   private static final Set<String> PRIVATE_IP_PREFIXES = Set.of(
@@ -24,7 +29,7 @@ public class UrlAndCookieUtil {
   );
 
 
-  //blocks obvious internal services
+  // NEW (only blocks obvious internal services)
   private static final Pattern INTERNAL_SERVICE_PATTERN = Pattern.compile(
           ".*(\\.|^)(internal|staging|dev|test|local|private)\\."
   );
@@ -66,20 +71,34 @@ public class UrlAndCookieUtil {
    */
   public static ValidationResult validateUrlForScanning(String url) {
     try {
-      // Basic URL parsing
       if (url == null || url.trim().isEmpty()) {
         return ValidationResult.invalid("URL cannot be null or empty");
       }
 
-      // Normalize URL (add https if no protocol)
-      String normalizedUrl = url.startsWith("http") ? url : "https://" + url;
+      String trimmedUrl = url.trim();
+      String normalizedUrl;
+
+      // Use regex to extract protocol if present
+      Matcher matcher = PROTOCOL_PATTERN.matcher(trimmedUrl);
+      if (matcher.matches()) {
+        // URL has protocol
+        String protocol = matcher.group(1).toLowerCase();
+        if (!protocol.equals("http") && !protocol.equals("https")) {
+          return ValidationResult.invalid("Only HTTP and HTTPS protocols are allowed");
+        }
+        normalizedUrl = trimmedUrl;
+      } else {
+        // No protocol - add https
+        normalizedUrl = "https://" + trimmedUrl;
+      }
+
+      // Rest of your validation logic remains the same...
       URI uri = new URI(normalizedUrl);
 
-      // Protocol validation
+      // Protocol validation (redundant check)
       if (!isHttpOrHttps(normalizedUrl)) {
         return ValidationResult.invalid("Only HTTP and HTTPS protocols are allowed");
       }
-
       // Host validation
       String host = uri.getHost();
       if (host == null || host.trim().isEmpty()) {
