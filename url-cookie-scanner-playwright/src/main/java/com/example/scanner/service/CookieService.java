@@ -1,5 +1,6 @@
 package com.example.scanner.service;
 
+import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.AddCookieRequest;
 import com.example.scanner.dto.AddCookieResponse;
 import com.example.scanner.dto.CookieUpdateRequest;
@@ -45,21 +46,21 @@ public class CookieService {
         }
 
         if (updateRequest == null || updateRequest.getCookieName() == null || updateRequest.getCookieName().trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Cookie name is required for update",
                     "CookieUpdateRequest validation failed: cookieName is null or empty"
             );
         }
 
         if (updateRequest.getCategory() == null || updateRequest.getCategory().trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Category is required for update",
                     "CookieUpdateRequest validation failed: Category is null or empty"
             );
         }
 
         if (updateRequest.getDescription() == null || updateRequest.getDescription().trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Description is required for update",
                     "CookieUpdateRequest validation failed: Description is null or empty"
             );
@@ -115,14 +116,14 @@ public class CookieService {
             throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Transaction ID is required",
                     "Method parameter validation failed: transactionId is null or empty"
             );
         }
 
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Cookie name is required",
                     "Method parameter validation failed: cookieName is null or empty"
             );
@@ -178,7 +179,7 @@ public class CookieService {
             throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Transaction ID is required",
                     "Method parameter validation failed: transactionId is null or empty"
             );
@@ -232,7 +233,7 @@ public class CookieService {
         if (!"COMPLETED".equals(scanResult.getStatus())) {
             String message = "Cannot update cookie for incomplete scan. Status: " + scanResult.getStatus();
             log.warn("Invalid scan status for transactionId {}: {}", transactionId, scanResult.getStatus());
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.INVALID_STATE_ERROR,
                     "Scan must be completed before updating cookies. Current status: " + scanResult.getStatus(),
                     "Scan status validation failed for transactionId: " + transactionId + ", current status: " + scanResult.getStatus()
             );
@@ -251,7 +252,7 @@ public class CookieService {
         if (allCookies.isEmpty()) {
             String message = "No cookies found for transaction: " + transactionId;
             log.warn("No cookies available for update in transactionId: {}", transactionId);
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.NO_COOKIES_FOUND,
                     "No cookies available for this transaction",
                     "Cookie list validation failed: transaction " + transactionId + " has null or empty cookie list"
             );
@@ -305,7 +306,7 @@ public class CookieService {
         }
 
         if (addRequest == null) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Cookie information is required",
                     "AddCookieRequest is null"
             );
@@ -326,7 +327,7 @@ public class CookieService {
 
             // Validate that we can add cookies (scan doesn't need to be completed for manual additions)
             if ("FAILED".equals(scanResult.getStatus())) {
-                throw new UrlValidationException(
+                throw new UrlValidationException(ErrorCodes.INVALID_STATE_ERROR,
                         "Cannot add cookies to a failed scan",
                         "Scan status validation failed for transactionId: " + transactionId + ", status: FAILED"
                 );
@@ -341,7 +342,7 @@ public class CookieService {
 
             // Check for duplicate cookie
             if (cookieExists(scanResult, addRequest)) {
-                throw new UrlValidationException(
+                throw new UrlValidationException(ErrorCodes.DUPLICATE_ERROR,
                         "Cookie already exists in this subdomain",
                         "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + subdomainName
                 );
@@ -387,7 +388,7 @@ public class CookieService {
 
         // Validate subdomain name format
         if (!normalized.matches("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$") && !"main".equals(normalized)) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.INVALID_FORMAT_ERROR,
                     "Invalid subdomain name format",
                     "Subdomain name must contain only lowercase letters, numbers, and hyphens: " + subdomainName
             );
@@ -409,7 +410,7 @@ public class CookieService {
 
             // Cookie domain must belong to the same root domain as the scan URL
             if (!scanRootDomain.equalsIgnoreCase(cookieRootDomain)) {
-                throw new UrlValidationException(
+                throw new UrlValidationException(ErrorCodes.INVALID_FORMAT_ERROR,
                         "Cookie domain must belong to the same root domain as the scanned URL",
                         String.format("Cookie domain '%s' does not belong to scan domain '%s'",
                                 cookieDomain, scanRootDomain)
@@ -420,7 +421,7 @@ public class CookieService {
                     cookieDomain, scanRootDomain);
 
         } catch (Exception e) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.INVALID_FORMAT_ERROR,
                     "Invalid cookie domain format",
                     "Cookie domain validation failed: " + e.getMessage()
             );

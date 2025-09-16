@@ -1,5 +1,6 @@
 package com.example.scanner.service;
 
+import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.CookieCategorizationRequest;
 import com.example.scanner.dto.CookieCategorizationResponse;
 import com.example.scanner.exception.CookieCategorizationException;
@@ -139,7 +140,7 @@ public class CookieCategorizationService {
 
     public CookieCategorizationResponse categorizeSingleCookie(String cookieName) throws CookieCategorizationException, UrlValidationException {
         if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException(
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Cookie name is required for categorization",
                     "categorizeSingleCookie called with null or empty cookieName parameter"
             );

@@ -2,6 +2,7 @@ package com.example.scanner.exception;
 
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.ErrorResponse;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,8 @@ import org.springframework.http.HttpHeaders;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 @RestControllerAdvice
@@ -27,22 +30,113 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    // ==================== RATE LIMITING AND CIRCUIT BREAKER EXCEPTIONS ====================
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<ErrorResponse> handleCircuitBreakerOpen(
+            CallNotPermittedException ex, WebRequest request) {
+
+        log.error("Circuit breaker is OPEN - service unavailable: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "R5031", // Service Unavailable - Circuit Breaker
+                "Service is temporarily unavailable due to high error rate. Please try again in a few minutes.",
+                "Circuit breaker is OPEN: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "30") // Suggest retry after 30 seconds
+                .body(error);
+    }
+
+    @ExceptionHandler(RejectedExecutionException.class)
+    public ResponseEntity<ErrorResponse> handleThreadPoolRejection(
+            RejectedExecutionException ex, WebRequest request) {
+
+        log.error("Thread pool rejected execution - system overloaded: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "R5032", // Service Unavailable - Thread Pool Full
+                "System is currently overloaded. Please reduce request rate and try again later.",
+                "Thread pool rejection: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header("Retry-After", "60") // Suggest retry after 60 seconds
+                .body(error);
+    }
+
+    @ExceptionHandler(TimeoutException.class)
+    public ResponseEntity<ErrorResponse> handleTimeout(
+            TimeoutException ex, WebRequest request) {
+
+        log.error("Request timeout occurred: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "R5033", // Service Unavailable - Timeout
+                "Request timed out. The server is taking too long to respond. Please try again later.",
+                "Timeout exception: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.REQUEST_TIMEOUT).body(error);
+    }
+
+    @ExceptionHandler(OutOfMemoryError.class)
+    public ResponseEntity<ErrorResponse> handleOutOfMemory(
+            OutOfMemoryError ex, WebRequest request) {
+
+        log.error("CRITICAL: Out of memory error occurred: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "R5034", // Critical Error - Out of Memory
+                "System is experiencing memory issues. Please try again later or contact support.",
+                "Out of memory error: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    @ExceptionHandler(StackOverflowError.class)
+    public ResponseEntity<ErrorResponse> handleStackOverflow(
+            StackOverflowError ex, WebRequest request) {
+
+        log.error("CRITICAL: Stack overflow error occurred: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                "R5035", // Critical Error - Stack Overflow
+                "System encountered a processing error. Please contact support if this persists.",
+                "Stack overflow error: " + ex.getMessage(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    // ==================== EXISTING EXCEPTION HANDLERS ====================
+
     @ExceptionHandler(UrlValidationException.class)
     public ResponseEntity<ErrorResponse> handleUrlValidation(UrlValidationException ex, WebRequest request) {
         log.warn("URL validation failed: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
-                ex.getUserMessage(),           // User-friendly: "Invalid URL provided"
-                ex.getDeveloperDetails(),      // Developer details: "URL validation failed: missing protocol"
+                ex.getUserMessage(),
+                ex.getDeveloperDetails(),
                 Instant.now(),
                 request.getDescription(false)
         );
 
         return ResponseEntity.badRequest().body(error);
     }
-
-
     @ExceptionHandler(CookieNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleCookieNotFoundException(CookieNotFoundException ex, HttpServletRequest request) {
         ErrorResponse errorResponse = new ErrorResponse(
@@ -55,6 +149,7 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
     }
+
     @ExceptionHandler(TransactionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleTransactionNotFound(TransactionNotFoundException ex, WebRequest request) {
         log.warn("Transaction not found: {}", ex.getMessage());
@@ -69,7 +164,6 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
     }
-    // TECHNICAL EXCEPTIONS - Use custom user-friendly messages
 
     @ExceptionHandler(ScanExecutionException.class)
     public ResponseEntity<ErrorResponse> handleScanExecution(ScanExecutionException ex, WebRequest request) {
@@ -201,19 +295,51 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(error);
     }
 
-    @ExceptionHandler(Exception.class)
-    public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, WebRequest request) {
-        log.error("Unexpected error: {}", ex.getMessage(), ex);
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> handlePathVariableValidation(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
+            WebRequest request) {
+
+        log.warn("Invalid path variable: {} - {}", ex.getName(), ex.getValue());
+
+        String userMessage = "Invalid transaction ID format";
+        String developerDetails = String.format(
+                "Path variable '%s' has invalid value '%s'. Expected format: UUID string",
+                ex.getName(),
+                ex.getValue()
+        );
 
         ErrorResponse error = new ErrorResponse(
-                ErrorCodes.INTERNAL_ERROR,
-                "Something went wrong on our end. Please try again later", // User-friendly
-                "Unexpected error: " + ex.getClass().getSimpleName() + " - " + ex.getMessage(), // Developer details
+                ErrorCodes.VALIDATION_ERROR,
+                userMessage,
+                developerDetails,
                 Instant.now(),
                 request.getDescription(false)
         );
 
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+        return ResponseEntity.badRequest().body(error);
+    }
+
+    @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)
+    public ResponseEntity<ErrorResponse> handleConstraintViolation(
+            jakarta.validation.ConstraintViolationException ex,
+            WebRequest request) {
+
+        log.warn("Constraint violation: {}", ex.getMessage());
+
+        String violations = ex.getConstraintViolations().stream()
+                .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
+                .collect(Collectors.joining(", "));
+
+        ErrorResponse error = new ErrorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                "Request contains invalid parameters",
+                "Constraint violations: " + violations,
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.badRequest().body(error);
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -247,5 +373,100 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
                 .headers(headers)
                 .body(error);
+    }
+
+    // ==================== ENHANCED ERROR HANDLING WITH ATTACK DETECTION ====================
+
+    /**
+     * Enhanced exception handling with error tracking and attack detection
+     */
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, WebRequest request) {
+        // Track error patterns to identify potential DoS attacks
+        String clientInfo = extractClientInfo(request);
+        log.error("Unexpected error from client {}: {}", clientInfo, ex.getMessage(), ex);
+
+        // Check if this might be a resource exhaustion attack
+        if (isResourceExhaustionPattern(ex)) {
+            log.warn("Potential resource exhaustion attack detected from client: {}", clientInfo);
+
+            ErrorResponse error = new ErrorResponse(
+                    "R5036", // Resource Exhaustion Protection
+                    "Request could not be processed due to resource constraints. Please try again later.",
+                    "Resource exhaustion protection triggered: " + ex.getClass().getSimpleName(),
+                    Instant.now(),
+                    request.getDescription(false)
+            );
+
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .header("Retry-After", "120") // Longer retry delay
+                    .body(error);
+        }
+
+        ErrorResponse error = new ErrorResponse(
+                ErrorCodes.INTERNAL_ERROR,
+                "Something went wrong on our end. Please try again later", // User-friendly
+                "Unexpected error: " + ex.getClass().getSimpleName() + " - " + ex.getMessage(), // Developer details
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
+    }
+
+    private String extractClientInfo(WebRequest request) {
+        // Extract client IP and User-Agent for tracking
+        try {
+            HttpServletRequest httpRequest = (HttpServletRequest) request.resolveReference("request");
+            if (httpRequest != null) {
+                String ip = getClientIpAddress(httpRequest);
+                String userAgent = httpRequest.getHeader("User-Agent");
+                return ip + " [" + (userAgent != null ? userAgent : "unknown") + "]";
+            }
+        } catch (Exception e) {
+            // Ignore extraction errors
+        }
+        return "unknown";
+    }
+
+    private String getClientIpAddress(HttpServletRequest request) {
+        // Check for IP in various headers (for load balancers/proxies)
+        String[] ipHeaders = {
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "X-Client-IP",
+                "CF-Connecting-IP", // Cloudflare
+                "True-Client-IP"    // Akamai
+        };
+
+        for (String header : ipHeaders) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                // X-Forwarded-For can contain multiple IPs, take the first one
+                if (ip.contains(",")) {
+                    ip = ip.split(",")[0].trim();
+                }
+                return ip;
+            }
+        }
+
+        // Fallback to remote address
+        return request.getRemoteAddr();
+    }
+
+    private boolean isResourceExhaustionPattern(Exception ex) {
+        // Identify patterns that suggest resource exhaustion attacks
+        String message = ex.getMessage();
+        String className = ex.getClass().getSimpleName();
+
+        return message != null && (
+                message.contains("too many open files") ||
+                        message.contains("cannot allocate memory") ||
+                        message.contains("connection pool exhausted") ||
+                        message.contains("thread pool") ||
+                        className.contains("OutOfMemory") ||
+                        className.contains("StackOverflow") ||
+                        className.contains("RejectedExecution")
+        );
     }
 }
