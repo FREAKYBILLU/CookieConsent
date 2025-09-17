@@ -18,13 +18,20 @@ import java.time.Instant;
 import java.util.regex.Pattern;
 
 @Component
-@Order(1)
+@Order(1) // High priority - runs before path traversal filter
 public class InvalidCharacterFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(InvalidCharacterFilter.class);
 
-    // Pattern for invalid characters that might cause Tomcat to reject
-    private static final Pattern INVALID_CHAR_PATTERN = Pattern.compile("[\\$%\\^&\\*'\"<>\\\\]");
+    // ENHANCED: Pattern for ALL invalid characters that should be blocked
+    private static final Pattern INVALID_CHAR_PATTERN = Pattern.compile(
+            ".*[\\$%\\^&\\*'\"<>\\\\\\[\\]\\{\\}\\|`~#@!+=:;,?\\s].*"
+    );
+
+    // Pattern specifically for transaction ID validation (should only contain alphanumeric, hyphens)
+    private static final Pattern TRANSACTION_ID_PATTERN = Pattern.compile(
+            "^[a-fA-F0-9-]{36}$" // UUID format: 8-4-4-4-12 characters
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -42,9 +49,21 @@ public class InvalidCharacterFilter implements Filter {
 
             String requestURI = httpRequest.getRequestURI();
 
-            // Check if URI contains invalid characters
+            // ENHANCED: Check for transaction ID endpoints specifically
+            if (isStatusEndpoint(requestURI)) {
+                String transactionId = extractTransactionId(requestURI);
+                if (transactionId != null && !isValidTransactionId(transactionId)) {
+                    log.warn("SECURITY: Invalid transaction ID format blocked: {} from IP: {}",
+                            transactionId, getClientIpAddress(httpRequest));
+                    handleInvalidTransactionId(httpRequest, httpResponse, requestURI, transactionId);
+                    return;
+                }
+            }
+
+            // Check if URI contains other invalid characters
             if (INVALID_CHAR_PATTERN.matcher(requestURI).find()) {
-                log.warn("Blocking request with invalid characters: {}", requestURI);
+                log.warn("SECURITY: Request with invalid characters blocked: {} from IP: {}",
+                        requestURI, getClientIpAddress(httpRequest));
                 handleInvalidCharacters(httpRequest, httpResponse, requestURI);
                 return;
             }
@@ -53,23 +72,125 @@ public class InvalidCharacterFilter implements Filter {
         chain.doFilter(request, response);
     }
 
-    private void handleInvalidCharacters(HttpServletRequest request, HttpServletResponse response, String uri)
-            throws IOException {
+    /**
+     * Check if this is a status endpoint
+     */
+    private boolean isStatusEndpoint(String requestURI) {
+        return requestURI != null &&
+                (requestURI.startsWith("/api/v2/status/") ||
+                        requestURI.startsWith("/status/") ||
+                        requestURI.matches(".*/(status|transaction)/[^/]+.*"));
+    }
+
+    /**
+     * Extract transaction ID from URI
+     */
+    private String extractTransactionId(String requestURI) {
+        try {
+            // Match patterns like /api/v2/status/{id} or /status/{id}
+            String[] parts = requestURI.split("/");
+            for (int i = 0; i < parts.length - 1; i++) {
+                if ("status".equals(parts[i]) && i + 1 < parts.length) {
+                    return parts[i + 1];
+                }
+                if ("transaction".equals(parts[i]) && i + 1 < parts.length) {
+                    return parts[i + 1];
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error extracting transaction ID from URI: {}", requestURI);
+        }
+        return null;
+    }
+
+    /**
+     * ENHANCED: Validate transaction ID format (UUID)
+     */
+    private boolean isValidTransactionId(String transactionId) {
+        if (transactionId == null || transactionId.trim().isEmpty()) {
+            return false;
+        }
+
+        // Check for dangerous patterns first
+        if (INVALID_CHAR_PATTERN.matcher(transactionId).find()) {
+            return false;
+        }
+
+        // Check UUID format
+        return TRANSACTION_ID_PATTERN.matcher(transactionId).matches();
+    }
+
+    private void handleInvalidTransactionId(HttpServletRequest request, HttpServletResponse response,
+                                            String uri, String invalidId) throws IOException {
 
         ErrorResponse errorResponse = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
-                "Invalid characters in URL path",
-                String.format("Request URI '%s' contains invalid characters. Only alphanumeric, hyphen, and underscore are allowed.", uri),
+                "Invalid transaction ID format. Transaction ID must be a valid UUID.",
+                String.format("SECURITY: Invalid transaction ID '%s' in URI: %s from IP: %s",
+                        invalidId, uri, getClientIpAddress(request)),
                 Instant.now(),
                 uri
         );
 
-        response.setStatus(HttpStatus.BAD_REQUEST.value());
+        sendJsonErrorResponse(response, HttpStatus.BAD_REQUEST, errorResponse);
+    }
+
+    private void handleInvalidCharacters(HttpServletRequest request, HttpServletResponse response,
+                                         String uri) throws IOException {
+
+        ErrorResponse errorResponse = new ErrorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                "Invalid characters in URL path. Only alphanumeric characters, hyphens, and underscores are allowed.",
+                String.format("SECURITY: Request URI '%s' contains invalid characters from IP: %s",
+                        uri, getClientIpAddress(request)),
+                Instant.now(),
+                uri
+        );
+
+        sendJsonErrorResponse(response, HttpStatus.BAD_REQUEST, errorResponse);
+    }
+
+    /**
+     * CRITICAL: Ensure JSON response with proper headers
+     */
+    private void sendJsonErrorResponse(HttpServletResponse response, HttpStatus status,
+                                       ErrorResponse errorResponse) throws IOException {
+
+        // FORCE JSON response
+        response.setStatus(status.value());
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
+
+        // Add security headers
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        response.setHeader("X-Frame-Options", "DENY");
+        response.setHeader("X-XSS-Protection", "1; mode=block");
+        response.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
 
         String jsonResponse = objectMapper.writeValueAsString(errorResponse);
         response.getWriter().write(jsonResponse);
         response.getWriter().flush();
+    }
+
+    private String getClientIpAddress(HttpServletRequest request) {
+        String[] ipHeaders = {
+                "X-Forwarded-For",
+                "X-Real-IP",
+                "X-Client-IP",
+                "CF-Connecting-IP",
+                "True-Client-IP"
+        };
+
+        for (String header : ipHeaders) {
+            String ip = request.getHeader(header);
+            if (ip != null && !ip.isEmpty() && !"unknown".equalsIgnoreCase(ip)) {
+                if (ip.contains(",")) {
+                    ip = ip.split(",")[0].trim();
+                }
+                return ip;
+            }
+        }
+
+        return request.getRemoteAddr();
     }
 }

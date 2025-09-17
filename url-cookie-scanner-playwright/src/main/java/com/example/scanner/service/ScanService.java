@@ -1205,11 +1205,21 @@ public class ScanService {
             List<IframeInfo> iframes = detectAllIframes(page);
             log.info("Found {} iframes/embeds on page", iframes.size());
 
-            // ENHANCED: Better frame processing
+            // ENHANCED: Better frame processing with URL validation
             for (Frame frame : page.frames()) {
                 try {
                     String frameUrl = frame.url();
-                    if (frameUrl == null || frameUrl.equals("about:blank") || frameUrl.equals(url)) {
+
+                    // FIX: Add validation for empty or invalid URLs
+                    if (frameUrl == null || frameUrl.trim().isEmpty() ||
+                            frameUrl.equals("about:blank") || frameUrl.equals(url)) {
+                        log.debug("Skipping frame with invalid/empty URL: {}", frameUrl);
+                        continue;
+                    }
+
+                    // FIX: Additional validation for proper URL format
+                    if (!frameUrl.startsWith("http://") && !frameUrl.startsWith("https://")) {
+                        log.debug("Skipping frame with non-HTTP URL: {}", frameUrl);
                         continue;
                     }
 
@@ -1254,39 +1264,49 @@ public class ScanService {
                         }
                     """);
                     } catch (Exception e) {
-                        log.debug("Frame js error timeout: {}", frameUrl);
+                        log.debug("Frame js execution failed for {}: {}", frameUrl, e.getMessage());
                     }
 
-                    // Capture cookies from this frame
-                    List<Cookie> frameCookies = page.context().cookies(frameUrl);
-                    String frameRoot = UrlAndCookieUtil.extractRootDomain(frameUrl);
-                    String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
-                    Source frameSource = siteRoot.equalsIgnoreCase(frameRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
+                    // FIX: Add URL validation before getting cookies
+                    try {
+                        // Validate URL before passing to cookies()
+                        new URL(frameUrl); // This will throw if invalid
 
-                    for (Cookie frameCookie : frameCookies) {
-                        CookieDto cookieDto = mapPlaywrightCookie(frameCookie, frameUrl, frameRoot);
-                        cookieDto.setSource(frameSource);
+                        List<Cookie> frameCookies = page.context().cookies(frameUrl);
+                        String frameRoot = UrlAndCookieUtil.extractRootDomain(frameUrl);
+                        String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
+                        Source frameSource = siteRoot.equalsIgnoreCase(frameRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
 
-                        String subdomainName = determineSubdomainNameFromUrl(frameUrl, url, null);
-                        cookieDto.setSubdomainName(subdomainName);
+                        for (Cookie frameCookie : frameCookies) {
+                            CookieDto cookieDto = mapPlaywrightCookie(frameCookie, frameUrl, frameRoot);
+                            cookieDto.setSource(frameSource);
 
-                        String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
-                        if (!discoveredCookies.containsKey(cookieKey)) {
-                            discoveredCookies.put(cookieKey, cookieDto);
-                            categorizeWithExternalAPI(cookieDto);
-                            saveIncrementalCookieWithFlush(transactionId, cookieDto);
-                            scanMetrics.incrementCookiesFound(frameSource.name());
-                            metrics.recordCookieDiscovered(frameSource.name());
-                            log.info("ADDED FRAME COOKIE: {} from {} (Source: {})",
-                                    cookieDto.getName(), frameUrl, frameSource);
+                            String subdomainName = determineSubdomainNameFromUrl(frameUrl, url, null);
+                            cookieDto.setSubdomainName(subdomainName);
+
+                            String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
+                            if (!discoveredCookies.containsKey(cookieKey)) {
+                                discoveredCookies.put(cookieKey, cookieDto);
+                                categorizeWithExternalAPI(cookieDto);
+                                saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                                scanMetrics.incrementCookiesFound(frameSource.name());
+                                metrics.recordCookieDiscovered(frameSource.name());
+                                log.info("ADDED FRAME COOKIE: {} from {} (Source: {})",
+                                        cookieDto.getName(), frameUrl, frameSource);
+                            }
                         }
+                    } catch (java.net.MalformedURLException e) {
+                        log.debug("Invalid frame URL format, skipping cookie capture: {}", frameUrl);
+                    } catch (Exception e) {
+                        log.debug("Error capturing cookies from frame {}: {}", frameUrl, e.getMessage());
                     }
 
                 } catch (Exception e) {
-                    log.debug("Error processing frame {}", e.getMessage());
+                    log.debug("Error processing frame: {}", e.getMessage());
                 }
             }
 
+            // Rest of the method continues unchanged...
             interactWithAllIframes(page, iframes);
             page.waitForTimeout(1500);
             captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
@@ -1913,44 +1933,62 @@ public class ScanService {
         try {
             log.info("=== PATTERN-BASED COOKIE DISCOVERY ===");
 
-            // FIX: Wrap the code in a function
+            // FIX: Wrap the JavaScript code in an IIFE (Immediately Invoked Function Expression)
             Map<String, String> domainPatterns = (Map<String, String>) page.evaluate("""
-            (function() {
-                const domains = {};
-                
-                // Analyze all external resources
-                Array.from(document.querySelectorAll('[src], [href], [action]')).forEach(el => {
-                    try {
-                        const url = el.src || el.href || el.action;
-                        if (url && url.startsWith('http')) {
-                            const hostname = new URL(url).hostname.toLowerCase();
-                            if (hostname !== window.location.hostname) {
-                                
-                                // Classify domain purpose based on URL patterns
-                                let purpose = 'unknown';
-                                if (url.includes('analytics') || url.includes('track') || url.includes('collect')) {
-                                    purpose = 'analytics';
-                                } else if (url.includes('ads') || url.includes('advertising') || url.includes('doubleclick')) {
-                                    purpose = 'advertising';
-                                } else if (url.includes('auth') || url.includes('login') || url.includes('oauth')) {
-                                    purpose = 'authentication';
-                                } else if (url.includes('social') || url.includes('share') || url.includes('widget')) {
-                                    purpose = 'social';
-                                } else if (url.includes('cdn') || url.includes('static') || url.includes('assets')) {
-                                    purpose = 'cdn';
-                                }
-                                
-                                domains[hostname] = purpose;
+        (function() {
+            const domains = {};
+            
+            // Analyze all external resources
+            Array.from(document.querySelectorAll('[src], [href], [action]')).forEach(el => {
+                try {
+                    const url = el.src || el.href || el.action;
+                    if (url && url.startsWith('http')) {
+                        const hostname = new URL(url).hostname.toLowerCase();
+                        if (hostname !== window.location.hostname) {
+                            
+                            // Classify domain purpose based on URL patterns
+                            let purpose = 'unknown';
+                            if (url.includes('analytics') || url.includes('track') || url.includes('collect')) {
+                                purpose = 'analytics';
+                            } else if (url.includes('ads') || url.includes('advertising') || url.includes('doubleclick')) {
+                                purpose = 'advertising';
+                            } else if (url.includes('auth') || url.includes('login') || url.includes('oauth')) {
+                                purpose = 'authentication';
+                            } else if (url.includes('social') || url.includes('share') || url.includes('widget')) {
+                                purpose = 'social';
+                            } else if (url.includes('cdn') || url.includes('static') || url.includes('assets')) {
+                                purpose = 'cdn';
                             }
+                            
+                            domains[hostname] = purpose;
                         }
-                    } catch(e) {}
-                });
-                
-                return domains;
-            })();
+                    }
+                } catch(e) {}
+            });
+            
+            return domains;
+        })();
         """);
 
-            // Rest of your method...
+            // Rest of your method continues unchanged...
+            for (Map.Entry<String, String> entry : domainPatterns.entrySet()) {
+                String domain = entry.getKey();
+                String purpose = entry.getValue();
+
+                List<String> endpointsToTry = getEndpointsForPurpose(purpose);
+
+                for (String endpoint : endpointsToTry) {
+                    try {
+                        String testUrl = "https://" + domain + endpoint;
+                        page.navigate(testUrl, new Page.NavigateOptions().setTimeout(2000));
+                        page.waitForTimeout(500);
+                        captureBrowserCookiesEnhanced(context, testUrl, discoveredCookies, transactionId, scanMetrics);
+                    } catch (Exception e) {
+                        // Expected to fail for many URLs - continue silently
+                    }
+                }
+            }
+
         } catch (Exception e) {
             log.warn("Error in pattern-based discovery: {}", e.getMessage());
         }

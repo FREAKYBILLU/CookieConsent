@@ -34,9 +34,15 @@ public class RateLimitingConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        log.info("Registering rate limit interceptor for specific paths");
         registry.addInterceptor(rateLimitInterceptor())
-                .addPathPatterns("/api/**");  // Broader pattern
+                .addPathPatterns("/**")
+                .excludePathPatterns(
+                        "/health",
+                        "/metrics",
+                        "/swagger-ui/**",
+                        "/api-docs/**",
+                        "/error"
+                );
     }
 
     public Bucket createNewBucket() {

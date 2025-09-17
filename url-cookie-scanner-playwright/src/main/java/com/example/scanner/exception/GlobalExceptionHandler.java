@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -120,8 +121,6 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
-
-    // ==================== EXISTING EXCEPTION HANDLERS ====================
 
     @ExceptionHandler(UrlValidationException.class)
     public ResponseEntity<ErrorResponse> handleUrlValidation(UrlValidationException ex, WebRequest request) {
@@ -300,14 +299,26 @@ public class GlobalExceptionHandler {
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
             WebRequest request) {
 
-        log.warn("Invalid path variable: {} - {}", ex.getName(), ex.getValue());
+        log.warn("SECURITY: Path variable validation error - {} for request: {}",
+                ex.getMessage(), request.getDescription(false));
 
-        String userMessage = "Invalid transaction ID format";
+        String paramName = ex.getName();
+        String paramValue = String.valueOf(ex.getValue());
+
+        String userMessage = "Invalid URL parameter format";
         String developerDetails = String.format(
-                "Path variable '%s' has invalid value '%s'. Expected format: UUID string",
-                ex.getName(),
-                ex.getValue()
+                "SECURITY: Path variable '%s' has invalid value '%s'. Expected format: UUID string",
+                paramName, paramValue
         );
+
+        // Enhanced security detection for transaction ID
+        if ("transactionId".equals(paramName)) {
+            userMessage = "Invalid transaction ID format. Transaction ID must be a valid UUID.";
+
+            // Log security attempt
+            log.warn("SECURITY ALERT: Invalid transaction ID attempt - value: {} from request: {}",
+                    paramValue, request.getDescription(false));
+        }
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
@@ -317,7 +328,9 @@ public class GlobalExceptionHandler {
                 request.getDescription(false)
         );
 
-        return ResponseEntity.badRequest().body(error);
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .contentType(MediaType.APPLICATION_JSON)  // FORCE JSON
+                .body(error);
     }
 
     @ExceptionHandler(jakarta.validation.ConstraintViolationException.class)

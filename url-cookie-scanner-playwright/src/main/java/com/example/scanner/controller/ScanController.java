@@ -33,7 +33,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/v2")
+// @RequestMapping("${api.context.path}")
+@RequestMapping("/")
 @CrossOrigin(origins = "*", allowedHeaders = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
 public class ScanController {
