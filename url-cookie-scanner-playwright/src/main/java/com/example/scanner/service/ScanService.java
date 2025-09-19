@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -53,10 +54,15 @@ public class ScanService {
     @Qualifier("scanCircuitBreaker")
     private CircuitBreaker scanCircuitBreaker;
 
+    @Value("${scanner.cookie.collection.phases:2}")
+    private int cookieCollectionPhases;
+
+    @Value("${scanner.cookie.collection.interval.ms:1500}")
+    private int cookieCollectionInterval;
+
     private final ScanResultRepository repository;
     private final CookieCategorizationService cookieCategorizationService;
     private final CookieScanMetrics metrics;
-    private final Map<String, CookieDto> cookiesAwaitingCategorization = new ConcurrentHashMap<>();
 
     @Lazy
     @Autowired
@@ -345,12 +351,12 @@ public class ScanService {
 
             page.waitForTimeout(500);
 
-            for (int pass = 1; pass <= 3; pass++) {
-                log.info("Cookie capture pass {} of 3", pass);
+            for (int phase = 1; phase <= cookieCollectionPhases; phase++) {
+                log.info("Cookie collection phase {} of {}", phase, cookieCollectionPhases);
                 captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
 
-                if (pass < 3) {
-                    page.waitForTimeout(1000);
+                if (phase < cookieCollectionPhases) {
+                    page.waitForTimeout(cookieCollectionInterval);
                 }
             }
 
@@ -358,8 +364,6 @@ public class ScanService {
                 log.info("Embedded content detected - extending wait time");
                 page.waitForTimeout(1500);
             }
-
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
 
             scanMetrics.setScanPhase("LOADING_EXTERNAL_RESOURCES");
             log.info("=== PHASE 2: Generic external resource detection and triggering ===");
@@ -474,17 +478,11 @@ public class ScanService {
     })();
 """);
 
-            page.waitForTimeout(1500);
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-
-            page.waitForTimeout(2500);
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
             triggerPatternBasedCookieDiscovery(page, context, url, discoveredCookies, transactionId, scanMetrics);
-            detectGenericAuthenticationFlow(page, context, url, discoveredCookies, transactionId, scanMetrics);
+            //detectGenericAuthenticationFlow(page, context, url, discoveredCookies, transactionId, scanMetrics);
             detectGenericPixelTracking(page, context, url, discoveredCookies, transactionId, scanMetrics);
             detectGenericApplicationState(page, context, url, discoveredCookies, transactionId, scanMetrics);
 
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
             // === PHASE 3: AGGRESSIVE CONSENT HANDLING ===
             scanMetrics.setScanPhase("HANDLING_CONSENT");
             log.info("=== PHASE 3: Aggressive consent banner handling ===");
@@ -546,9 +544,9 @@ public class ScanService {
 
             // === NEW: GENERIC AUTHENTICATION FLOW DETECTION ===
             scanMetrics.setScanPhase("AUTHENTICATION_DETECTION");
-            log.info("=== PHASE 3.5: Generic authentication flow detection ===");
-            detectAndTriggerAuthenticationFlows(page, url, transactionId, discoveredCookies, scanMetrics);
-            log.info("Captured storage after authentication triggers");
+//            log.info("=== PHASE 3.5: Generic authentication flow detection ===");
+//            //detectAndTriggerAuthenticationFlows(page, url, transactionId, discoveredCookies, scanMetrics);
+//            log.info("Captured storage after authentication triggers");
 
             // === NEW: SOCIAL WIDGET DETECTION ===
             scanMetrics.setScanPhase("SOCIAL_WIDGETS");
@@ -562,17 +560,79 @@ public class ScanService {
             log.info("=== PHASE 4: Aggressive user interaction simulation ===");
             for (int i = 0; i <= 8; i++) {
                 double scrollPercent = i * 0.05;
-                page.evaluate(String.format("window.scrollTo(0, document.body.scrollHeight * %f)", scrollPercent));
 
+                // SAFE SCROLL: Check for document.body existence and use fallbacks
+                page.evaluate(String.format("""
+        // Safe scroll implementation with multiple fallbacks
+        (function() {
+            try {
+                let scrollTarget = 0;
+                let totalHeight = 0;
+                
+                // Try different methods to get document height
+                if (document.body && document.body.scrollHeight) {
+                    totalHeight = document.body.scrollHeight;
+                } else if (document.documentElement && document.documentElement.scrollHeight) {
+                    totalHeight = document.documentElement.scrollHeight;
+                } else if (document.scrollingElement && document.scrollingElement.scrollHeight) {
+                    totalHeight = document.scrollingElement.scrollHeight;
+                } else {
+                    // Fallback to window height
+                    totalHeight = window.innerHeight || screen.height || 1000;
+                }
+                
+                scrollTarget = Math.floor(totalHeight * %f);
+                
+                // Safe scroll
+                if (scrollTarget >= 0) {
+                    window.scrollTo(0, scrollTarget);
+                    console.log('Scrolled to:', scrollTarget, 'of', totalHeight);
+                } else {
+                    console.log('Invalid scroll target, skipping scroll');
+                }
+                
+            } catch(e) {
+                console.log('Scroll operation failed:', e.message);
+                // Fallback: just scroll to a fixed position
+                try {
+                    window.scrollTo(0, %d);
+                } catch(e2) {
+                    console.log('Fallback scroll also failed:', e2.message);
+                }
+            }
+        })();
+    """, scrollPercent, (int)(scrollPercent * 1000)));
+
+                // SAFE ANALYTICS TRIGGERING: Also fix the gtag call
                 page.evaluate("""
-        window.dispatchEvent(new Event('scroll'));
-        window.dispatchEvent(new Event('resize'));
-        
-        if (typeof gtag === 'function') {
-            gtag('event', 'scroll', {
-                percent_scrolled: Math.round(window.pageYOffset / document.body.scrollHeight * 100)
-            });
-        }
+        (function() {
+            try {
+                window.dispatchEvent(new Event('scroll'));
+                window.dispatchEvent(new Event('resize'));
+                
+                // Safe gtag call with proper height calculation
+                if (typeof gtag === 'function') {
+                    let currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
+                    let totalHeight = 0;
+                    
+                    if (document.body && document.body.scrollHeight) {
+                        totalHeight = document.body.scrollHeight;
+                    } else if (document.documentElement && document.documentElement.scrollHeight) {
+                        totalHeight = document.documentElement.scrollHeight;
+                    } else {
+                        totalHeight = window.innerHeight || 1000;
+                    }
+                    
+                    let percentScrolled = totalHeight > 0 ? Math.round((currentScroll / totalHeight) * 100) : 0;
+                    
+                    gtag('event', 'scroll', {
+                        percent_scrolled: percentScrolled
+                    });
+                }
+            } catch(e) {
+                console.log('Analytics event failed:', e.message);
+            }
+        })();
     """);
 
                 page.waitForTimeout(300);
@@ -613,10 +673,6 @@ public class ScanService {
                 page.mouse().move(x, y);
                 page.waitForTimeout(200);
             }
-
-            page.waitForTimeout(2500); // Longer wait after interactions
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-            log.info("Captured storage after user interactions");
 
             // === PHASE 5: ANALYTICS EVENT BOMBING ===
             scanMetrics.setScanPhase("TRIGGERING_ANALYTICS");
@@ -674,10 +730,6 @@ public class ScanService {
         console.log('Generic analytics triggering completed');
     })();
 """);
-
-            page.waitForTimeout(2500);
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-            log.info("Captured storage after user interactions");
 
             // Add this right after the analytics event triggering section
             scanMetrics.setScanPhase("COOKIE_SYNC_DETECTION");
@@ -751,7 +803,7 @@ public class ScanService {
 
                 scanMetrics.setScanPhase("SCANNING_SUBDOMAINS");
 
-                for (int i = 0; i < maxSubdomainsToScan -1; i++) {
+                for (int i = 0; i < maxSubdomainsToScan; i++) {
                     String subdomain = subdomains.get(i);
                     String subdomainName = SubdomainValidationUtil.extractSubdomainName(subdomain, rootDomain);
 
@@ -762,19 +814,21 @@ public class ScanService {
                         Response subdomainResponse = page.navigate(subdomain, new Page.NavigateOptions()
                                 .setWaitUntil(WaitUntilState.DOMCONTENTLOADED) // FASTER
                                 .setTimeout(8000)); // SHORTER timeout
-
+                        log.info("PAGE NAVIGATION DONE");
                         if (subdomainResponse != null && subdomainResponse.ok()) {
                             page.waitForTimeout(1500);
 
                             captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
                                     transactionId, scanMetrics, subdomainName);
-
+                            log.info("CAPTURE BROWSER COOKIES WITH SUBDOMAIN NAME");
                             try {
                                 boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page, 5000); // SHORTER
+                                log.info("HANDLED CONSENT BANNER");
                                 if (subdomainConsentHandled) {
                                     page.waitForTimeout(1000);
                                     captureBrowserCookiesWithSubdomainName(context, subdomain, discoveredCookies,
                                             transactionId, scanMetrics, subdomainName);
+                                    log.info("CAPTURE BROWSER COOKIES WITH SUBDOMAIN NAME");
                                     log.info("Captured cookies after consent on subdomain: {}", subdomainName);
                                 }
                             } catch (Exception e) {
@@ -802,41 +856,9 @@ public class ScanService {
 
             // === AGGRESSIVE FINAL CAPTURE ===
             scanMetrics.setScanPhase("FINAL_CAPTURE");
-            log.info("=== AGGRESSIVE: Multiple final cookie captures ===");
-
-            // Capture cookies multiple times with different waits
-            int[] waitTimes = {500, 1500}; // Different wait intervals
-            for (int i = 0; i < waitTimes.length; i++) {
-                log.info("Final capture pass {} of {}, waiting {}ms", i+1, waitTimes.length, waitTimes[i]);
-                page.waitForTimeout(waitTimes[i]);
-
-                int beforeCount = discoveredCookies.size();
-                captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
-                int afterCount = discoveredCookies.size();
-
-                log.info("Final pass {} captured {} new cookies (total: {})",
-                        i+1, afterCount - beforeCount, afterCount);
-            }
-
-            // FINAL: One more aggressive resource trigger
-            page.evaluate("""
-            // Final attempt to trigger any remaining tracking
-            Array.from(document.querySelectorAll('*')).forEach(el => {
-                ['focus', 'blur', 'mouseover', 'mouseout'].forEach(event => {
-                    try {
-                        el.dispatchEvent(new Event(event, {bubbles: true}));
-                    } catch(e) {}
-                });
-            });
-            
-            // Final scroll and resize triggers
-            window.dispatchEvent(new Event('beforeunload'));
-            window.dispatchEvent(new Event('pagehide'));
-        """);
-
-            page.waitForTimeout(5000);
-
-            categorizeAllCookiesAtOnce();
+            log.info("=== SINGLE FINAL CAPTURE ===");
+            page.waitForTimeout(1000);
+            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
             log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}, Subdomains scanned: {}",
                     discoveredCookies.size(), processedUrls.size(), subdomains != null ? subdomains.size() : 0);
 
@@ -895,7 +917,6 @@ public class ScanService {
         }
     }
 
-
     private void captureBrowserCookiesWithSubdomainName(BrowserContext context, String scanUrl,
                                                         Map<String, CookieDto> discoveredCookies,
                                                         String transactionId,
@@ -907,6 +928,10 @@ public class ScanService {
 
             log.info("=== CAPTURING {} browser cookies for subdomain: {} ===", browserCookies.size(), subdomainName);
 
+            // NEW: List to collect cookies for saving
+            List<CookieDto> cookiesToSave = new ArrayList<>();
+
+            // MODIFIED: Loop to collect cookies without saving
             for (Cookie playwrightCookie : browserCookies) {
                 try {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
@@ -916,100 +941,28 @@ public class ScanService {
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeWithExternalAPI(cookieDto);
-                        saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                        cookiesToSave.add(cookieDto);  // ADD to save list instead of immediate save
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
-                        log.info("ADDED SUBDOMAIN BROWSER COOKIE: {} from domain {} (Source: {}, Subdomain: {})",
+                        log.debug("Collected SUBDOMAIN BROWSER COOKIE: {} from domain {} (Source: {}, Subdomain: {})",
                                 cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSource(), subdomainName);
                     }
                 } catch (Exception e) {
                     log.warn("Error processing browser cookie {}: {}", playwrightCookie.name, e.getMessage());
                 }
             }
+
+            // NEW: Categorize all collected cookies and save them
+            categorizeCookiesAndSave(cookiesToSave, transactionId);
+
+            log.info("Completed capturing and saving {} subdomain cookies", cookiesToSave.size());
+
         } catch (Exception e) {
             log.warn("Error capturing browser cookies for subdomain {}: {}", subdomainName, e.getMessage());
         }
     }
 
-    // === NEW GENERIC AUTHENTICATION DETECTION ===
-    private void detectAndTriggerAuthenticationFlows(Page page, String url, String transactionId,
-                                                     Map<String, CookieDto> discoveredCookies,
-                                                     ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            log.info("=== GENERIC: Detecting authentication flows ===");
 
-            // Detect and interact with authentication elements
-            List<String> authTriggers = (List<String>) page.evaluate("""
-            // Generic OAuth and authentication detection
-            Array.from(document.querySelectorAll(`
-                a[href*="oauth"], a[href*="login"], a[href*="signin"], a[href*="sign-in"],
-                a[href*="auth"], a[href*="sso"], a[href*="account"], 
-                button[class*="login"], button[class*="signin"], button[class*="auth"],
-                [data-provider], [data-oauth], [class*="oauth"], [id*="oauth"],
-                [href*="google"], [href*="facebook"], [href*="microsoft"], [href*="linkedin"],
-                [href*="twitter"], [href*="github"], [href*="apple"]
-            `))
-            .map(el => {
-                const text = (el.textContent || el.innerText || '').toLowerCase();
-                const href = el.href || '';
-                const classes = el.className || '';
-                
-                return {
-                    text: text,
-                    href: href,
-                    type: el.tagName.toLowerCase(),
-                    classes: classes
-                };
-            })
-            .filter(item => item.href || item.text.includes('login') || item.text.includes('sign'))
-            .slice(0, 10);
-        """);
-
-            log.info("Found {} authentication triggers", authTriggers.size());
-
-            // Simulate clicking authentication elements (without completing login)
-            page.evaluate("""
-            // Generic authentication trigger simulation
-            const authSelectors = [
-                'a[href*="oauth"]', 'a[href*="login"]', 'a[href*="signin"]',
-                'button[class*="login"]', '[data-provider]', '[class*="oauth"]'
-            ];
-            
-            authSelectors.forEach(selector => {
-                try {
-                    const elements = document.querySelectorAll(selector);
-                    Array.from(elements).slice(0, 3).forEach(el => {
-                        try {
-                            // Trigger authentication-related events
-                            ['mouseover', 'mouseenter', 'focus'].forEach(eventType => {
-                                el.dispatchEvent(new MouseEvent(eventType, {
-                                    bubbles: true,
-                                    cancelable: true,
-                                    view: window
-                                }));
-                            });
-                            
-                            // Scroll element into view to trigger lazy loading
-                            el.scrollIntoView({behavior: 'smooth', block: 'center'});
-                            
-                        } catch(e) {
-                            console.debug('Auth trigger error:', e.message);
-                        }
-                    });
-                } catch(e) {}
-            });
-        """);
-
-            page.waitForTimeout(3000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.debug("Error in authentication flow detection: {}", e.getMessage());
-        }
-    }
-
-    // === NEW SOCIAL WIDGET DETECTION ===
     private void detectAndTriggerSocialWidgets(Page page, String url, String transactionId,
                                                Map<String, CookieDto> discoveredCookies,
                                                ScanPerformanceTracker.ScanMetrics scanMetrics) {
@@ -1062,10 +1015,6 @@ public class ScanService {
                 } catch(e) {}
             });
         """);
-
-            page.waitForTimeout(4000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
         } catch (Exception e) {
             log.debug("Error in social widget detection: {}", e.getMessage());
         }
@@ -1080,28 +1029,35 @@ public class ScanService {
 
             log.info("=== CAPTURING {} browser cookies ===", browserCookies.size());
 
+            // NEW: List to collect cookies for saving
+            List<CookieDto> cookiesToSave = new ArrayList<>();
+
+            // MODIFIED: Loop to collect cookies without saving
             for (Cookie playwrightCookie : browserCookies) {
                 try {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
-
-                    // **FORCE "main" if no subdomains provided**
                     cookieDto.setSubdomainName("main");
 
                     String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
 
                     if (!discoveredCookies.containsKey(cookieKey)) {
                         discoveredCookies.put(cookieKey, cookieDto);
-                        categorizeWithExternalAPI(cookieDto);
-                        saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                        cookiesToSave.add(cookieDto);  // ADD to save list instead of immediate save
                         scanMetrics.incrementCookiesFound(cookieDto.getSource().name());
                         metrics.recordCookieDiscovered(cookieDto.getSource().name());
-                        log.info("ADDED BROWSER COOKIE: {} from domain {} (Source: {})",
+                        log.debug("Collected BROWSER COOKIE: {} from domain {} (Source: {})",
                                 cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSource());
                     }
                 } catch (Exception e) {
                     log.warn("Error processing browser cookie {}: {}", playwrightCookie.name, e.getMessage());
                 }
             }
+
+            // NEW: Categorize all collected cookies and save them
+            categorizeCookiesAndSave(cookiesToSave, transactionId);
+
+            log.info("Completed capturing and saving {} browser cookies", cookiesToSave.size());
+
         } catch (Exception e) {
             log.warn("Error capturing browser cookies: {}", e.getMessage());
         }
@@ -1277,6 +1233,9 @@ public class ScanService {
                         String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
                         Source frameSource = siteRoot.equalsIgnoreCase(frameRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
 
+                        // NEW: List to collect frame cookies for saving
+                        List<CookieDto> frameCookiesToSave = new ArrayList<>();
+
                         for (Cookie frameCookie : frameCookies) {
                             CookieDto cookieDto = mapPlaywrightCookie(frameCookie, frameUrl, frameRoot);
                             cookieDto.setSource(frameSource);
@@ -1287,14 +1246,17 @@ public class ScanService {
                             String cookieKey = generateCookieKey(cookieDto.getName(), cookieDto.getDomain(), cookieDto.getSubdomainName());
                             if (!discoveredCookies.containsKey(cookieKey)) {
                                 discoveredCookies.put(cookieKey, cookieDto);
-                                categorizeWithExternalAPI(cookieDto);
-                                saveIncrementalCookieWithFlush(transactionId, cookieDto);
+                                frameCookiesToSave.add(cookieDto);  // ADD to save list instead of immediate save
                                 scanMetrics.incrementCookiesFound(frameSource.name());
                                 metrics.recordCookieDiscovered(frameSource.name());
-                                log.info("ADDED FRAME COOKIE: {} from {} (Source: {})",
+                                log.debug("Collected FRAME COOKIE: {} from {} (Source: {})",
                                         cookieDto.getName(), frameUrl, frameSource);
                             }
                         }
+
+                        // NEW: Categorize all collected frame cookies and save them
+                        categorizeCookiesAndSave(frameCookiesToSave, transactionId);
+
                     } catch (java.net.MalformedURLException e) {
                         log.debug("Invalid frame URL format, skipping cookie capture: {}", frameUrl);
                     } catch (Exception e) {
@@ -1308,14 +1270,6 @@ public class ScanService {
 
             // Rest of the method continues unchanged...
             interactWithAllIframes(page, iframes);
-            page.waitForTimeout(1500);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-            triggerGenericIframeEvents(page);
-            page.waitForTimeout(1000);
-            captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
-
-            loadCommonEmbedPatterns(page);
             page.waitForTimeout(1500);
             captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
 
@@ -1416,76 +1370,40 @@ public class ScanService {
         }
     }
 
-    private void triggerGenericIframeEvents(Page page) {
-        try {
-            page.evaluate("""
-                ['load', 'DOMContentLoaded', 'resize', 'focus', 'blur'].forEach(eventType => {
-                    document.querySelectorAll('iframe').forEach(iframe => {
-                        try {
-                            iframe.dispatchEvent(new Event(eventType, {bubbles: true}));
-                        } catch(e) {}
-                    });
-                });
-                
-                window.dispatchEvent(new Event('message'));
-                window.dispatchEvent(new Event('resize'));
-                
-                document.querySelectorAll('iframe').forEach(iframe => {
-                    try {
-                        iframe.contentWindow.postMessage('ping', '*');
-                    } catch(e) {}
-                });
-            """);
-        } catch (Exception e) {
-            log.debug("Error triggering iframe events: {}", e.getMessage());
-        }
-    }
-
-    private void loadCommonEmbedPatterns(Page page) {
-        try {
-            page.evaluate("""
-                const existingScripts = Array.from(document.querySelectorAll('script[src]'))
-                    .map(s => s.src)
-                    .filter(src => src.includes('//') && !src.includes(window.location.hostname));
-                
-                console.log('Found external scripts:', existingScripts.length);
-                
-                window.dispatchEvent(new Event('message'));
-                window.dispatchEvent(new Event('resize'));
-                window.dispatchEvent(new Event('beforeunload'));
-                
-                const img = document.createElement('img');
-                img.style.display = 'none';
-                img.style.width = '1px';
-                img.style.height = '1px';
-                img.onload = () => console.log('Generic tracking pattern triggered');
-                
-                window.postMessage({type: 'resize'}, '*');
-                window.postMessage({type: 'scroll'}, '*');
-            """);
-        } catch (Exception e) {
-            log.debug("Error in generic embed pattern handling: {}", e.getMessage());
-        }
-    }
-
     private void cleanupResources(BrowserContext context, Browser browser, Playwright playwright) {
+        // Close pages first
         try {
-            if (context != null) context.close();
+            if (context != null) {
+                List<Page> pages = context.pages();
+                for (Page page : pages) {
+                    try {
+                        if (!page.isClosed()) page.close();
+                    } catch (Exception ignored) {}
+                }
+                context.close();
+            }
         } catch (Exception e) {
-            log.warn("Error closing browser context: {}", e.getMessage());
+            log.warn("Error closing context: {}", e.getMessage());
         }
 
+        // Close browser
         try {
-            if (browser != null) browser.close();
+            if (browser != null && browser.isConnected()) {
+                browser.close();
+            }
         } catch (Exception e) {
             log.warn("Error closing browser: {}", e.getMessage());
         }
 
+        // Close playwright
         try {
             if (playwright != null) playwright.close();
         } catch (Exception e) {
             log.warn("Error closing playwright: {}", e.getMessage());
         }
+
+        // Force garbage collection
+        System.gc();
     }
 
     private String getErrorMessage(Exception e) {
@@ -1495,165 +1413,59 @@ public class ScanService {
         return "An unexpected error occurred during scanning";
     }
 
-    // Don't remove(External Predict API call)
-    private void categorizeWithExternalAPI(CookieDto cookie) {
-        // Just store the cookie for later categorization
-        cookiesAwaitingCategorization.put(cookie.getName(), cookie);
-        log.debug("Stored cookie '{}' for categorization. Total stored: {}",
-                cookie.getName(), cookiesAwaitingCategorization.size());
-    }
-
-    private void categorizeAllCookiesAtOnce() {
-        if (cookiesAwaitingCategorization.isEmpty()) {
-            log.info("No cookies found to categorize");
+    private void categorizeCookiesAndSave(List<CookieDto> cookiesToSave, String transactionId) {
+        if (cookiesToSave.isEmpty()) {
             return;
         }
 
         try {
-            List<String> cookieNames = new ArrayList<>(cookiesAwaitingCategorization.keySet());
-            log.info("Categorizing {} cookies with ONE API call", cookieNames.size());
+            // Step 1: Extract unique cookie names
+            Set<String> uniqueCookieNames = cookiesToSave.stream()
+                    .map(CookieDto::getName)
+                    .collect(Collectors.toSet());
 
-            // Make single API call for all cookies
+            List<String> cookieNames = new ArrayList<>(uniqueCookieNames);
+            log.info("Categorizing {} unique cookie names with ONE API call (from {} cookies to save)",
+                    cookieNames.size(), cookiesToSave.size());
+
+            // Step 2: Make single API call for all unique names
             Map<String, CookieCategorizationResponse> results =
                     cookieCategorizationService.categorizeCookies(cookieNames);
 
-            // Apply categorization results to cookies
-            for (Map.Entry<String, CookieCategorizationResponse> entry : results.entrySet()) {
-                String cookieName = entry.getKey();
-                CookieCategorizationResponse response = entry.getValue();
-                CookieDto cookie = cookiesAwaitingCategorization.get(cookieName);
+            // Step 3: Apply categorization to all cookies
+            for (CookieDto cookie : cookiesToSave) {
+                String cookieName = cookie.getName();
+                CookieCategorizationResponse response = results.get(cookieName);
 
-                if (cookie != null && response != null) {
+                if (response != null) {
                     cookie.setCategory(response.getCategory());
                     cookie.setDescription(response.getDescription());
                     cookie.setDescription_gpt(response.getDescription_gpt());
+                    log.debug("Applied categorization to cookie '{}'", cookieName);
+                } else {
+                    log.warn("No categorization response found for cookie '{}'", cookieName);
                 }
             }
 
-            log.info("Successfully categorized {} cookies", cookieNames.size());
-            cookiesAwaitingCategorization.clear();
+            // Step 4: Save all categorized cookies to database
+            for (CookieDto categorizedCookie : cookiesToSave) {
+                saveIncrementalCookieWithFlush(transactionId, categorizedCookie);
+            }
+
+            log.info("Successfully categorized and saved {} cookies", cookiesToSave.size());
 
         } catch (Exception e) {
-            log.error("Cookie categorization failed: {}", e.getMessage());
-            cookiesAwaitingCategorization.clear();
-        }
-    }
+            log.error("Failed to categorize and save cookies: {}", e.getMessage(), e);
 
-    private void detectGenericAuthenticationFlow(Page page, BrowserContext context, String mainUrl,
-                                                 Map<String, CookieDto> discoveredCookies,
-                                                 String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            log.info("=== GENERIC AUTHENTICATION FLOW DETECTION ===");
-
-            String hostname = new URL(mainUrl).getHost();
-            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-            String protocol = mainUrl.startsWith("https") ? "https" : "http";
-
-            // Generic authentication subdomain patterns
-            List<String> authSubdomains = Arrays.asList(
-                    "login", "auth", "accounts", "oauth", "sso", "signin", "id", "identity",
-                    "connect", "authorize", "authentication", "portal", "secure"
-            );
-
-            // Generic authentication path patterns
-            List<String> authPaths = Arrays.asList(
-                    "/oauth/authorize", "/oauth2/authorize", "/auth/login", "/sso/login",
-                    "/login/oauth/authorize", "/oauth2/v1/authorize", "/oauth2/v2/authorize",
-                    "/connect/authorize", "/identity/connect/authorize", "/openid_connect/authorize",
-                    "/auth", "/login", "/signin", "/sso", "/authenticate"
-            );
-
-            // Build authentication URLs
-            List<String> authUrls = new ArrayList<>();
-
-            // Add subdomain + path combinations
-            for (String subdomain : authSubdomains) {
-                for (String path : authPaths) {
-                    authUrls.add(protocol + "://" + subdomain + "." + rootDomain + path);
-                }
-            }
-
-            // Add main domain auth paths
-            for (String path : authPaths) {
-                authUrls.add(protocol + "://" + hostname + path);
-            }
-
-            // Discover auth URLs from page content
-            List<String> discoveredAuthUrls = (List<String>) page.evaluate("""
-            Array.from(document.querySelectorAll('a[href], form[action]'))
-                .map(el => el.href || el.action)
-                .filter(url => url && (
-                    url.includes('oauth') || url.includes('auth') || 
-                    url.includes('login') || url.includes('sso') ||
-                    url.includes('signin') || url.includes('connect') ||
-                    url.includes('authorize')
-                ))
-                .slice(0, 15);
-        """);
-
-            authUrls.addAll(discoveredAuthUrls);
-
-            // Visit authentication endpoints (limit to prevent timeout)
-            for (int i = 0; i < Math.min(authUrls.size(), 20); i++) {
-                String authUrl = authUrls.get(i);
+            // Fallback: Save cookies without categorization
+            log.info("Falling back to save cookies without categorization");
+            for (CookieDto cookie : cookiesToSave) {
                 try {
-                    log.debug("Visiting auth endpoint: {}", authUrl);
-
-                    // Set generic authentication headers
-                    Map<String, String> headers = Map.of(
-                            "Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                            "Accept-Language", "en-US,en;q=0.5",
-                            "Referer", mainUrl,
-                            "DNT", "1"
-                    );
-
-                    page.setExtraHTTPHeaders(headers);
-                    page.navigate(authUrl, new Page.NavigateOptions().setTimeout(4000));
-                    page.waitForTimeout(1000);
-
-                    captureBrowserCookiesEnhanced(context, authUrl, discoveredCookies, transactionId, scanMetrics);
-
-                } catch (Exception e) {
-                    log.debug("Auth endpoint failed: {} - {}", authUrl, e.getMessage());
+                    saveIncrementalCookieWithFlush(transactionId, cookie);
+                } catch (Exception saveEx) {
+                    log.warn("Failed to save cookie '{}': {}", cookie.getName(), saveEx.getMessage());
                 }
             }
-
-            // Trigger generic authentication pixel tracking
-            page.evaluate("""
-            // Generic authentication tracking endpoints
-            const authPixels = [
-                '/auth/track', '/login/track', '/sso/track', '/oauth/track',
-                '/auth/pixel', '/login/pixel', '/sso/pixel', '/oauth/pixel',
-                '/c.gif?auth=1', '/px.gif?login=1', '/track?event=auth'
-            ];
-            
-            const currentOrigin = window.location.origin;
-            const trackingParams = [
-                'event=auth_attempt&t=' + Date.now(),
-                'action=login&ts=' + Date.now(),
-                'auth_flow=oauth&rnd=' + Math.random(),
-                't=' + Date.now() + '&ref=' + encodeURIComponent(document.location.href)
-            ];
-            
-            authPixels.forEach(pixel => {
-                trackingParams.forEach(params => {
-                    try {
-                        const img = new Image();
-                        img.style.display = 'none';
-                        img.style.width = '1px';
-                        img.style.height = '1px';
-                        img.src = currentOrigin + pixel + '?' + params;
-                        document.body.appendChild(img);
-                    } catch(e) {}
-                });
-            });
-        """);
-
-            page.waitForTimeout(1500);
-            captureBrowserCookiesEnhanced(context, mainUrl, discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.warn("Error in generic authentication flow: {}", e.getMessage());
         }
     }
 
@@ -2006,1316 +1818,6 @@ public class ScanService {
                 return Arrays.asList("/share", "/like", "/follow", "/widget");
             default:
                 return Arrays.asList("/track", "/pixel", "/c.gif", "/beacon");
-        }
-    }
-
-
-
-    public void performDynamicDiscovery(Page page, BrowserContext context, String mainUrl,
-                                        List<String> providedSubdomains,
-                                        Map<String, CookieDto> discoveredCookies,
-                                        String transactionId,
-                                        ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        // 1. Discover ALL resources dynamically from the actual page
-        ResourceDiscoveryResult resources = discoverAllResources(page);
-        log.info("Dynamically discovered {} external domains from page analysis",
-                resources.externalDomains.size());
-
-        // 2. Test cookie endpoints on ALL discovered domains (not just known ones)
-        testDiscoveredDomainsForCookies(page, context, resources.externalDomains,
-                mainUrl, providedSubdomains, discoveredCookies,
-                transactionId, scanMetrics);
-
-        // 3. Follow actual redirect chains found on the page
-        followDiscoveredRedirects(page, context, resources.redirectChains,
-                mainUrl, providedSubdomains, discoveredCookies,
-                transactionId, scanMetrics);
-
-        // 4. Test dynamically discovered tracking patterns
-        testDynamicTrackingPatterns(page, context, resources.trackingPatterns,
-                mainUrl, providedSubdomains, discoveredCookies,
-                transactionId, scanMetrics);
-    }
-
-    /**
-     * Discover all resources from the actual page content - no assumptions
-     */
-    @SuppressWarnings("unchecked")
-    private ResourceDiscoveryResult discoverAllResources(Page page) {
-        try {
-            Map<String, Object> discoveryResult = (Map<String, Object>) page.evaluate("""
-                const result = {
-                    externalDomains: [],
-                    redirectChains: [],
-                    trackingPatterns: [],
-                    authEndpoints: [],
-                    pixelUrls: []
-                };
-                
-                const currentHostname = window.location.hostname;
-                const allUrls = new Set();
-                
-                // 1. Collect ALL URLs from page elements
-                const urlSources = [
-                    'script[src]', 'img[src]', 'iframe[src]', 'link[href]',
-                    'embed[src]', 'object[data]', 'video[src]', 'audio[src]',
-                    'form[action]', 'a[href]', 'area[href]'
-                ];
-                
-                urlSources.forEach(selector => {
-                    document.querySelectorAll(selector).forEach(el => {
-                        const url = el.src || el.href || el.action || el.data;
-                        if (url && (url.startsWith('http') || url.startsWith('https'))) {
-                            allUrls.add(url);
-                        }
-                    });
-                });
-                
-                // 2. Extract URLs from JavaScript code
-                const scripts = Array.from(document.querySelectorAll('script')).map(s => s.textContent || '');
-                const jsContent = scripts.join(' ');
-                const urlMatches = jsContent.match(/https?:\\/\\/[^\\s'"`;,)]+/g) || [];
-                urlMatches.forEach(url => {
-                    try {
-                        // Clean up the URL
-                        const cleanUrl = url.replace(/['"`;,)]+$/, '');
-                        if (cleanUrl.length > 10) {
-                            allUrls.add(cleanUrl);
-                        }
-                    } catch(e) {}
-                });
-                
-                // 3. Analyze each URL for patterns
-                allUrls.forEach(url => {
-                    try {
-                        const hostname = new URL(url).hostname;
-                        const pathname = new URL(url).pathname;
-                        const search = new URL(url).search;
-                        
-                        // Collect external domains
-                        if (hostname !== currentHostname) {
-                            result.externalDomains.push(hostname);
-                        }
-                        
-                        // Detect tracking patterns dynamically
-                        if (pathname.includes('track') || pathname.includes('pixel') || 
-                            pathname.includes('beacon') || pathname.includes('collect') ||
-                            pathname.includes('analytics') || pathname.endsWith('.gif') ||
-                            pathname.endsWith('.png') || search.includes('track') ||
-                            search.includes('event') || search.includes('analytics')) {
-                            result.trackingPatterns.push(url);
-                        }
-                        
-                        // Detect authentication endpoints dynamically
-                        if (pathname.includes('auth') || pathname.includes('login') ||
-                            pathname.includes('oauth') || pathname.includes('sso') ||
-                            pathname.includes('signin') || search.includes('auth') ||
-                            search.includes('login')) {
-                            result.authEndpoints.push(url);
-                        }
-                        
-                        // Detect pixel URLs
-                        if (pathname.endsWith('.gif') || pathname.endsWith('.png') ||
-                            pathname.includes('pixel') || pathname.includes('/c.gif') ||
-                            pathname.includes('/px.') || pathname.includes('/tr') ||
-                            (pathname.length === 1 && pathname.match(/[a-z]/)) ||
-                            search.includes('pixel') || url.includes('1x1')) {
-                            result.pixelUrls.push(url);
-                        }
-                        
-                        // Detect redirect patterns
-                        if (search.includes('redirect') || search.includes('return_to') ||
-                            search.includes('next=') || search.includes('continue=') ||
-                            pathname.includes('/redirect') || pathname.includes('/r/') ||
-                            pathname.includes('/go/')) {
-                            result.redirectChains.push(url);
-                        }
-                        
-                    } catch(e) {
-                        // Invalid URL, skip
-                    }
-                });
-                
-                // Remove duplicates and limit results
-                result.externalDomains = [...new Set(result.externalDomains)].slice(0, 50);
-                result.trackingPatterns = [...new Set(result.trackingPatterns)].slice(0, 30);
-                result.authEndpoints = [...new Set(result.authEndpoints)].slice(0, 20);
-                result.pixelUrls = [...new Set(result.pixelUrls)].slice(0, 40);
-                result.redirectChains = [...new Set(result.redirectChains)].slice(0, 15);
-                
-                return result;
-            """);
-
-            return new ResourceDiscoveryResult(
-                    (List<String>) discoveryResult.get("externalDomains"),
-                    (List<String>) discoveryResult.get("redirectChains"),
-                    (List<String>) discoveryResult.get("trackingPatterns"),
-                    (List<String>) discoveryResult.get("authEndpoints"),
-                    (List<String>) discoveryResult.get("pixelUrls")
-            );
-
-        } catch (Exception e) {
-            log.warn("Error in dynamic resource discovery: {}", e.getMessage());
-            return new ResourceDiscoveryResult(new ArrayList<>(), new ArrayList<>(),
-                    new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
-        }
-    }
-
-    /**
-     * Test cookie endpoints on dynamically discovered domains
-     */
-    private void testDiscoveredDomainsForCookies(Page page, BrowserContext context,
-                                                 List<String> discoveredDomains,
-                                                 String mainUrl, List<String> providedSubdomains,
-                                                 Map<String, CookieDto> discoveredCookies,
-                                                 String transactionId,
-                                                 ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        log.info("Testing {} dynamically discovered domains for cookies", discoveredDomains.size());
-
-        // Generate common endpoint patterns dynamically
-        List<String> commonEndpoints = Arrays.asList(
-                "/", "/track", "/pixel", "/beacon", "/collect", "/analytics",
-                "/c.gif", "/px.gif", "/tr", "/hit", "/log", "/event"
-        );
-
-        for (String domain : discoveredDomains) {
-            for (String endpoint : commonEndpoints) {
-                try {
-                    String testUrl = "https://" + domain + endpoint;
-
-                    // Quick test navigation
-                    page.navigate(testUrl, new Page.NavigateOptions().setTimeout(3000));
-                    page.waitForTimeout(500);
-
-                    // Capture any cookies set
-                    captureBrowserCookiesFromDiscoveredDomain(context, testUrl, domain,
-                            mainUrl, providedSubdomains,
-                            discoveredCookies, transactionId, scanMetrics);
-
-                } catch (Exception e) {
-                    // Expected to fail for many URLs - continue silently
-                    log.debug("Test failed for {}: {}", domain + endpoint, e.getMessage());
-                }
-            }
-        }
-    }
-
-    /**
-     * Follow actual redirect chains discovered on the page
-     */
-    private void followDiscoveredRedirects(Page page, BrowserContext context,
-                                           List<String> redirectUrls,
-                                           String mainUrl, List<String> providedSubdomains,
-                                           Map<String, CookieDto> discoveredCookies,
-                                           String transactionId,
-                                           ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        log.info("Following {} discovered redirect chains", redirectUrls.size());
-
-        for (String redirectUrl : redirectUrls) {
-            try {
-                log.debug("Following redirect: {}", redirectUrl);
-
-                // Navigate and capture cookies at each step
-                Response response = page.navigate(redirectUrl, new Page.NavigateOptions().setTimeout(5000));
-
-                if (response != null) {
-                    page.waitForTimeout(1000);
-                    captureBrowserCookiesFromDiscoveredDomain(context, redirectUrl,
-                            new URL(redirectUrl).getHost(),
-                            mainUrl, providedSubdomains,
-                            discoveredCookies, transactionId, scanMetrics);
-                }
-
-            } catch (Exception e) {
-                log.debug("Redirect failed for {}: {}", redirectUrl, e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Test dynamically discovered tracking patterns
-     */
-    private void testDynamicTrackingPatterns(Page page, BrowserContext context,
-                                             List<String> trackingUrls,
-                                             String mainUrl, List<String> providedSubdomains,
-                                             Map<String, CookieDto> discoveredCookies,
-                                             String transactionId,
-                                             ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        log.info("Testing {} discovered tracking patterns", trackingUrls.size());
-
-        // Test each discovered tracking URL
-        for (String trackingUrl : trackingUrls) {
-            try {
-                log.debug("Testing tracking URL: {}", trackingUrl);
-
-                // Add dynamic parameters to trigger more cookie setting
-                String enhancedUrl = trackingUrl;
-                if (!trackingUrl.contains("?")) {
-                    enhancedUrl += "?t=" + System.currentTimeMillis();
-                } else {
-                    enhancedUrl += "&t=" + System.currentTimeMillis();
-                }
-
-                page.navigate(enhancedUrl, new Page.NavigateOptions().setTimeout(4000));
-                page.waitForTimeout(800);
-
-                captureBrowserCookiesFromDiscoveredDomain(context, enhancedUrl,
-                        new URL(trackingUrl).getHost(),
-                        mainUrl, providedSubdomains,
-                        discoveredCookies, transactionId, scanMetrics);
-
-            } catch (Exception e) {
-                log.debug("Tracking pattern test failed for {}: {}", trackingUrl, e.getMessage());
-            }
-        }
-    }
-
-    private void captureBrowserCookiesFromDiscoveredDomain(BrowserContext context, String sourceUrl,
-                                                           String sourceDomain, String mainUrl,
-                                                           List<String> providedSubdomains,
-                                                           Map<String, CookieDto> discoveredCookies,
-                                                           String transactionId,
-                                                           ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            List<Cookie> browserCookies = context.cookies();
-            String mainRootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-
-            for (Cookie cookie : browserCookies) {
-                try {
-                    // Determine source type dynamically
-                    String cookieRootDomain = UrlAndCookieUtil.extractRootDomain(cookie.domain);
-                    Source source = mainRootDomain.equalsIgnoreCase(cookieRootDomain) ?
-                            Source.FIRST_PARTY : Source.THIRD_PARTY;
-
-                    CookieDto cookieDto = mapPlaywrightCookie(cookie, sourceUrl, mainRootDomain);
-                    cookieDto.setSource(source);
-
-                    // Determine subdomain attribution dynamically
-                    String subdomainName = determineSubdomainFromSourceDomain(sourceDomain,
-                            mainUrl, providedSubdomains);
-                    cookieDto.setSubdomainName(subdomainName);
-
-                    String cookieKey = generateCookieKey(cookie.name, cookie.domain, subdomainName);
-
-                    if (!discoveredCookies.containsKey(cookieKey)) {
-                        discoveredCookies.put(cookieKey, cookieDto);
-                        saveIncrementalCookieWithFlush(transactionId, cookieDto);
-                        scanMetrics.incrementCookiesFound(source.name());
-
-                        log.info("DYNAMIC DISCOVERY: {} from {} (Source: {}, Subdomain: {})",
-                                cookie.name, sourceDomain, source, subdomainName);
-                    }
-
-                } catch (Exception e) {
-                    log.warn("Error processing discovered cookie {}: {}", cookie.name, e.getMessage());
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Error capturing cookies from discovered domain {}: {}", sourceDomain, e.getMessage());
-        }
-    }
-
-    private String determineSubdomainFromSourceDomain(String sourceDomain, String mainUrl,
-                                                      List<String> providedSubdomains) {
-        try {
-            // Check if source domain matches any provided subdomain
-            if (providedSubdomains != null) {
-                for (String subdomainUrl : providedSubdomains) {
-                    try {
-                        String subdomainHost = new URL(subdomainUrl).getHost();
-                        if (sourceDomain.equalsIgnoreCase(subdomainHost)) {
-                            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-                            return SubdomainValidationUtil.extractSubdomainName(subdomainUrl, rootDomain);
-                        }
-                    } catch (Exception e) {
-                        // Continue checking
-                    }
-                }
-            }
-
-            // Check if it's from main domain
-            String mainHost = new URL(mainUrl).getHost();
-            if (sourceDomain.equalsIgnoreCase(mainHost)) {
-                return "main";
-            }
-
-            // For third-party domains, attribute to main by default
-            return "main";
-
-        } catch (Exception e) {
-            return "main";
-        }
-    }
-
-    // Data class for discovery results
-    private static class ResourceDiscoveryResult {
-        final List<String> externalDomains;
-        final List<String> redirectChains;
-        final List<String> trackingPatterns;
-        final List<String> authEndpoints;
-        final List<String> pixelUrls;
-
-        ResourceDiscoveryResult(List<String> externalDomains, List<String> redirectChains,
-                                List<String> trackingPatterns, List<String> authEndpoints,
-                                List<String> pixelUrls) {
-            this.externalDomains = externalDomains;
-            this.redirectChains = redirectChains;
-            this.trackingPatterns = trackingPatterns;
-            this.authEndpoints = authEndpoints;
-            this.pixelUrls = pixelUrls;
-        }
-    }
-
-    private void setupComprehensiveNetworkMonitoring(BrowserContext context, String mainUrl,
-                                                     Map<String, CookieDto> discoveredCookies,
-                                                     String transactionId,
-                                                     ScanPerformanceTracker.ScanMetrics scanMetrics,
-                                                     List<String> subdomains) {
-
-        // Track ALL network responses - this is key to catching missed cookies
-        context.onResponse(response -> {
-            try {
-                String responseUrl = response.url();
-                Map<String, String> headers = response.headers();
-
-                // Log all cookie-related headers from ANY domain
-                for (Map.Entry<String, String> header : headers.entrySet()) {
-                    String headerName = header.getKey().toLowerCase();
-                    String headerValue = header.getValue();
-
-                    // Capture ALL cookie-setting headers, not just from main domain
-                    if (headerName.equals("set-cookie") || headerName.equals("set-cookie2")) {
-                        log.info("COOKIE HEADER DETECTED: {} = {} from {}",
-                                headerName, headerValue, responseUrl);
-
-                        // Parse cookie regardless of domain
-                        List<CookieDto> parsedCookies = parseSetCookieHeader(
-                                headerValue, responseUrl, response.url()
-                        );
-
-                        for (CookieDto cookie : parsedCookies) {
-                            // Determine which subdomain this belongs to
-                            String subdomainName = determineTargetSubdomain(responseUrl, mainUrl, subdomains);
-                            cookie.setSubdomainName(subdomainName);
-
-                            String cookieKey = generateCookieKey(cookie.getName(),
-                                    cookie.getDomain(),
-                                    cookie.getSubdomainName());
-
-                            if (!discoveredCookies.containsKey(cookieKey)) {
-                                discoveredCookies.put(cookieKey, cookie);
-                                saveIncrementalCookieWithFlush(transactionId, cookie);
-                                log.info("NETWORK COOKIE CAPTURED: {} from {} (subdomain: {})",
-                                        cookie.getName(), responseUrl, subdomainName);
-                            }
-                        }
-                    }
-
-                    // Also capture tracking pixels and beacons
-                    if (isTrackingPixelResponse(responseUrl, headers)) {
-                        log.info("TRACKING PIXEL DETECTED: {} with headers: {}", responseUrl, headers);
-                        // Create synthetic cookie entry for tracking pixel
-                        createTrackingPixelCookie(responseUrl, mainUrl, subdomains,
-                                discoveredCookies, transactionId);
-                    }
-                }
-
-            } catch (Exception e) {
-                log.warn("Error processing network response: {}", e.getMessage());
-            }
-        });
-
-        // Monitor requests to detect redirect chains
-        context.onRequest(request -> {
-            try {
-                String requestUrl = request.url();
-
-                // Track all third-party requests that might set cookies
-                if (isThirdPartyRequest(requestUrl, mainUrl)) {
-                    log.debug("THIRD-PARTY REQUEST: {}", requestUrl);
-
-                    // Some cookies are set via query parameters in redirects
-                    extractCookiesFromUrlParameters(requestUrl, mainUrl, subdomains,
-                            discoveredCookies, transactionId);
-                }
-
-            } catch (Exception e) {
-                log.debug("Error processing request: {}", e.getMessage());
-            }
-        });
-    }
-
-    private String determineTargetSubdomain(String responseUrl, String mainUrl, List<String> subdomains) {
-        try {
-            String responseHost = new URL(responseUrl).getHost().toLowerCase();
-            String mainHost = new URL(mainUrl).getHost().toLowerCase();
-
-            // If response is from main domain
-            if (responseHost.equals(mainHost)) {
-                return "main";
-            }
-
-            // Check if response is from one of the provided subdomains
-            if (subdomains != null) {
-                for (String subdomainUrl : subdomains) {
-                    try {
-                        String subdomainHost = new URL(subdomainUrl).getHost().toLowerCase();
-                        if (responseHost.equals(subdomainHost)) {
-                            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-                            return SubdomainValidationUtil.extractSubdomainName(subdomainUrl, rootDomain);
-                        }
-                    } catch (Exception e) {
-                        // Continue checking other subdomains
-                    }
-                }
-            }
-
-            // If it's a third-party domain, check if it's related to any of our subdomains
-            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-            String responseRootDomain = UrlAndCookieUtil.extractRootDomain(responseUrl);
-
-            if (rootDomain.equalsIgnoreCase(responseRootDomain)) {
-                // It's a subdomain we weren't explicitly told about, but same root domain
-                return SubdomainValidationUtil.extractSubdomainName(responseUrl, rootDomain);
-            }
-
-            // Third-party cookie - attribute to main for now
-            return "main";
-
-        } catch (Exception e) {
-            return "main";
-        }
-    }
-
-    private boolean isTrackingPixelResponse(String url, Map<String, String> headers) {
-        String lowerUrl = url.toLowerCase();
-
-        // Check for tracking pixel characteristics
-        boolean hasPixelUrl = lowerUrl.contains(".gif") || lowerUrl.contains(".png") ||
-                lowerUrl.contains("pixel") || lowerUrl.contains("track") ||
-                lowerUrl.contains("beacon") || lowerUrl.contains("collect");
-
-        // Check response headers
-        String contentType = headers.getOrDefault("content-type", "").toLowerCase();
-        boolean hasPixelContentType = contentType.contains("image/") ||
-                contentType.contains("application/json") ||
-                contentType.contains("text/plain");
-
-        // Check for 1x1 pixel responses
-        String contentLength = headers.getOrDefault("content-length", "0");
-        boolean isSmallResponse = contentLength.equals("43") || contentLength.equals("35") ||
-                contentLength.equals("807"); // Common pixel sizes
-
-        return hasPixelUrl || (hasPixelContentType && isSmallResponse);
-    }
-
-    private void createTrackingPixelCookie(String pixelUrl, String mainUrl, List<String> subdomains,
-                                           Map<String, CookieDto> discoveredCookies, String transactionId) {
-        try {
-            // Create a synthetic cookie entry for tracking pixels
-            String pixelDomain = new URL(pixelUrl).getHost();
-            String cookieName = "tracking_pixel_" + Math.abs(pixelUrl.hashCode());
-
-            CookieDto pixelCookie = new CookieDto(
-                    cookieName, pixelUrl, pixelDomain, "/", null,
-                    false, false, null, Source.THIRD_PARTY
-            );
-
-            pixelCookie.setDescription("Tracking pixel: " + pixelUrl);
-            pixelCookie.setCategory("advertising");
-
-            String subdomainName = determineTargetSubdomain(pixelUrl, mainUrl, subdomains);
-            pixelCookie.setSubdomainName(subdomainName);
-
-            String cookieKey = generateCookieKey(cookieName, pixelDomain, subdomainName);
-            if (!discoveredCookies.containsKey(cookieKey)) {
-                discoveredCookies.put(cookieKey, pixelCookie);
-                saveIncrementalCookieWithFlush(transactionId, pixelCookie);
-            }
-
-        } catch (Exception e) {
-            log.warn("Error creating tracking pixel cookie: {}", e.getMessage());
-        }
-    }
-
-    private void processCookieSettingResponse(Response response, String responseUrl, int status,
-                                              Map<String, String> headers, String mainUrl,
-                                              List<String> providedSubdomains,
-                                              Map<String, CookieDto> discoveredCookies,
-                                              String transactionId,
-                                              ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        // Check for Set-Cookie headers in ANY response
-        for (Map.Entry<String, String> header : headers.entrySet()) {
-            String headerName = header.getKey().toLowerCase();
-            String headerValue = header.getValue();
-
-            if (headerName.equals("set-cookie") || headerName.equals("set-cookie2")) {
-                log.info("SET-COOKIE FOUND: {} = {} from {}", headerName, headerValue, responseUrl);
-
-                // Parse and store the cookie
-                List<CookieDto> parsedCookies = parseSetCookieHeaderAdvanced(headerValue, responseUrl);
-
-                for (CookieDto cookie : parsedCookies) {
-                    // Determine which subdomain this cookie should be attributed to
-                    String subdomainName = determineSubdomainAttribution(responseUrl, mainUrl, providedSubdomains);
-                    cookie.setSubdomainName(subdomainName);
-
-                    // Determine if first-party or third-party
-                    String mainRootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-                    String responseRootDomain = UrlAndCookieUtil.extractRootDomain(responseUrl);
-                    Source source = mainRootDomain.equalsIgnoreCase(responseRootDomain) ?
-                            Source.FIRST_PARTY : Source.THIRD_PARTY;
-                    cookie.setSource(source);
-
-                    String cookieKey = generateCookieKey(cookie.getName(), cookie.getDomain(), subdomainName);
-
-                    if (!discoveredCookies.containsKey(cookieKey)) {
-                        discoveredCookies.put(cookieKey, cookie);
-                        categorizeWithExternalAPI(cookie);
-                        saveIncrementalCookieWithFlush(transactionId, cookie);
-                        scanMetrics.incrementCookiesFound(source.name());
-
-                        log.info("NETWORK COOKIE CAPTURED: {} from {} (subdomain: {}, source: {})",
-                                cookie.getName(), responseUrl, subdomainName, source);
-                    }
-                }
-            }
-
-            // Also check for other tracking headers that might indicate cookie activity
-            if (headerName.contains("track") || headerName.contains("analytics") ||
-                    headerName.contains("pixel") || headerName.contains("beacon")) {
-                log.info("TRACKING HEADER: {} = {} from {}", headerName, headerValue, responseUrl);
-            }
-        }
-
-        // Check response content for dynamic cookie setting (JavaScript)
-        if (headers.getOrDefault("content-type", "").contains("javascript") ||
-                headers.getOrDefault("content-type", "").contains("html")) {
-
-            try {
-                // This would require fetching response body, which is complex in Playwright
-                // For now, just log that we detected a potential dynamic cookie setter
-                log.debug("Potential dynamic cookie setter: {}", responseUrl);
-            } catch (Exception e) {
-                log.debug("Error checking response content: {}", e.getMessage());
-            }
-        }
-    }
-
-    private List<CookieDto> parseSetCookieHeaderAdvanced(String setCookieHeader, String responseUrl) {
-        List<CookieDto> cookies = new ArrayList<>();
-
-        try {
-            // Handle multiple cookies in one header (comma-separated)
-            String[] cookieParts = setCookieHeader.split(",(?=[^;]*=)");
-
-            for (String cookiePart : cookieParts) {
-                CookieDto cookie = parseSingleCookie(cookiePart.trim(), responseUrl);
-                if (cookie != null) {
-                    cookies.add(cookie);
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Error parsing Set-Cookie header '{}': {}", setCookieHeader, e.getMessage());
-
-            // Fallback: try to parse as single cookie
-            CookieDto fallbackCookie = parseSingleCookie(setCookieHeader, responseUrl);
-            if (fallbackCookie != null) {
-                cookies.add(fallbackCookie);
-            }
-        }
-
-        return cookies;
-    }
-
-    private CookieDto parseSingleCookie(String cookieString, String responseUrl) {
-        try {
-            String[] parts = cookieString.split(";");
-            if (parts.length == 0) return null;
-
-            // Parse name=value
-            String[] nameValue = parts[0].trim().split("=", 2);
-            if (nameValue.length != 2) return null;
-
-            String name = nameValue[0].trim();
-            String value = nameValue[1].trim();
-
-            // Default values
-            String domain = extractDomainFromUrl(responseUrl);
-            String path = "/";
-            Instant expires = null;
-            boolean secure = false;
-            boolean httpOnly = false;
-            SameSite sameSite = null;
-
-            // Parse attributes
-            for (int i = 1; i < parts.length; i++) {
-                String attribute = parts[i].trim().toLowerCase();
-
-                if (attribute.startsWith("domain=")) {
-                    domain = attribute.substring(7);
-                } else if (attribute.startsWith("path=")) {
-                    path = attribute.substring(5);
-                } else if (attribute.startsWith("expires=")) {
-                    try {
-                        // Parse expires date - simplified
-                        String expiresStr = attribute.substring(8);
-                        // You'd need proper date parsing here
-                    } catch (Exception e) {
-                        // Ignore parsing errors
-                    }
-                } else if (attribute.equals("secure")) {
-                    secure = true;
-                } else if (attribute.equals("httponly")) {
-                    httpOnly = true;
-                } else if (attribute.startsWith("samesite=")) {
-                    String sameSiteValue = attribute.substring(9);
-                    try {
-                        sameSite = SameSite.valueOf(sameSiteValue.toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        sameSite = SameSite.LAX; // Default
-                    }
-                }
-            }
-
-            return new CookieDto(name, responseUrl, domain, path, expires,
-                    secure, httpOnly, sameSite, Source.UNKNOWN);
-
-        } catch (Exception e) {
-            log.warn("Error parsing single cookie '{}': {}", cookieString, e.getMessage());
-            return null;
-        }
-    }
-
-    private String extractDomainFromUrl(String url) {
-        try {
-            return new URL(url).getHost();
-        } catch (Exception e) {
-            return "";
-        }
-    }
-
-    private String determineSubdomainAttribution(String responseUrl, String mainUrl, List<String> providedSubdomains) {
-        try {
-            String responseHost = new URL(responseUrl).getHost();
-            String mainHost = new URL(mainUrl).getHost();
-
-            // If response is from main domain
-            if (responseHost.equalsIgnoreCase(mainHost)) {
-                return "main";
-            }
-
-            // Check if response is from one of the provided subdomains
-            if (providedSubdomains != null) {
-                for (String subdomainUrl : providedSubdomains) {
-                    try {
-                        String subdomainHost = new URL(subdomainUrl).getHost();
-                        if (responseHost.equalsIgnoreCase(subdomainHost)) {
-                            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-                            return SubdomainValidationUtil.extractSubdomainName(subdomainUrl, rootDomain);
-                        }
-                    } catch (Exception e) {
-                        // Continue checking
-                    }
-                }
-            }
-
-            // For third-party domains, check if they're related to any subdomain
-            // by examining the request context or referrer
-            return "main"; // Default attribution
-
-        } catch (Exception e) {
-            return "main";
-        }
-    }
-
-    private void performBackgroundResourceDiscovery(Page page, BrowserContext context, String mainUrl,
-                                                    List<String> providedSubdomains,
-                                                    Map<String, CookieDto> discoveredCookies,
-                                                    String transactionId,
-                                                    ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        try {
-            log.info("Starting background resource discovery...");
-
-            // 1. Monitor for dynamically loaded resources
-            Set<String> initialResources = getCurrentPageResources(page);
-
-            // 2. Trigger events that cause background loading
-            triggerBackgroundResourceLoading(page);
-
-            // 3. Wait for background resources to load
-            page.waitForTimeout(3000);
-
-            // 4. Discover new resources that were loaded
-            Set<String> finalResources = getCurrentPageResources(page);
-            finalResources.removeAll(initialResources);
-
-            log.info("Discovered {} new background resources", finalResources.size());
-
-            // 5. Test each new resource for cookie setting
-            for (String resourceUrl : finalResources) {
-                testBackgroundResource(page, context, resourceUrl, mainUrl,
-                        providedSubdomains, discoveredCookies, transactionId, scanMetrics);
-            }
-
-            // 6. Discover and test iframe resources
-            discoverAndTestIframeResources(page, context, mainUrl, providedSubdomains,
-                    discoveredCookies, transactionId, scanMetrics);
-
-            // 7. Monitor for WebSocket and EventSource connections
-            monitorRealtimeConnections(page, context, mainUrl, providedSubdomains,
-                    discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.warn("Error in background resource discovery: {}", e.getMessage());
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private Set<String> getCurrentPageResources(Page page) {
-        try {
-            List<String> resources = (List<String>) page.evaluate("""
-            // Get all currently loaded resources
-            const resources = new Set();
-            
-            // From Performance API
-            if (window.performance && window.performance.getEntriesByType) {
-                const entries = window.performance.getEntriesByType('resource');
-                entries.forEach(entry => {
-                    if (entry.name && entry.name.startsWith('http')) {
-                        resources.add(entry.name);
-                    }
-                });
-            }
-            
-            // From DOM elements
-            const selectors = [
-                'script[src]', 'img[src]', 'iframe[src]', 'link[href]',
-                'embed[src]', 'object[data]', 'video[src]', 'audio[src]'
-            ];
-            
-            selectors.forEach(selector => {
-                document.querySelectorAll(selector).forEach(el => {
-                    const url = el.src || el.href || el.data;
-                    if (url && url.startsWith('http')) {
-                        resources.add(url);
-                    }
-                });
-            });
-            
-            return Array.from(resources);
-        """);
-
-            return new HashSet<>(resources);
-
-        } catch (Exception e) {
-            log.debug("Error getting current resources: {}", e.getMessage());
-            return new HashSet<>();
-        }
-    }
-
-    private void triggerBackgroundResourceLoading(Page page) {
-        try {
-            page.evaluate("""
-            console.log('Triggering background resource loading...');
-            
-            // 1. Scroll to trigger lazy loading
-            window.scrollTo(0, document.body.scrollHeight);
-            window.scrollTo(0, 0);
-            
-            // 2. Trigger mouse events to activate lazy components
-            const events = ['mousemove', 'mouseenter', 'mouseover', 'focus', 'blur'];
-            events.forEach(eventType => {
-                document.dispatchEvent(new MouseEvent(eventType, {
-                    bubbles: true,
-                    cancelable: true,
-                    clientX: Math.random() * window.innerWidth,
-                    clientY: Math.random() * window.innerHeight
-                }));
-            });
-            
-            // 3. Trigger visibility changes (some resources load when page becomes visible)
-            if (document.visibilityState === 'visible') {
-                Object.defineProperty(document, 'visibilityState', {
-                    writable: true,
-                    value: 'hidden'
-                });
-                document.dispatchEvent(new Event('visibilitychange'));
-                
-                setTimeout(() => {
-                    Object.defineProperty(document, 'visibilityState', {
-                        writable: true,
-                        value: 'visible'
-                    });
-                    document.dispatchEvent(new Event('visibilitychange'));
-                }, 500);
-            }
-            
-            // 4. Trigger resize events (responsive loading)
-            window.dispatchEvent(new Event('resize'));
-            
-            // 5. Simulate user interaction with forms and inputs
-            const inputs = document.querySelectorAll('input, select, textarea');
-            inputs.forEach(input => {
-                try {
-                    input.focus();
-                    input.dispatchEvent(new Event('focus', {bubbles: true}));
-                    input.dispatchEvent(new Event('change', {bubbles: true}));
-                    input.blur();
-                } catch(e) {}
-            });
-            
-            // 6. Trigger intersection observer patterns (scroll-based loading)
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        entry.target.dispatchEvent(new Event('intersect'));
-                    }
-                });
-            });
-            
-            document.querySelectorAll('div, section, article').forEach(el => {
-                observer.observe(el);
-            });
-            
-            // 7. Trigger time-based events
-            setTimeout(() => {
-                window.dispatchEvent(new Event('load'));
-                window.dispatchEvent(new Event('DOMContentLoaded'));
-            }, 100);
-            
-            // 8. Force execution of any pending timeouts/intervals
-            if (window.setTimeout.toString().includes('[native code]')) {
-                // Trigger any delayed script execution
-                for (let i = 0; i < 100; i++) {
-                    setTimeout(() => {}, i * 10);
-                }
-            }
-            
-            console.log('Background resource loading triggers completed');
-        """);
-
-            // Wait for triggered resources to start loading
-            page.waitForTimeout(1000);
-
-        } catch (Exception e) {
-            log.debug("Error triggering background resource loading: {}", e.getMessage());
-        }
-    }
-
-    private void testBackgroundResource(Page page, BrowserContext context, String resourceUrl,
-                                        String mainUrl, List<String> providedSubdomains,
-                                        Map<String, CookieDto> discoveredCookies,
-                                        String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            log.debug("Testing background resource: {}", resourceUrl);
-
-            // Navigate to the resource to see if it sets cookies
-            try {
-                page.navigate(resourceUrl, new Page.NavigateOptions().setTimeout(5000));
-                page.waitForTimeout(1000);
-
-                // Capture any cookies set by this resource
-                captureBrowserCookiesFromDiscoveredDomain(context, resourceUrl,
-                        new URL(resourceUrl).getHost(),
-                        mainUrl, providedSubdomains,
-                        discoveredCookies, transactionId, scanMetrics);
-
-            } catch (Exception e) {
-                log.debug("Background resource test failed for {}: {}", resourceUrl, e.getMessage());
-            }
-
-            // Also try common variations of the resource URL
-            testResourceVariations(page, context, resourceUrl, mainUrl, providedSubdomains,
-                    discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.debug("Error testing background resource {}: {}", resourceUrl, e.getMessage());
-        }
-    }
-
-    private void testResourceVariations(Page page, BrowserContext context, String baseUrl,
-                                        String mainUrl, List<String> providedSubdomains,
-                                        Map<String, CookieDto> discoveredCookies,
-                                        String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            URL url = new URL(baseUrl);
-            String baseHost = url.getHost();
-            String basePath = url.getPath();
-
-            // Test common cookie-setting variations
-            List<String> variations = Arrays.asList(
-                    "https://" + baseHost + "/track",
-                    "https://" + baseHost + "/pixel",
-                    "https://" + baseHost + "/c.gif",
-                    "https://" + baseHost + "/collect",
-                    "https://c." + baseHost.replaceFirst("^[^.]+\\.", ""), // c.example.com
-                    "https://analytics." + baseHost.replaceFirst("^[^.]+\\.", ""), // analytics.example.com
-                    "https://pixel." + baseHost.replaceFirst("^[^.]+\\.", "") // pixel.example.com
-            );
-
-            for (String variation : variations) {
-                try {
-                    page.navigate(variation, new Page.NavigateOptions().setTimeout(3000));
-                    page.waitForTimeout(500);
-
-                    captureBrowserCookiesFromDiscoveredDomain(context, variation,
-                            new URL(variation).getHost(),
-                            mainUrl, providedSubdomains,
-                            discoveredCookies, transactionId, scanMetrics);
-
-                } catch (Exception e) {
-                    // Expected to fail for many variations
-                }
-            }
-
-        } catch (Exception e) {
-            log.debug("Error testing resource variations: {}", e.getMessage());
-        }
-    }
-
-    private void discoverAndTestIframeResources(Page page, BrowserContext context, String mainUrl,
-                                                List<String> providedSubdomains,
-                                                Map<String, CookieDto> discoveredCookies,
-                                                String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            log.info("Discovering iframe resources...");
-
-            // Get all iframe sources and test them
-            List<String> iframeSources = (List<String>) page.evaluate("""
-            Array.from(document.querySelectorAll('iframe'))
-                .map(iframe => iframe.src)
-                .filter(src => src && src.startsWith('http'))
-                .slice(0, 20); // Limit to prevent overload
-        """);
-
-            for (String iframeSrc : iframeSources) {
-                try {
-                    log.debug("Testing iframe resource: {}", iframeSrc);
-
-                    // Navigate to iframe source
-                    page.navigate(iframeSrc, new Page.NavigateOptions().setTimeout(5000));
-                    page.waitForTimeout(1000);
-
-                    captureBrowserCookiesFromDiscoveredDomain(context, iframeSrc,
-                            new URL(iframeSrc).getHost(),
-                            mainUrl, providedSubdomains,
-                            discoveredCookies, transactionId, scanMetrics);
-
-                    // Also test the iframe domain's common endpoints
-                    String iframeDomain = new URL(iframeSrc).getHost();
-                    testCommonEndpointsForDomain(page, context, iframeDomain, mainUrl,
-                            providedSubdomains, discoveredCookies,
-                            transactionId, scanMetrics);
-
-                } catch (Exception e) {
-                    log.debug("Iframe resource test failed for {}: {}", iframeSrc, e.getMessage());
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Error discovering iframe resources: {}", e.getMessage());
-        }
-    }
-
-    private void testCommonEndpointsForDomain(Page page, BrowserContext context, String domain,
-                                              String mainUrl, List<String> providedSubdomains,
-                                              Map<String, CookieDto> discoveredCookies,
-                                              String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        // Test common cookie-setting endpoints for any discovered domain
-        List<String> commonEndpoints = Arrays.asList(
-                "/", "/track", "/pixel", "/beacon", "/collect", "/analytics", "/c.gif", "/px.gif",
-                "/tr", "/hit", "/log", "/event", "/sync", "/match", "/redirect", "/r"
-        );
-
-        for (String endpoint : commonEndpoints) {
-            try {
-                String testUrl = "https://" + domain + endpoint;
-                page.navigate(testUrl, new Page.NavigateOptions().setTimeout(2000));
-                page.waitForTimeout(300);
-
-                captureBrowserCookiesFromDiscoveredDomain(context, testUrl, domain,
-                        mainUrl, providedSubdomains,
-                        discoveredCookies, transactionId, scanMetrics);
-
-            } catch (Exception e) {
-                // Expected to fail for many endpoints
-            }
-        }
-    }
-
-    private void monitorRealtimeConnections(Page page, BrowserContext context, String mainUrl,
-                                            List<String> providedSubdomains,
-                                            Map<String, CookieDto> discoveredCookies,
-                                            String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            // Monitor for WebSocket connections and Server-Sent Events
-            page.evaluate("""
-            // Override WebSocket to monitor connections
-            const originalWebSocket = window.WebSocket;
-            window.WebSocket = function(url, protocols) {
-                console.log('WebSocket connection to:', url);
-                window.cookieScannerWebSocketUrls = window.cookieScannerWebSocketUrls || [];
-                window.cookieScannerWebSocketUrls.push(url);
-                return new originalWebSocket(url, protocols);
-            };
-            
-            // Override EventSource to monitor SSE connections
-            const originalEventSource = window.EventSource;
-            window.EventSource = function(url, options) {
-                console.log('EventSource connection to:', url);
-                window.cookieScannerEventSourceUrls = window.cookieScannerEventSourceUrls || [];
-                window.cookieScannerEventSourceUrls.push(url);
-                return new originalEventSource(url, options);
-            };
-            
-            // Trigger potential real-time connections
-            window.dispatchEvent(new Event('online'));
-            window.dispatchEvent(new Event('focus'));
-        """);
-
-            page.waitForTimeout(2000);
-
-            // Get discovered real-time connection URLs
-            List<String> wsUrls = getDiscoveredUrls(page, "window.cookieScannerWebSocketUrls");
-            List<String> sseUrls = getDiscoveredUrls(page, "window.cookieScannerEventSourceUrls");
-
-            // Test these URLs for cookie setting
-            for (String url : wsUrls) {
-                testRealtimeUrl(page, context, url, mainUrl, providedSubdomains,
-                        discoveredCookies, transactionId, scanMetrics);
-            }
-
-            for (String url : sseUrls) {
-                testRealtimeUrl(page, context, url, mainUrl, providedSubdomains,
-                        discoveredCookies, transactionId, scanMetrics);
-            }
-
-        } catch (Exception e) {
-            log.debug("Error monitoring realtime connections: {}", e.getMessage());
-        }
-    }
-
-    @SuppressWarnings("unchecked")
-    private List<String> getDiscoveredUrls(Page page, String jsVariable) {
-        try {
-            return (List<String>) page.evaluate("return " + jsVariable + " || []");
-        } catch (Exception e) {
-            return new ArrayList<>();
-        }
-    }
-
-    private void testRealtimeUrl(Page page, BrowserContext context, String url,
-                                 String mainUrl, List<String> providedSubdomains,
-                                 Map<String, CookieDto> discoveredCookies,
-                                 String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
-        try {
-            // Convert WebSocket/SSE URLs to HTTP for testing
-            String httpUrl = url.replaceFirst("^ws:", "http:").replaceFirst("^wss:", "https:");
-
-            page.navigate(httpUrl, new Page.NavigateOptions().setTimeout(3000));
-            page.waitForTimeout(500);
-
-            captureBrowserCookiesFromDiscoveredDomain(context, httpUrl,
-                    new URL(httpUrl).getHost(),
-                    mainUrl, providedSubdomains,
-                    discoveredCookies, transactionId, scanMetrics);
-
-        } catch (Exception e) {
-            log.debug("Realtime URL test failed for {}: {}", url, e.getMessage());
-        }
-    }
-
-    private boolean isThirdPartyRequest(String requestUrl, String mainUrl) {
-        try {
-            String requestDomain = UrlAndCookieUtil.extractRootDomain(requestUrl);
-            String mainDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-            return !requestDomain.equalsIgnoreCase(mainDomain);
-        } catch (Exception e) {
-            return true; // Assume third-party if can't determine
-        }
-    }
-
-    private void extractCookiesFromUrlParameters(String url, String mainUrl, List<String> subdomains,
-                                                 Map<String, CookieDto> discoveredCookies,
-                                                 String transactionId) {
-        try {
-            URL parsedUrl = new URL(url);
-            String query = parsedUrl.getQuery();
-
-            if (query != null && !query.isEmpty()) {
-                String[] params = query.split("&");
-
-                for (String param : params) {
-                    String[] parts = param.split("=", 2);
-                    if (parts.length == 2) {
-                        String paramName = parts[0];
-                        String paramValue = parts[1];
-
-                        // Check if parameter looks like tracking data
-                        if (paramName.length() <= 10 && paramValue.length() >= 8) {
-                            String cookieName = "url_tracking_" + paramName;
-                            String domain = parsedUrl.getHost();
-
-                            CookieDto trackingCookie = new CookieDto(
-                                    cookieName, url, domain, "/", null,
-                                    false, false, null, Source.THIRD_PARTY
-                            );
-
-                            trackingCookie.setDescription("URL tracking parameter: " + paramName);
-                            trackingCookie.setSubdomainName("main");
-
-                            String cookieKey = generateCookieKey(cookieName, domain, "main");
-
-                            if (!discoveredCookies.containsKey(cookieKey)) {
-                                discoveredCookies.put(cookieKey, trackingCookie);
-                                saveIncrementalCookieWithFlush(transactionId, trackingCookie);
-                                log.info("URL PARAM COOKIE: {} from {}", cookieName, url);
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.debug("Error extracting cookies from URL parameters: {}", e.getMessage());
-        }
-    }
-
-
-    private List<CookieDto> parseSetCookieHeader(String setCookieHeader, String responseUrl, String requestUrl) {
-        List<CookieDto> cookies = new ArrayList<>();
-
-        try {
-            // Split multiple cookies (comma-separated, but be careful with expires dates)
-            String[] cookieParts = setCookieHeader.split(",(?=[^;]*=)");
-
-            for (String cookiePart : cookieParts) {
-                String trimmed = cookiePart.trim();
-                if (!trimmed.isEmpty()) {
-                    CookieDto cookie = parseSingleSetCookie(trimmed, responseUrl);
-                    if (cookie != null) {
-                        cookies.add(cookie);
-                    }
-                }
-            }
-
-            // Fallback: if no cookies parsed, try parsing the whole string as one cookie
-            if (cookies.isEmpty()) {
-                CookieDto fallback = parseSingleSetCookie(setCookieHeader, responseUrl);
-                if (fallback != null) {
-                    cookies.add(fallback);
-                }
-            }
-
-        } catch (Exception e) {
-            log.warn("Error parsing Set-Cookie header: {}", e.getMessage());
-        }
-
-        return cookies;
-    }
-
-    private CookieDto parseSingleSetCookie(String cookieString, String responseUrl) {
-        try {
-            String[] parts = cookieString.split(";");
-            if (parts.length == 0) return null;
-
-            // Parse name=value
-            String[] nameValue = parts[0].trim().split("=", 2);
-            if (nameValue.length != 2) return null;
-
-            String name = nameValue[0].trim();
-            String value = nameValue[1].trim();
-
-            // Default values
-            String domain = extractDomainFromUrl(responseUrl);
-            String path = "/";
-            Instant expires = null;
-            boolean secure = false;
-            boolean httpOnly = false;
-            SameSite sameSite = null;
-
-            // Parse cookie attributes
-            for (int i = 1; i < parts.length; i++) {
-                String attribute = parts[i].trim().toLowerCase();
-
-                if (attribute.startsWith("domain=")) {
-                    domain = attribute.substring(7);
-                } else if (attribute.startsWith("path=")) {
-                    path = attribute.substring(5);
-                } else if (attribute.equals("secure")) {
-                    secure = true;
-                } else if (attribute.equals("httponly")) {
-                    httpOnly = true;
-                } else if (attribute.startsWith("samesite=")) {
-                    String sameSiteValue = attribute.substring(9);
-                    try {
-                        sameSite = SameSite.valueOf(sameSiteValue.toUpperCase());
-                    } catch (IllegalArgumentException e) {
-                        sameSite = SameSite.LAX;
-                    }
-                }
-            }
-
-            return new CookieDto(name, responseUrl, domain, path, expires,
-                    secure, httpOnly, sameSite, Source.UNKNOWN);
-
-        } catch (Exception e) {
-            log.warn("Error parsing single cookie '{}': {}", cookieString, e.getMessage());
-            return null;
-        }
-    }
-
-    private void forceVisitCookieSettingDomains(Page page, BrowserContext context, String mainUrl,
-                                                Map<String, CookieDto> discoveredCookies,
-                                                String transactionId,
-                                                ScanPerformanceTracker.ScanMetrics scanMetrics) {
-
-        // Get all domains referenced on the page
-        List<String> referencedDomains = (List<String>) page.evaluate("""
-        Array.from(document.querySelectorAll('[src], [href]'))
-            .map(el => {
-                try {
-                    const url = el.src || el.href;
-                    return new URL(url).hostname;
-                } catch(e) { return null; }
-            })
-            .filter(Boolean)
-            .filter((v, i, a) => a.indexOf(v) === i)
-            .slice(0, 30);
-    """);
-
-        log.info("Force visiting {} referenced domains for cookie detection", referencedDomains.size());
-
-        // Visit each domain directly
-        for (String domain : referencedDomains) {
-            try {
-                // Try the domain root
-                page.navigate("https://" + domain, new Page.NavigateOptions().setTimeout(5000));
-                page.waitForTimeout(1000);
-                captureBrowserCookiesEnhanced(context, "https://" + domain, discoveredCookies, transactionId, scanMetrics);
-
-                // Try common cookie endpoints
-                String[] endpoints = {"/", "/track", "/pixel", "/c.gif", "/px.gif"};
-                for (String endpoint : endpoints) {
-                    try {
-                        page.navigate("https://" + domain + endpoint, new Page.NavigateOptions().setTimeout(3000));
-                        page.waitForTimeout(500);
-                        captureBrowserCookiesEnhanced(context, "https://" + domain + endpoint, discoveredCookies, transactionId, scanMetrics);
-                    } catch (Exception e) {
-                        // Expected to fail, continue
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Failed to visit domain {}: {}", domain, e.getMessage());
-            }
         }
     }
 }

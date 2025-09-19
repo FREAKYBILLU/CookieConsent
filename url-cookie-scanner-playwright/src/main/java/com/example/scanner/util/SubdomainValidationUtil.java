@@ -3,6 +3,7 @@ package com.example.scanner.util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.net.InetAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
@@ -59,6 +60,12 @@ public class SubdomainValidationUtil {
                     // Check if subdomain belongs to the same root domain
                     if (!mainRootDomain.equalsIgnoreCase(subdomainRootDomain)) {
                         invalidSubdomains.add(trimmedSubdomain + " - Does not belong to domain: " + mainRootDomain);
+                        continue;
+                    }
+
+                    // FIXED: Use correct variable name
+                    if (!isSubdomainResolvable(normalizedSubdomainUrl)) {
+                        invalidSubdomains.add(trimmedSubdomain + " - Subdomain does not exist (DNS resolution failed)");
                         continue;
                     }
 
@@ -216,6 +223,19 @@ public class SubdomainValidationUtil {
 
         public String getErrorMessage() {
             return errorMessage;
+        }
+    }
+
+    private static boolean isSubdomainResolvable(String subdomain) {
+        try {
+            String host = extractHostSafely(subdomain);
+            if (host == null) return false;
+
+            InetAddress.getByName(host);
+            return true;
+        } catch (Exception e) {
+            log.debug("DNS resolution failed for {}: {}", subdomain, e.getMessage());
+            return false;
         }
     }
 }

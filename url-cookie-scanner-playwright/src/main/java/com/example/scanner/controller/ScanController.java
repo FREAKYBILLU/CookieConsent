@@ -89,7 +89,7 @@ public class ScanController {
       );
     }
 
-    log.info("Received PROTECTED scan request for URL: {} with {} subdomains",
+    log.info("Received scan request for URL: {} with {} subdomains",
             url, subdomains != null ? subdomains.size() : 0);
 
     if (subdomains != null && !subdomains.isEmpty()) {
@@ -108,9 +108,9 @@ public class ScanController {
         transactionId = scanService.startScan(url, subdomains);
       }
 
-      log.info("Protected scan initiated successfully with transactionId: {}", transactionId);
+      log.info("Scan initiated successfully with transactionId: {}", transactionId);
 
-      String message = "Protected scan started for main URL";
+      String message = "Scan started for main URL";
       if (subdomains != null && !subdomains.isEmpty()) {
         message += " and " + subdomains.size() + " subdomain" +
                 (subdomains.size() > 1 ? "s" : "");
@@ -121,7 +121,6 @@ public class ScanController {
       response.put("message", message);
       response.put("mainUrl", url);
       response.put("subdomainCount", subdomains != null ? subdomains.size() : 0);
-      response.put("protection", scanService != null ? "Rate limiting and circuit breaker enabled" : "Basic protection");
 
       return ResponseEntity.ok(response);
 
@@ -129,8 +128,8 @@ public class ScanController {
       log.warn("URL/Subdomain validation failed for: {} with subdomains: {}", url, subdomains);
       throw e;
     } catch (Exception e) {
-      log.error("Unexpected error starting protected scan for URL: {} with subdomains: {}", url, subdomains, e);
-      throw new ScanExecutionException("Failed to initiate protected scan: " + e.getMessage());
+      log.error("Unexpected error starting scan for URL: {} with subdomains: {}", url, subdomains, e);
+      throw new ScanExecutionException("Failed to initiate scan: " + e.getMessage());
     }
   }
 
@@ -309,7 +308,7 @@ public class ScanController {
 
     Map<String, Object> healthInfo = new HashMap<>();
     healthInfo.put("status", "UP");
-    healthInfo.put("service", "Protected Cookie Scanner API");
+    healthInfo.put("service", "Cookie Scanner API");
     healthInfo.put("version", "2.1.0");
     healthInfo.put("timestamp", java.time.Instant.now().toString());
 

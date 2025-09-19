@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -22,6 +23,9 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitInterceptor.class);
 
+    @Value("${rate-limit.enabled:true}")
+    private boolean rateLimitEnabled;
+
     @Autowired
     private RateLimitingConfig rateLimitingConfig;
 
@@ -30,6 +34,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+
+        // CHECK IF RATE LIMITING IS ENABLED FIRST
+        if (!rateLimitEnabled) {
+            log.debug("Rate limiting is disabled, allowing request to: {}", request.getRequestURI());
+            return true;
+        }
+
         log.info("INTERCEPTOR TRIGGERED for path: {}", request.getRequestURI());
 
         String requestPath = request.getRequestURI();
