@@ -22,18 +22,18 @@ public class CookieDto {
   private String category;
   private String description;
   private String description_gpt;
-
-  // NEW FIELD: Store the subdomain name where this cookie was found
   private String subdomainName;
+  private String privacyPolicyUrl; // NEW FIELD
 
   // Default constructor
   public CookieDto() {
   }
 
-  // Constructor with subdomain field
+  // Constructor with privacyPolicyUrl field
   public CookieDto(String name, String url, String domain, String path, Instant expires,
                    boolean secure, boolean httpOnly, SameSite sameSite, Source source,
-                   String category, String description, String description_gpt, String subdomainName) {
+                   String category, String description, String description_gpt, String subdomainName,
+                   String privacyPolicyUrl) {
     this.name = name;
     this.url = url;
     this.domain = domain;
@@ -47,20 +47,6 @@ public class CookieDto {
     this.description = description;
     this.description_gpt = description_gpt;
     this.subdomainName = subdomainName;
-  }
-
-  // Backward compatibility constructor
-  public CookieDto(String name, String url, String domain, String path, Instant expires,
-                   boolean secure, boolean httpOnly, SameSite sameSite, Source source,
-                   String category, String description, String description_gpt) {
-    this(name, url, domain, path, expires, secure, httpOnly, sameSite, source,
-            category, description, description_gpt, "main");
-  }
-
-  // Original constructor for backward compatibility
-  public CookieDto(String name, String url, String domain, String path, Instant expires,
-                   boolean secure, boolean httpOnly, SameSite sameSite, Source source) {
-    this(name, url, domain, path, expires, secure, httpOnly, sameSite, source,
-            null, null, null, "main");
+    this.privacyPolicyUrl = privacyPolicyUrl;
   }
 }

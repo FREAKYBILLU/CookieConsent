@@ -6,13 +6,12 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class ApiConfig {
 
-    @Value("${api.context.path:/}")  // Default to / for now
+    @Value("${api.context.path:/}")
     private String apiContextPath;
 
-    @Value("${api.versioning.enabled:false}")  // Disabled for now
+    @Value("${api.versioning.enabled:false}")
     private boolean versioningEnabled;
 
-    // Getters for future use
     public String getApiContextPath() {
         return versioningEnabled ? apiContextPath : "/";
     }

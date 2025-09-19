@@ -21,6 +21,7 @@ import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -45,28 +46,24 @@ public class CookieService {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
         }
 
-        if (updateRequest == null || updateRequest.getCookieName() == null || updateRequest.getCookieName().trim().isEmpty()) {
+        if (updateRequest == null || updateRequest.getName() == null || updateRequest.getName().trim().isEmpty()) {
             throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "Cookie name is required for update",
-                    "CookieUpdateRequest validation failed: cookieName is null or empty"
+                    "CookieUpdateRequest validation failed: name is null or empty"
             );
         }
 
-        if (updateRequest.getCategory() == null || updateRequest.getCategory().trim().isEmpty()) {
+        // Validate required fields (at least one field must be provided for update)
+        if (updateRequest.getCategory() == null && updateRequest.getDescription() == null &&
+                updateRequest.getDomain() == null && updateRequest.getPrivacyPolicyUrl() == null &&
+                updateRequest.getExpires() == null) {
             throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Category is required for update",
-                    "CookieUpdateRequest validation failed: Category is null or empty"
+                    "At least one field (category, description, domain, privacyPolicyUrl, or expires) is required for update",
+                    "CookieUpdateRequest validation failed: All update fields are null"
             );
         }
 
-        if (updateRequest.getDescription() == null || updateRequest.getDescription().trim().isEmpty()) {
-            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Description is required for update",
-                    "CookieUpdateRequest validation failed: Description is null or empty"
-            );
-        }
-
-        log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getCookieName(), transactionId);
+        log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getName(), transactionId);
 
         try {
             // Find the scan result by transaction ID
@@ -87,24 +84,31 @@ public class CookieService {
             // Save the updated scan result
             saveScanResult(scanResult, transactionId);
 
-            log.info("Successfully updated cookie '{}' for transactionId: {}. Category: {}, Description: {}",
-                    updateRequest.getCookieName(), transactionId, updatedCookie.getCategory(), updatedCookie.getDescription());
+            log.info("Successfully updated cookie '{}' for transactionId: {}. Category: {}, Description: {}, Domain: {}, PrivacyPolicyUrl: {}, Expires: {}",
+                    updateRequest.getName(), transactionId, updatedCookie.getCategory(), updatedCookie.getDescription(),
+                    updatedCookie.getDomain(), updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires());
 
-            return CookieUpdateResponse.success(transactionId, updateRequest.getCookieName(),
-                    updatedCookie.getCategory(), updatedCookie.getDescription());
+            // Return updated response with all fields
+            return CookieUpdateResponse.success(transactionId, updateRequest.getName(),
+                    updatedCookie.getCategory(), updatedCookie.getDescription(), updatedCookie.getDomain(),
+                    updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires());
 
         } catch (TransactionNotFoundException e) {
             log.warn("Transaction not found for cookie update: {}", transactionId);
-            throw e;
+            throw e; // Re-throw as-is
         } catch (CookieNotFoundException e) {
             log.warn("Cookie not found for update: {}", e.getMessage());
-            throw e;
+            throw e; // Re-throw as-is
+        } catch (UrlValidationException e) {
+            // FIXED: Don't wrap UrlValidationException - let it bubble up with correct message
+            log.warn("Validation error during cookie update: {}", e.getMessage());
+            throw e; // Re-throw as-is
         } catch (DataAccessException e) {
             log.error("Database error during cookie update for transactionId: {}", transactionId, e);
             throw new ScanExecutionException("Database error during cookie update: " + e.getMessage());
         } catch (Exception e) {
             log.error("Unexpected error updating cookie '{}' for transactionId: {}",
-                    updateRequest.getCookieName(), transactionId, e);
+                    updateRequest.getName(), transactionId, e);
             throw new ScanExecutionException("Unexpected error during cookie update: " + e.getMessage());
         }
     }
@@ -149,7 +153,7 @@ public class CookieService {
             // Search through all subdomain cookie lists
             for (List<CookieEntity> cookies : scanResult.getCookiesBySubdomain().values()) {
                 Optional<CookieEntity> foundCookie = cookies.stream()
-                        .filter(cookie -> cookieName.equals(cookie.getName()))
+                        .filter(cookie -> cookieName.equals(cookie.getName())) // Using getName() method
                         .findFirst();
 
                 if (foundCookie.isPresent()) {
@@ -258,20 +262,24 @@ public class CookieService {
             );
         }
 
+        // UPDATED: Search by "name" field instead of "cookieName"
         Optional<CookieEntity> cookieToUpdate = allCookies.stream()
-                .filter(cookie -> updateRequest.getCookieName().equals(cookie.getName()))
+                .filter(cookie -> updateRequest.getName().equals(cookie.getName()))
                 .findFirst();
 
         if (cookieToUpdate.isEmpty()) {
-            String message = "Cookie '" + updateRequest.getCookieName() + "' not found in transaction: " + transactionId;
-            log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getCookieName(), transactionId);
-            throw new CookieNotFoundException(updateRequest.getCookieName(), transactionId);
+            String message = "Cookie '" + updateRequest.getName() + "' not found in transaction: " + transactionId;
+            log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getName(), transactionId);
+            throw new CookieNotFoundException(updateRequest.getName(), transactionId);
         }
 
-        // Update the cookie
+        // Update the cookie with all new fields
         CookieEntity cookie = cookieToUpdate.get();
         String oldCategory = cookie.getCategory();
         String oldDescription = cookie.getDescription();
+        String oldDomain = cookie.getDomain();
+        String oldPrivacyPolicyUrl = cookie.getPrivacyPolicyUrl();
+        Instant oldExpires = cookie.getExpires();
 
         // Update only if new values are provided and different
         if (updateRequest.getCategory() != null && !updateRequest.getCategory().equals(oldCategory)) {
@@ -281,9 +289,23 @@ public class CookieService {
             cookie.setDescription(updateRequest.getDescription());
         }
 
-        log.debug("Updated cookie '{}': Category {} -> {}, Description {} -> {}",
-                updateRequest.getCookieName(), oldCategory, cookie.getCategory(),
-                oldDescription, cookie.getDescription());
+        // NEW FIELD UPDATES
+        if (updateRequest.getDomain() != null && !updateRequest.getDomain().equals(oldDomain)) {
+            // Validate domain against scan URL before updating
+            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), updateRequest.getDomain(), cookie.getSubdomainName());
+            cookie.setDomain(updateRequest.getDomain());
+        }
+        if (updateRequest.getPrivacyPolicyUrl() != null && !updateRequest.getPrivacyPolicyUrl().equals(oldPrivacyPolicyUrl)) {
+            cookie.setPrivacyPolicyUrl(updateRequest.getPrivacyPolicyUrl());
+        }
+        if (updateRequest.getExpires() != null && !updateRequest.getExpires().equals(oldExpires)) {
+            cookie.setExpires(updateRequest.getExpires());
+        }
+
+        log.debug("Updated cookie '{}': Category {} -> {}, Description {} -> {}, Domain {} -> {}, PrivacyPolicyUrl {} -> {}, Expires {} -> {}",
+                updateRequest.getName(), oldCategory, cookie.getCategory(),
+                oldDescription, cookie.getDescription(), oldDomain, cookie.getDomain(),
+                oldPrivacyPolicyUrl, cookie.getPrivacyPolicyUrl(), oldExpires, cookie.getExpires());
 
         return cookie;
     }
@@ -454,7 +476,7 @@ public class CookieService {
             try {
                 sameSite = SameSite.valueOf(request.getSameSite().toUpperCase());
             } catch (IllegalArgumentException e) {
-                sameSite = SameSite.LAX; // Default fallback
+                sameSite = SameSite.LAX;
             }
         }
 
@@ -463,7 +485,7 @@ public class CookieService {
             try {
                 source = Source.valueOf(request.getSource().toUpperCase());
             } catch (IllegalArgumentException e) {
-                source = Source.FIRST_PARTY; // Default fallback
+                source = Source.FIRST_PARTY;
             }
         }
 
@@ -480,7 +502,8 @@ public class CookieService {
                 request.getCategory(),
                 request.getDescription(),
                 request.getDescription_gpt(),
-                request.getSubdomainName()
+                request.getSubdomainName(),
+                request.getPrivacyPolicyUrl()
         );
     }
 

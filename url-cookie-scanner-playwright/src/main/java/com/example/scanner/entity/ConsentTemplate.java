@@ -187,7 +187,6 @@ class Preference {
 
     @JsonProperty("processorActivityIds")
     private List<String> processorActivityIds;
-
 }
 
 @Data
@@ -198,6 +197,4 @@ class PreferenceValidity {
 
     @JsonProperty("unit")
     private String unit;
-
-
 }

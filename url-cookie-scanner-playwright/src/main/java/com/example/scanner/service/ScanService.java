@@ -1080,7 +1080,12 @@ public class ScanService {
                 playwrightCookie.secure,
                 playwrightCookie.httpOnly,
                 sameSite,
-                source
+                source,
+                null, // category - will be set by categorization service
+                null, // description - will be set by categorization service
+                null, // description_gpt - will be set by categorization service
+                "main", // subdomainName - will be updated later
+                null // privacyPolicyUrl - not available during scanning
         );
     }
 
@@ -1447,7 +1452,6 @@ public class ScanService {
                 }
             }
 
-            // Step 4: Save all categorized cookies to database
             for (CookieDto categorizedCookie : cookiesToSave) {
                 saveIncrementalCookieWithFlush(transactionId, categorizedCookie);
             }

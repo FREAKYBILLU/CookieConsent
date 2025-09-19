@@ -41,6 +41,7 @@ public class ScanController {
 
   private static final Logger log = LoggerFactory.getLogger(ScanController.class);
 
+  // ADD THIS: Pattern to validate UUID format (your app generates UUIDs as transaction IDs)
   private static final Pattern VALID_TRANSACTION_ID = Pattern.compile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$");
 
   private final ScanResultRepository repository;
@@ -97,8 +98,6 @@ public class ScanController {
 
     try {
       String transactionId;
-
-      // Use enhanced service if available, otherwise fallback to regular service
       if (scanService != null) {
         log.info("Using ENHANCED scan service with protection for URL: {}", url);
         transactionId = scanService.startScanWithProtection(url, subdomains);
@@ -241,7 +240,7 @@ public class ScanController {
 
   @Operation(
           summary = "Update Cookie Information",
-          description = "Updates the category and description for a specific cookie within a scan transaction."
+          description = "Updates the category, description, domain, privacy policy URL, and expires date for a specific cookie within a scan transaction."
   )
   @ApiResponse(
           responseCode = "200",
@@ -255,7 +254,7 @@ public class ScanController {
   public ResponseEntity<CookieUpdateResponse> updateCookie(
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
-          @Parameter(description = "Cookie update request containing name, category, and description", required = true)
+          @Parameter(description = "Cookie update request containing name, category, description, domain, privacy policy URL, and expires", required = true)
           @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
 
     // SECURITY FIX: Validate transaction ID format BEFORE processing
@@ -269,25 +268,25 @@ public class ScanController {
     }
 
     log.info("Received request to update cookie '{}' for transactionId: {}",
-            updateRequest.getCookieName(), transactionId);
+            updateRequest.getName(), transactionId); // CHANGED: cookieName to name
 
     try {
       CookieUpdateResponse response = cookieService.updateCookie(transactionId, updateRequest);
 
       if (response.isUpdated()) {
         log.info("Successfully updated cookie '{}' for transactionId: {}",
-                updateRequest.getCookieName(), transactionId);
+                updateRequest.getName(), transactionId); // CHANGED: cookieName to name
         return ResponseEntity.ok(response);
       } else {
         log.warn("Failed to update cookie '{}' for transactionId: {} - Reason: {}",
-                updateRequest.getCookieName(), transactionId, response.getMessage());
+                updateRequest.getName(), transactionId, response.getMessage()); // CHANGED: cookieName to name
         return ResponseEntity.badRequest().body(response);
       }
 
     } catch (CookieNotFoundException | TransactionNotFoundException e) {
       log.warn("Field validation error found for update: {}", e.getMessage());
       throw e;
-    }  catch (UrlValidationException e) {
+    } catch (UrlValidationException e) {
       log.warn("Cookie not found for update: {}", e.getMessage());
       throw e;
     } catch (Exception e) {

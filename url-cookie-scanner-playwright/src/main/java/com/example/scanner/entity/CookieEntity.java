@@ -21,16 +21,16 @@ public class CookieEntity {
   private String category;
   private String description;
   private String description_gpt;
-
   private String subdomainName;
+  private String privacyPolicyUrl; // NEW FIELD
 
   public CookieEntity() {
   }
 
-  // Updated constructor with subdomain field
   public CookieEntity(String name, String url, String domain, String path, Instant expires,
                       boolean secure, boolean httpOnly, SameSite sameSite, Source source,
-                      String category, String description, String description_gpt, String subdomainName) {
+                      String category, String description, String description_gpt, String subdomainName,
+                      String privacyPolicyUrl) {
     this.name = name;
     this.url = url;
     this.domain = domain;
@@ -44,13 +44,6 @@ public class CookieEntity {
     this.description = description;
     this.description_gpt = description_gpt;
     this.subdomainName = subdomainName;
-  }
-
-  // Backward compatibility constructor
-  public CookieEntity(String name, String url, String domain, String path, Instant expires,
-                      boolean secure, boolean httpOnly, SameSite sameSite, Source source,
-                      String category, String description, String description_gpt) {
-    this(name, url, domain, path, expires, secure, httpOnly, sameSite, source,
-            category, description, description_gpt, "main");
+    this.privacyPolicyUrl = privacyPolicyUrl;
   }
 }

@@ -34,7 +34,8 @@ public class ScanResultMapper {
                 dto.getCategory(),
                 dto.getDescription(),
                 dto.getDescription_gpt(),
-                dto.getSubdomainName() != null ? dto.getSubdomainName() : "main"
+                dto.getSubdomainName() != null ? dto.getSubdomainName() : "main",
+                dto.getPrivacyPolicyUrl() // NEW FIELD
         );
     }
 
@@ -53,7 +54,8 @@ public class ScanResultMapper {
                 entity.getCategory(),
                 entity.getDescription(),
                 entity.getDescription_gpt(),
-                entity.getSubdomainName() != null ? entity.getSubdomainName() : "main"
+                entity.getSubdomainName() != null ? entity.getSubdomainName() : "main",
+                entity.getPrivacyPolicyUrl() // NEW FIELD
         );
     }
 
@@ -101,21 +103,21 @@ public class ScanResultMapper {
         return dto;
     }
 
-    // Helper method to create backward compatible CookieEntity (without subdomain)
+    // Helper method to create backward compatible CookieEntity (without privacyPolicyUrl)
     public static CookieEntity createLegacyCookieEntity(String name, String url, String domain,
                                                         String path, java.time.Instant expires,
                                                         boolean secure, boolean httpOnly,
                                                         SameSite sameSite, Source source) {
         return new CookieEntity(name, url, domain, path, expires, secure, httpOnly,
-                sameSite, source, null, null, null, "main");
+                sameSite, source, null, null, null, "main", null);
     }
 
-    // Helper method to create backward compatible CookieDto (without subdomain)
+    // Helper method to create backward compatible CookieDto (without privacyPolicyUrl)
     public static CookieDto createLegacyCookieDto(String name, String url, String domain,
                                                   String path, java.time.Instant expires,
                                                   boolean secure, boolean httpOnly,
                                                   SameSite sameSite, Source source) {
         return new CookieDto(name, url, domain, path, expires, secure, httpOnly,
-                sameSite, source, null, null, null, "main");
+                sameSite, source, null, null, null, "main", null);
     }
 }
