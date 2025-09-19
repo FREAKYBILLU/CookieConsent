@@ -1,7 +1,13 @@
 package com.example.scanner.service;
+import com.example.scanner.config.MultiTenantMongoConfig;
+import com.example.scanner.config.TenantContext;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.repository.ConsentTemplateRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.List;
@@ -9,65 +15,57 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
+@RequiredArgsConstructor
 public class ConsentTemplateService {
 
     @Autowired
     private ConsentTemplateRepository repository;
 
-    public ConsentTemplate createTemplate(ConsentTemplate template) {
+    private final MultiTenantMongoConfig mongoConfig;
+
+    /**
+     * Get specific template by tenant ID and scan ID combination
+     */
+    public Optional<ConsentTemplate> getTemplateByTenantAndScanId(String tenantId, String scanId) {
+        // Set tenant context for database routing
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            // Query the tenant-specific database using MongoTemplate
+            Query query = new Query(Criteria.where("scanId").is(scanId));
+            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(template);
+        } finally {
+            // Clear tenant context after operation
+            TenantContext.clear();
+        }
+    }
+
+    public List<ConsentTemplate> getTemplatesByTenantId(String tenantId) {
+        // Set tenant context for database routing
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            return tenantMongoTemplate.findAll(ConsentTemplate.class);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    public ConsentTemplate createTemplate(String tenantId, ConsentTemplate template) {
         template.setScanId(UUID.randomUUID().toString());
         template.setCreatedAt(Instant.now());
         template.setUpdatedAt(Instant.now());
-        return repository.save(template);
-    }
 
-    public Optional<ConsentTemplate> getTemplateByScanId(String scanId) {
-        return repository.findByScanId(scanId);
-    }
-
-    public List<ConsentTemplate> getTemplatesByBusinessId(String businessId) {
-        return repository.findByBusinessId(businessId);
-    }
-
-    public List<ConsentTemplate> getTemplatesByStatus(String status) {
-        return repository.findByStatus(status);
-    }
-
-    public ConsentTemplate updateTemplate(String scanId, ConsentTemplate template) {
-        Optional<ConsentTemplate> existingTemplate = repository.findByScanId(scanId);
-        if (existingTemplate.isPresent()) {
-            ConsentTemplate existing = existingTemplate.get();
-            existing.setTemplateName(template.getTemplateName());
-            existing.setBusinessId(template.getBusinessId());
-            existing.setStatus(template.getStatus());
-            existing.setMultilingual(template.getMultilingual());
-            existing.setUiConfig(template.getUiConfig());
-            existing.setDocumentMeta(template.getDocumentMeta());
-            existing.setPreferences(template.getPreferences());
-            existing.setUpdatedAt(Instant.now());
-            existing.setVersion(existing.getVersion() + 1);
-            return repository.save(existing);
+        // Set tenant context for database routing
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+        try {
+            return tenantMongoTemplate.save(template);
+        } finally {
+            TenantContext.clear();
         }
-        throw new RuntimeException("Template not found with scanId: " + scanId);
-    }
-
-    public boolean deleteTemplate(String scanId) {
-        Optional<ConsentTemplate> template = repository.findByScanId(scanId);
-        if (template.isPresent()) {
-            repository.delete(template.get());
-            return true;
-        }
-        return false;
-    }
-
-    public ConsentTemplate publishTemplate(String scanId) {
-        Optional<ConsentTemplate> template = repository.findByScanId(scanId);
-        if (template.isPresent()) {
-            ConsentTemplate existing = template.get();
-            existing.setStatus("PUBLISHED");
-            existing.setUpdatedAt(Instant.now());
-            return repository.save(existing);
-        }
-        throw new RuntimeException("Template not found with scanId: " + scanId);
     }
 }

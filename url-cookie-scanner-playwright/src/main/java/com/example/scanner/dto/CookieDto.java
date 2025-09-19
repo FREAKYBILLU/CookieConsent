@@ -2,6 +2,7 @@ package com.example.scanner.dto;
 
 import com.example.scanner.enums.SameSite;
 import com.example.scanner.enums.Source;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 
 import java.time.Instant;
@@ -12,6 +13,7 @@ public class CookieDto {
   private String url;
   private String domain;
   private String path;
+  @JsonFormat(shape = JsonFormat.Shape.STRING, timezone = "UTC")
   private Instant expires;
   private boolean secure;
   private boolean httpOnly;

@@ -2,6 +2,7 @@ package com.example.scanner.entity;
 
 import com.example.scanner.enums.SameSite;
 import com.example.scanner.enums.Source;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import lombok.Data;
 import java.time.Instant;
 
@@ -11,6 +12,7 @@ public class CookieEntity {
   private String url;
   private String domain;
   private String path;
+  @JsonFormat(shape = JsonFormat.Shape.STRING, timezone = "UTC")
   private Instant expires;
   private boolean secure;
   private boolean httpOnly;
@@ -20,7 +22,6 @@ public class CookieEntity {
   private String description;
   private String description_gpt;
 
-  // NEW FIELD: Store the subdomain name where this cookie was found
   private String subdomainName;
 
   public CookieEntity() {

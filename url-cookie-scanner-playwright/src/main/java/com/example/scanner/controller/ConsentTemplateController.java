@@ -1,6 +1,8 @@
 package com.example.scanner.controller;
 
-
+import com.example.scanner.constants.ErrorCodes;
+import com.example.scanner.dto.ErrorResponse;
+import com.example.scanner.dto.TemplateResponse;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.service.ConsentTemplateService;
 import jakarta.validation.Valid;
@@ -13,11 +15,14 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
+import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @RestController
-@RequestMapping("/api/v1/consent-templates")
+@RequestMapping("/cookie-templates")
 @Tag(name = "Consent Template", description = "APIs for managing consent templates with scan ID")
 public class ConsentTemplateController {
 
@@ -25,104 +30,112 @@ public class ConsentTemplateController {
     private ConsentTemplateService service;
 
     @Operation(
-            summary = "Create new consent template",
-            description = "Creates a new consent template with auto-generated scan ID"
+            summary = "Create new consent template for tenant",
+            description = "Creates a new consent template with auto-generated scan ID in tenant-specific database"
     )
     @ApiResponse(responseCode = "201", description = "Template created successfully")
-    @ApiResponse(responseCode = "400", description = "Invalid request data")
+    @ApiResponse(responseCode = "400", description = "Invalid request data or missing tenant header")
     @PostMapping
-    public ResponseEntity<ConsentTemplate> createTemplate(@Valid @RequestBody ConsentTemplate template) {
-        try {
-            ConsentTemplate createdTemplate = service.createTemplate(template);
-            return new ResponseEntity<>(createdTemplate, HttpStatus.CREATED);
-        } catch (Exception e) {
-            return new ResponseEntity<>(HttpStatus.BAD_REQUEST);
-        }
-    }
-
-    @Operation(
-            summary = "Get template by scan ID",
-            description = "Retrieves consent template details using scan ID"
-    )
-    @ApiResponse(responseCode = "200", description = "Template found")
-    @ApiResponse(responseCode = "404", description = "Template not found")
-    @GetMapping("/{scanId}")
-    public ResponseEntity<ConsentTemplate> getTemplateByScanId(
-            @Parameter(description = "Scan ID of the template") @PathVariable String scanId) {
-        Optional<ConsentTemplate> template = service.getTemplateByScanId(scanId);
-        return template.map(t -> ResponseEntity.ok(t))
-                .orElse(ResponseEntity.notFound().build());
-    }
-
-    @Operation(
-            summary = "Get templates by business ID",
-            description = "Retrieves all templates for a specific business"
-    )
-    @ApiResponse(responseCode = "200", description = "Templates retrieved successfully")
-    @GetMapping("/business/{businessId}")
-    public ResponseEntity<List<ConsentTemplate>> getTemplatesByBusinessId(
-            @Parameter(description = "Business ID") @PathVariable String businessId) {
-        List<ConsentTemplate> templates = service.getTemplatesByBusinessId(businessId);
-        return ResponseEntity.ok(templates);
-    }
-
-    @Operation(
-            summary = "Get templates by status",
-            description = "Retrieves all templates with specific status (DRAFT, PUBLISHED, ARCHIVED)"
-    )
-    @ApiResponse(responseCode = "200", description = "Templates retrieved successfully")
-    @GetMapping("/status/{status}")
-    public ResponseEntity<List<ConsentTemplate>> getTemplatesByStatus(
-            @Parameter(description = "Template status") @PathVariable String status) {
-        List<ConsentTemplate> templates = service.getTemplatesByStatus(status);
-        return ResponseEntity.ok(templates);
-    }
-
-    @Operation(
-            summary = "Update template",
-            description = "Updates an existing consent template using scan ID"
-    )
-    @ApiResponse(responseCode = "200", description = "Template updated successfully")
-    @ApiResponse(responseCode = "404", description = "Template not found")
-    @PutMapping("/{scanId}")
-    public ResponseEntity<ConsentTemplate> updateTemplate(
-            @Parameter(description = "Scan ID of the template") @PathVariable String scanId,
+    public ResponseEntity<?> createTemplate(
+            @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
+            @RequestHeader("X-Tenant-ID") String tenantId,
             @Valid @RequestBody ConsentTemplate template) {
         try {
-            ConsentTemplate updatedTemplate = service.updateTemplate(scanId, template);
-            return ResponseEntity.ok(updatedTemplate);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+            ConsentTemplate createdTemplate = service.createTemplate(tenantId, template);
+            if(createdTemplate != null) {
+                TemplateResponse response = new TemplateResponse(createdTemplate.getId(),
+                        "Template created successfully"
+                );
+                return new ResponseEntity<>(response, HttpStatus.CREATED);
+            }else{
+                ErrorResponse errorResponse = new ErrorResponse(
+                        ErrorCodes.VALIDATION_ERROR,
+                        "Failed to create consent template",
+                        "Template creation failed due to some unexpected validation error ",
+                        Instant.now(),
+                        "/cookie-consent-templates"
+                );
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+            }
+        } catch (Exception e) {
+            ErrorResponse errorResponse = new ErrorResponse(
+                    ErrorCodes.VALIDATION_ERROR,
+                    "Failed to create consent template",
+                    "Template creation failed: " + e.getMessage(),
+                    Instant.now(),
+                    "/api/v1/consent-templates"
+            );
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
     }
 
     @Operation(
-            summary = "Delete template",
-            description = "Deletes a consent template using scan ID"
+            summary = "Get templates by tenant ID with optional scan ID filter",
+            description = "Retrieves consent templates from tenant-specific database. If scan ID is provided, returns specific template for that tenant and scan ID combination."
     )
-    @ApiResponse(responseCode = "204", description = "Template deleted successfully")
-    @ApiResponse(responseCode = "404", description = "Template not found")
-    @DeleteMapping("/{scanId}")
-    public ResponseEntity<Void> deleteTemplate(
-            @Parameter(description = "Scan ID of the template") @PathVariable String scanId) {
-        boolean deleted = service.deleteTemplate(scanId);
-        return deleted ? ResponseEntity.noContent().build() : ResponseEntity.notFound().build();
-    }
+    @ApiResponse(responseCode = "200", description = "Templates retrieved successfully")
+    @ApiResponse(responseCode = "400", description = "Invalid tenant ID or missing header")
+    @ApiResponse(responseCode = "404", description = "No templates found")
+    @ApiResponse(responseCode = "500", description = "Internal server error")
+    @GetMapping("/tenant")
+    public ResponseEntity<?> getTemplatesByTenantAndScanId(
+            @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @Parameter(description = "Scan ID (optional) - if provided, filters to specific template")
+            @RequestParam(value = "scanId", required = false) String scanId) {
 
-    @Operation(
-            summary = "Publish template",
-            description = "Changes template status to PUBLISHED"
-    )
-    @ApiResponse(responseCode = "200", description = "Template published successfully")
-    @ApiResponse(responseCode = "404", description = "Template not found")
-    @PatchMapping("/{scanId}/publish")
-    public ResponseEntity<ConsentTemplate> publishTemplate(
-            @Parameter(description = "Scan ID of the template") @PathVariable String scanId) {
         try {
-            ConsentTemplate publishedTemplate = service.publishTemplate(scanId);
-            return ResponseEntity.ok(publishedTemplate);
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
+            // Validate tenant ID from header
+            if (tenantId == null || tenantId.trim().isEmpty()) {
+                ErrorResponse errorResponse = new ErrorResponse(
+                        ErrorCodes.VALIDATION_ERROR,
+                        "Tenant ID is required",
+                        "X-Tenant-ID header is missing or empty",
+                        Instant.now(),
+                        "/api/v1/consent-templates/tenant"
+                );
+                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+            }
+
+            if (scanId != null && !scanId.trim().isEmpty()) {
+                Optional<ConsentTemplate> template = service.getTemplateByTenantAndScanId(tenantId, scanId);
+                if (template.isPresent()) {
+                    return ResponseEntity.ok(template.get());
+                } else {
+                    ErrorResponse errorResponse = new ErrorResponse(
+                            ErrorCodes.NOT_FOUND,
+                            "Consent template not found",
+                            "No template found with scanId: " + scanId + " for tenantId: " + tenantId,
+                            Instant.now(),
+                            "/api/v1/consent-templates/tenant"
+                    );
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
+                }
+            } else {
+                // Only tenantId provided - return all templates for this tenant from tenant DB
+                List<ConsentTemplate> templates = service.getTemplatesByTenantId(tenantId);
+                return ResponseEntity.ok(templates);
+            }
+
+        } catch (IllegalArgumentException e) {
+            ErrorResponse errorResponse = new ErrorResponse(
+                    ErrorCodes.VALIDATION_ERROR,
+                    "Invalid input provided",
+                    "Invalid input: " + e.getMessage(),
+                    Instant.now(),
+                    "/api/v1/consent-templates/tenant"
+            );
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
+
+        } catch (Exception e) {
+            ErrorResponse errorResponse = new ErrorResponse(
+                    ErrorCodes.INTERNAL_ERROR,
+                    "Failed to retrieve templates",
+                    "Internal server error: " + e.getMessage(),
+                    Instant.now(),
+                    "/api/v1/consent-templates/tenant"
+            );
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         }
     }
 }

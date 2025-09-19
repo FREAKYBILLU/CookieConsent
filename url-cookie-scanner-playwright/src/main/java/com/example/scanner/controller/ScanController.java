@@ -41,7 +41,6 @@ public class ScanController {
 
   private static final Logger log = LoggerFactory.getLogger(ScanController.class);
 
-  // ADD THIS: Pattern to validate UUID format (your app generates UUIDs as transaction IDs)
   private static final Pattern VALID_TRANSACTION_ID = Pattern.compile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$");
 
   private final ScanResultRepository repository;
