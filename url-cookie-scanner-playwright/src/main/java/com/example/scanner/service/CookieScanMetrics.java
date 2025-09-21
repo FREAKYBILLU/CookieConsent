@@ -26,7 +26,6 @@ public class CookieScanMetrics {
     private final Counter thirdPartyCookies;
     private final Counter firstPartyCookies;
 
-    // MADE PUBLIC - YE FIX HAI
     public final Timer scanDuration;
     public final Timer consentHandlingDuration;
     public final Timer cookieCategorizationDuration;

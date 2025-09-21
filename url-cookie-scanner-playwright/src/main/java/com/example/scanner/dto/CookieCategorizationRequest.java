@@ -14,9 +14,6 @@ public class CookieCategorizationRequest {
     @JsonProperty("cookie_names")
     private List<String> cookieNames;
 
-    public CookieCategorizationRequest() {
-    }
-
     public CookieCategorizationRequest(List<String> cookieNames) {
         this.cookieNames = cookieNames;
     }

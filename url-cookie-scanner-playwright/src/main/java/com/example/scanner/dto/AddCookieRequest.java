@@ -46,12 +46,4 @@ public class AddCookieRequest {
     @URL(message = "Privacy policy URL must be a valid URL")
     private String privacyPolicyUrl;
 
-    public AddCookieRequest() {
-    }
-
-    public AddCookieRequest(String name, String domain, String subdomainName) {
-        this.name = name;
-        this.domain = domain;
-        this.subdomainName = subdomainName;
-    }
 }

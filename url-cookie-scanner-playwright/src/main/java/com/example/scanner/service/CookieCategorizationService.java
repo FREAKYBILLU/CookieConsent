@@ -1,10 +1,8 @@
 package com.example.scanner.service;
 
-import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.CookieCategorizationRequest;
 import com.example.scanner.dto.CookieCategorizationResponse;
 import com.example.scanner.exception.CookieCategorizationException;
-import com.example.scanner.exception.UrlValidationException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -12,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.retry.annotation.Backoff;
-import org.springframework.retry.annotation.Recover;
 import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpServerErrorException;
@@ -45,7 +42,7 @@ public class CookieCategorizationService {
     @Value("${cookie.categorization.retry.maxAttempts:3}")
     private int maxRetryAttempts;
 
-    private final RestTemplate restTemplate; // Injected from RestTemplateConfig
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
     // Simple in-memory cache
@@ -144,7 +141,7 @@ public class CookieCategorizationService {
             Duration callDuration = Duration.between(startTime, Instant.now());
             log.info("API call completed successfully in {}ms", callDuration.toMillis());
 
-            return parseApiResponse(response, cookieNames);
+            return parseApiResponse(response);
 
         } catch (ResourceAccessException e) {
             Duration callDuration = Duration.between(startTime, Instant.now());
@@ -170,32 +167,6 @@ public class CookieCategorizationService {
         }
     }
 
-    /**
-     * Recovery method for retry failures - provides graceful degradation
-     */
-    @Recover
-    public Map<String, CookieCategorizationResponse> recoverFromApiFailure(Exception e, List<String> cookieNames) {
-        log.warn("Cookie categorization API completely failed after {} retries. Cookies: {}. Final error: {}",
-                maxRetryAttempts, cookieNames.size(), e.getMessage());
-
-        log.warn("Service will continue without categorization for these cookies: {}", cookieNames);
-
-        // Return empty map - let the calling service handle missing categorization gracefully
-        return Collections.emptyMap();
-    }
-
-    public CookieCategorizationResponse categorizeSingleCookie(String cookieName) throws CookieCategorizationException, UrlValidationException {
-        if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Cookie name is required for categorization",
-                    "categorizeSingleCookie called with null or empty cookieName parameter"
-            );
-        }
-
-        Map<String, CookieCategorizationResponse> result = categorizeCookies(List.of(cookieName.trim()));
-        return result.get(cookieName.trim());
-    }
-
     private Map<String, CookieCategorizationResponse> getCachedResults(List<String> cookieNames) {
         if (!cacheEnabled) {
             return Collections.emptyMap();
@@ -219,7 +190,7 @@ public class CookieCategorizationService {
         return cachedResults;
     }
 
-    private Map<String, CookieCategorizationResponse> parseApiResponse(ResponseEntity<String> response, List<String> requestedCookies) throws CookieCategorizationException {
+    private Map<String, CookieCategorizationResponse> parseApiResponse(ResponseEntity<String> response) throws CookieCategorizationException {
         try {
             if (!response.getStatusCode().is2xxSuccessful()) {
                 throw new CookieCategorizationException("External categorization API returned error status: " + response.getStatusCode());
@@ -284,7 +255,6 @@ public class CookieCategorizationService {
         }
     }
 
-    // Cache entry class
     private static class CacheEntry {
         final CookieCategorizationResponse response;
         final Instant expiryTime;

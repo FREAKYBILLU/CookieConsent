@@ -2,9 +2,7 @@ package com.example.scanner.service;
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
 import com.example.scanner.entity.ConsentTemplate;
-import com.example.scanner.repository.ConsentTemplateRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
@@ -18,14 +16,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ConsentTemplateService {
 
-    @Autowired
-    private ConsentTemplateRepository repository;
-
     private final MultiTenantMongoConfig mongoConfig;
 
-    /**
-     * Get specific template by tenant ID and scan ID combination
-     */
     public Optional<ConsentTemplate> getTemplateByTenantAndScanId(String tenantId, String scanId) {
         // Set tenant context for database routing
         TenantContext.setCurrentTenant(tenantId);

@@ -9,11 +9,10 @@ import java.time.Instant;
 public class CookieUpdateResponse {
 
     private String transactionId;
-    private String cookieName; // Keep as cookieName for response consistency
+    private String cookieName;
     private String category;
     private String description;
 
-    // NEW FIELDS in response
     private String domain;
     private String privacyPolicyUrl;
     @JsonFormat(shape = JsonFormat.Shape.STRING, timezone = "UTC")
@@ -22,10 +21,6 @@ public class CookieUpdateResponse {
     private boolean updated;
     private String message;
 
-    public CookieUpdateResponse() {
-    }
-
-    // Updated constructor with new fields
     public CookieUpdateResponse(String transactionId, String cookieName, String category,
                                 String description, String domain, String privacyPolicyUrl,
                                 Instant expires, boolean updated, String message) {
@@ -40,13 +35,6 @@ public class CookieUpdateResponse {
         this.message = message;
     }
 
-    // Backward compatibility constructor
-    public CookieUpdateResponse(String transactionId, String cookieName, String category,
-                                String description, boolean updated, String message) {
-        this(transactionId, cookieName, category, description, null, null, null, updated, message);
-    }
-
-    // Success response with all fields
     public static CookieUpdateResponse success(String transactionId, String cookieName,
                                                String category, String description, String domain,
                                                String privacyPolicyUrl, Instant expires) {
@@ -54,14 +42,4 @@ public class CookieUpdateResponse {
                 domain, privacyPolicyUrl, expires, true, "Cookie updated successfully");
     }
 
-    // Backward compatibility success response
-    public static CookieUpdateResponse success(String transactionId, String cookieName,
-                                               String category, String description) {
-        return success(transactionId, cookieName, category, description, null, null, null);
-    }
-
-    // Failure response
-    public static CookieUpdateResponse failure(String transactionId, String cookieName, String message) {
-        return new CookieUpdateResponse(transactionId, cookieName, null, null, null, null, null, false, message);
-    }
 }

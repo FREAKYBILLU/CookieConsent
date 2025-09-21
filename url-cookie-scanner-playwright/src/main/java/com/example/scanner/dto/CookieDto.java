@@ -25,11 +25,6 @@ public class CookieDto {
   private String subdomainName;
   private String privacyPolicyUrl; // NEW FIELD
 
-  // Default constructor
-  public CookieDto() {
-  }
-
-  // Constructor with privacyPolicyUrl field
   public CookieDto(String name, String url, String domain, String path, Instant expires,
                    boolean secure, boolean httpOnly, SameSite sameSite, Source source,
                    String category, String description, String description_gpt, String subdomainName,

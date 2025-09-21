@@ -29,7 +29,6 @@ public class MultiTenantMongoConfig extends AbstractMongoClientConfiguration {
 
     @Override
     protected String getDatabaseName() {
-        // Required by AbstractMongoClientConfiguration
         return sharedDatabase;
     }
 
@@ -71,12 +70,4 @@ public class MultiTenantMongoConfig extends AbstractMongoClientConfiguration {
         return new MongoTemplate(factory);
     }
 
-    /**
-     * Helper method to get shared database MongoTemplate
-     * (Can be used for programmatic access if needed)
-     */
-    // This method is no longer needed as sharedMongoTemplate() is a bean
-    // public MongoTemplate getSharedMongoTemplate() {
-    //     return sharedMongoTemplate();
-    // }
 }

@@ -113,117 +113,6 @@ public class CookieService {
         }
     }
 
-    /**
-     * Get a specific cookie details from a transaction
-     */
-    public Optional<CookieEntity> getCookie(String transactionId, String cookieName)
-            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
-
-        if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Transaction ID is required",
-                    "Method parameter validation failed: transactionId is null or empty"
-            );
-        }
-
-        if (cookieName == null || cookieName.trim().isEmpty()) {
-            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Cookie name is required",
-                    "Method parameter validation failed: cookieName is null or empty"
-            );
-        }
-
-        log.debug("Retrieving cookie '{}' for transactionId: {}", cookieName, transactionId);
-
-        try {
-            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(transactionId);
-
-            if (scanResultOpt.isEmpty()) {
-                throw new TransactionNotFoundException(transactionId);
-            }
-
-            ScanResultEntity scanResult = scanResultOpt.get();
-
-            // Search across all subdomains since cookies are now grouped
-            if (scanResult.getCookiesBySubdomain() == null || scanResult.getCookiesBySubdomain().isEmpty()) {
-                log.debug("No cookies found for transaction: {}", transactionId);
-                return Optional.empty();
-            }
-
-            // Search through all subdomain cookie lists
-            for (List<CookieEntity> cookies : scanResult.getCookiesBySubdomain().values()) {
-                Optional<CookieEntity> foundCookie = cookies.stream()
-                        .filter(cookie -> cookieName.equals(cookie.getName())) // Using getName() method
-                        .findFirst();
-
-                if (foundCookie.isPresent()) {
-                    log.debug("Cookie '{}' found for transactionId: {}", cookieName, transactionId);
-                    return foundCookie;
-                }
-            }
-
-            log.debug("Cookie '{}' not found for transactionId: {}", cookieName, transactionId);
-            return Optional.empty();
-
-        } catch (TransactionNotFoundException e) {
-            throw e;
-        } catch (DataAccessException e) {
-            log.error("Database error retrieving cookie '{}' for transactionId: {}", cookieName, transactionId, e);
-            throw new ScanExecutionException("Database error during cookie retrieval", e);
-        } catch (Exception e) {
-            log.error("Unexpected error retrieving cookie '{}' for transactionId: {}", cookieName, transactionId, e);
-            throw new ScanExecutionException("Unexpected error during cookie retrieval", e);
-        }
-    }
-
-    /**
-     * Get all cookies for a transaction
-     */
-    public List<CookieEntity> getAllCookies(String transactionId)
-            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
-
-        if (transactionId == null || transactionId.trim().isEmpty()) {
-            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-                    "Transaction ID is required",
-                    "Method parameter validation failed: transactionId is null or empty"
-            );
-        }
-
-        log.debug("Retrieving all cookies for transactionId: {}", transactionId);
-
-        try {
-            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(transactionId);
-
-            if (scanResultOpt.isEmpty()) {
-                throw new TransactionNotFoundException(transactionId);
-            }
-
-            ScanResultEntity scanResult = scanResultOpt.get();
-
-            // Flatten all cookies from all subdomains into one list
-            List<CookieEntity> allCookies = new ArrayList<>();
-            if (scanResult.getCookiesBySubdomain() != null) {
-                for (List<CookieEntity> subdomainCookies : scanResult.getCookiesBySubdomain().values()) {
-                    allCookies.addAll(subdomainCookies);
-                }
-            }
-
-            log.debug("Found {} cookies for transactionId: {}", allCookies.size(), transactionId);
-            return allCookies;
-
-        } catch (TransactionNotFoundException e) {
-            throw e;
-        } catch (DataAccessException e) {
-            log.error("Database error retrieving cookies for transactionId: {}", transactionId, e);
-            throw new ScanExecutionException("Database error during cookie retrieval", e);
-        } catch (Exception e) {
-            log.error("Unexpected error retrieving cookies for transactionId: {}", transactionId, e);
-            throw new ScanExecutionException("Unexpected error during cookie retrieval", e);
-        }
-    }
-
-    // Private helper methods
-
     private Optional<ScanResultEntity> findScanResultByTransactionId(String transactionId) throws DataAccessException {
         try {
             return scanResultRepository.findByTransactionId(transactionId);
@@ -235,7 +124,6 @@ public class CookieService {
 
     private void validateScanStatus(ScanResultEntity scanResult, String transactionId) throws UrlValidationException {
         if (!"COMPLETED".equals(scanResult.getStatus())) {
-            String message = "Cannot update cookie for incomplete scan. Status: " + scanResult.getStatus();
             log.warn("Invalid scan status for transactionId {}: {}", transactionId, scanResult.getStatus());
             throw new UrlValidationException(ErrorCodes.INVALID_STATE_ERROR,
                     "Scan must be completed before updating cookies. Current status: " + scanResult.getStatus(),
@@ -254,7 +142,6 @@ public class CookieService {
         }
 
         if (allCookies.isEmpty()) {
-            String message = "No cookies found for transaction: " + transactionId;
             log.warn("No cookies available for update in transactionId: {}", transactionId);
             throw new UrlValidationException(ErrorCodes.NO_COOKIES_FOUND,
                     "No cookies available for this transaction",
@@ -268,7 +155,6 @@ public class CookieService {
                 .findFirst();
 
         if (cookieToUpdate.isEmpty()) {
-            String message = "Cookie '" + updateRequest.getName() + "' not found in transaction: " + transactionId;
             log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getName(), transactionId);
             throw new CookieNotFoundException(updateRequest.getName(), transactionId);
         }
@@ -292,7 +178,7 @@ public class CookieService {
         // NEW FIELD UPDATES
         if (updateRequest.getDomain() != null && !updateRequest.getDomain().equals(oldDomain)) {
             // Validate domain against scan URL before updating
-            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), updateRequest.getDomain(), cookie.getSubdomainName());
+            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), updateRequest.getDomain());
             cookie.setDomain(updateRequest.getDomain());
         }
         if (updateRequest.getPrivacyPolicyUrl() != null && !updateRequest.getPrivacyPolicyUrl().equals(oldPrivacyPolicyUrl)) {
@@ -360,7 +246,7 @@ public class CookieService {
             addRequest.setSubdomainName(subdomainName);
 
             // Validate cookie domain against scan URL
-            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), addRequest.getDomain(), subdomainName);
+            validateCookieDomainAgainstScanUrl(scanResult.getUrl(), addRequest.getDomain());
 
             // Check for duplicate cookie
             if (cookieExists(scanResult, addRequest)) {
@@ -419,7 +305,7 @@ public class CookieService {
         return normalized;
     }
 
-    private void validateCookieDomainAgainstScanUrl(String scanUrl, String cookieDomain, String subdomainName)
+    private void validateCookieDomainAgainstScanUrl(String scanUrl, String cookieDomain)
             throws UrlValidationException {
         try {
             String scanRootDomain = UrlAndCookieUtil.extractRootDomain(scanUrl);

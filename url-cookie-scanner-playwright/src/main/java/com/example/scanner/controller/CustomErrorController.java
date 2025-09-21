@@ -52,7 +52,6 @@ public class CustomErrorController implements ErrorController {
                         originalUri,
                         message != null ? message.toString() : "Invalid path format"
                 );
-                httpStatus = HttpStatus.BAD_REQUEST;
 
                 log.warn("SECURITY ALERT: Path traversal attempt from IP: {} - URI: {}",
                         getClientIpAddress(request), originalUri);
@@ -65,7 +64,6 @@ public class CustomErrorController implements ErrorController {
                         message != null ? message.toString() : "Invalid characters in URL",
                         exception != null ? exception.toString() : "none"
                 );
-                httpStatus = HttpStatus.BAD_REQUEST;
             }
             else if (statusCode == HttpStatus.NOT_FOUND.value()) {
                 userMessage = "The requested endpoint was not found";

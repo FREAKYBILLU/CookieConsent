@@ -130,25 +130,6 @@ public class SubdomainValidationUtil {
     }
 
     /**
-     * Check if a URL is a subdomain of the given root domain
-     */
-    public static boolean isSubdomainOf(String url, String rootDomain) {
-        try {
-            // Use comprehensive validation first
-            UrlAndCookieUtil.ValidationResult validation = UrlAndCookieUtil.validateUrlForScanning(url);
-            if (!validation.isValid()) {
-                return false;
-            }
-
-            String urlRootDomain = UrlAndCookieUtil.extractRootDomain(validation.getNormalizedUrl());
-            return rootDomain.equalsIgnoreCase(urlRootDomain);
-        } catch (Exception e) {
-            log.warn("Error checking if {} is subdomain of {}: {}", url, rootDomain, e.getMessage());
-            return false;
-        }
-    }
-
-    /**
      * Extract subdomain name from full URL
      * Example: "api.example.com" -> "api"
      */
@@ -178,18 +159,6 @@ public class SubdomainValidationUtil {
         }
     }
 
-    /**
-     * Additional utility: Validate subdomain naming conventions
-     */
-    public static boolean isValidSubdomainName(String subdomainName) {
-        if (subdomainName == null || subdomainName.trim().isEmpty()) {
-            return false;
-        }
-
-        // Check for valid subdomain naming (letters, numbers, hyphens)
-        return subdomainName.matches("^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$")
-                && subdomainName.length() <= 63;
-    }
 
     /**
      * Result class for subdomain validation

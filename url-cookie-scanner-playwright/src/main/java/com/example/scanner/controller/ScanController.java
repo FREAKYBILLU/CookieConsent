@@ -1,6 +1,5 @@
 package com.example.scanner.controller;
 
-import com.example.scanner.config.RateLimitInterceptor;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.*;
 import com.example.scanner.entity.CookieEntity;
@@ -11,6 +10,7 @@ import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.repository.ScanResultRepository;
 import com.example.scanner.service.CookieService;
 import com.example.scanner.service.ScanService;
+import com.example.scanner.util.CommonUtil;
 import com.example.scanner.util.UrlAndCookieUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -20,7 +20,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
@@ -29,11 +28,9 @@ import com.example.scanner.exception.CookieNotFoundException;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @RestController
-// @RequestMapping("${api.context.path}")
 @RequestMapping("/")
 @CrossOrigin(origins = "*", allowedHeaders = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
@@ -41,15 +38,9 @@ public class ScanController {
 
   private static final Logger log = LoggerFactory.getLogger(ScanController.class);
 
-  // ADD THIS: Pattern to validate UUID format (your app generates UUIDs as transaction IDs)
-  private static final Pattern VALID_TRANSACTION_ID = Pattern.compile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$");
-
   private final ScanResultRepository repository;
   private final CookieService cookieService;
   private final ScanService scanService;
-
-  @Autowired(required = false)
-  private RateLimitInterceptor rateLimitInterceptor;
 
   public ScanController(ScanService scanService,
                         ScanResultRepository repository,
@@ -57,11 +48,6 @@ public class ScanController {
     this.scanService = scanService;
     this.repository = repository;
     this.cookieService = cookieService;
-  }
-
-  @GetMapping("/debug-interceptor")
-  public String debugInterceptor() {
-    return "RateLimitInterceptor bean exists: " + (rateLimitInterceptor != null);
   }
 
   @Operation(
@@ -98,13 +84,8 @@ public class ScanController {
 
     try {
       String transactionId;
-      if (scanService != null) {
         log.info("Using ENHANCED scan service with protection for URL: {}", url);
         transactionId = scanService.startScanWithProtection(url, subdomains);
-      } else {
-        log.warn("Enhanced scan service not available, using regular service for URL: {}", url);
-        transactionId = scanService.startScan(url, subdomains);
-      }
 
       log.info("Scan initiated successfully with transactionId: {}", transactionId);
 
@@ -144,8 +125,7 @@ public class ScanController {
           @Parameter(description = "Transaction ID from the scan request", required = true)
           @PathVariable("transactionId") String transactionId) throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
-    // SECURITY FIX: Validate transaction ID format BEFORE processing
-    if (!isValidTransactionId(transactionId)) {
+    if (!CommonUtil.isValidTransactionId(transactionId)) {
       log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
@@ -166,7 +146,6 @@ public class ScanController {
 
       ScanResultEntity result = resultOpt.get();
 
-      // Convert grouped data to response
       List<ScanStatusResponse.SubdomainCookieGroup> subdomains = new ArrayList<>();
 
       if (result.getCookiesBySubdomain() != null) {
@@ -179,7 +158,6 @@ public class ScanController {
           subdomains.add(new ScanStatusResponse.SubdomainCookieGroup(subdomainName, subdomainUrl, cookies));
         }
 
-        // Sort: "main" first, then alphabetically
         subdomains.sort((a, b) -> {
           if ("main".equals(a.getSubdomainName())) return -1;
           if ("main".equals(b.getSubdomainName())) return 1;
@@ -191,7 +169,7 @@ public class ScanController {
       List<CookieEntity> allCookies = result.getCookiesBySubdomain() != null ?
               result.getCookiesBySubdomain().values().stream()
                       .flatMap(List::stream)
-                      .collect(Collectors.toList()) : new ArrayList<>();
+                      .toList() : new ArrayList<>();
 
       Map<String, Integer> bySource = allCookies.stream()
               .collect(Collectors.groupingBy(
@@ -257,8 +235,7 @@ public class ScanController {
           @Parameter(description = "Cookie update request containing name, category, description, domain, privacy policy URL, and expires", required = true)
           @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
 
-    // SECURITY FIX: Validate transaction ID format BEFORE processing
-    if (!isValidTransactionId(transactionId)) {
+    if (!CommonUtil.isValidTransactionId(transactionId)) {
       log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
@@ -366,7 +343,6 @@ public class ScanController {
   public ResponseEntity<Map<String, Object>> getMetrics() {
     Map<String, Object> metrics = new HashMap<>();
 
-    // Runtime metrics
     Runtime runtime = Runtime.getRuntime();
     Map<String, Object> memory = new HashMap<>();
     memory.put("totalMemory", runtime.totalMemory());
@@ -380,13 +356,11 @@ public class ScanController {
     metrics.put("processors", runtime.availableProcessors());
     metrics.put("timestamp", java.time.Instant.now().toString());
 
-    // Thread information
     Map<String, Object> threads = new HashMap<>();
     threads.put("activeCount", Thread.activeCount());
     threads.put("currentThread", Thread.currentThread().getName());
     metrics.put("threads", threads);
 
-    // Protection status
     Map<String, Object> protection = new HashMap<>();
     protection.put("enhancedServiceAvailable", scanService != null);
     protection.put("rateLimitingActive", scanService != null);
@@ -416,8 +390,7 @@ public class ScanController {
           @Parameter(description = "Cookie information to add", required = true)
           @Valid @RequestBody AddCookieRequest addRequest) throws ScanExecutionException, TransactionNotFoundException, UrlValidationException {
 
-    // SECURITY FIX: Validate transaction ID format BEFORE processing
-    if (!isValidTransactionId(transactionId)) {
+    if (!CommonUtil.isValidTransactionId(transactionId)) {
       log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
@@ -426,20 +399,18 @@ public class ScanController {
       );
     }
 
-    if (transactionId == null || transactionId.trim().isEmpty()) {
+    if (transactionId.trim().isEmpty()) {
       throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
     }
 
     log.info("Received request to add cookie '{}' to transactionId: {} in subdomain: '{}'",
             addRequest.getName(), transactionId, addRequest.getSubdomainName());
 
-    // Call service - if no exception thrown, it means success
     AddCookieResponse response = cookieService.addCookie(transactionId, addRequest);
 
     log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
             addRequest.getName(), transactionId, addRequest.getSubdomainName());
 
-    // Return success response
     Map<String, Object> successResponse = new HashMap<>();
     successResponse.put("success", true);
     successResponse.put("message", response.getMessage());
@@ -451,33 +422,4 @@ public class ScanController {
     return ResponseEntity.ok(successResponse);
   }
 
-  // ADD THIS: Security validation method
-  /**
-   * SECURITY METHOD: Validates transaction ID format to prevent path traversal attacks
-   *
-   * This method protects against attacks like: /status/../../../etc/passwd
-   *
-   * @param transactionId The transaction ID to validate
-   * @return true if the transaction ID is safe and valid, false otherwise
-   */
-  private boolean isValidTransactionId(String transactionId) {
-    // Check for null or empty
-    if (transactionId == null || transactionId.trim().isEmpty()) {
-      return false;
-    }
-
-    // Check for path traversal patterns - these are common attack vectors
-    if (transactionId.contains("..") ||      // Basic path traversal (../../../etc/passwd)
-            transactionId.contains("/") ||       // Forward slash (shouldn't be in UUID)
-            transactionId.contains("\\") ||      // Backslash (Windows path traversal)
-            transactionId.contains("%2e") ||     // URL-encoded dot (encoded ..)
-            transactionId.contains("%2f") ||     // URL-encoded forward slash (encoded /)
-            transactionId.contains("%5c")) {     // URL-encoded backslash (encoded \)
-      return false;
-    }
-
-    // Validate UUID format - your app generates UUIDs like: 550e8400-e29b-41d4-a716-446655440000
-    // This regex ensures ONLY valid UUIDs are accepted (36 characters, specific pattern)
-    return VALID_TRANSACTION_ID.matcher(transactionId).matches();
-  }
 }

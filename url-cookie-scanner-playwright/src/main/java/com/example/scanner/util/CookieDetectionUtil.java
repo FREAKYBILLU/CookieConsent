@@ -32,7 +32,7 @@ public class CookieDetectionUtil {
     /**
      * Handle consent banners - CRITICAL for more cookies
      */
-    public static boolean handleConsentBanners(Page page, int timeoutMs) {
+    public static boolean handleConsentBanners(Page page) {
         boolean consentHandled = false;
 
         try {
@@ -54,7 +54,6 @@ public class CookieDetectionUtil {
                 }
             }
 
-            // Fallback - try any button with "accept" text
             if (!consentHandled) {
                 try {
                     if (page.locator("button").count() > 0) {

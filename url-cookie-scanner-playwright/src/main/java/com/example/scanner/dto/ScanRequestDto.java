@@ -14,9 +14,6 @@ public class ScanRequestDto {
 
     private List<String> subDomain;
 
-    public ScanRequestDto() {
-    }
-
     public ScanRequestDto(String url, List<String> subDomain) {
         this.url = url;
         this.subDomain = subDomain;

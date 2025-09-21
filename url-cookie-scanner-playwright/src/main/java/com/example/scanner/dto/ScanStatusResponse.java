@@ -15,8 +15,6 @@ public class ScanStatusResponse {
     private List<SubdomainCookieGroup> subdomains;
     private ScanSummary summary;
 
-    public ScanStatusResponse() {}
-
     public ScanStatusResponse(String transactionId, String status, String url,
                               List<SubdomainCookieGroup> subdomains, ScanSummary summary) {
         this.transactionId = transactionId;
@@ -36,8 +34,6 @@ public class ScanStatusResponse {
         private Integer cookieCount;
         private List<CookieEntity> cookies;
 
-        public SubdomainCookieGroup() {}
-
         public SubdomainCookieGroup(String subdomainName, String subdomainUrl, List<CookieEntity> cookies) {
             this.subdomainName = subdomainName;
             this.subdomainUrl = subdomainUrl;
@@ -50,8 +46,6 @@ public class ScanStatusResponse {
     public static class ScanSummary {
         private Map<String, Integer> bySource;
         private Map<String, Integer> byCategory;
-
-        public ScanSummary() {}
 
         public ScanSummary(Map<String, Integer> bySource, Map<String, Integer> byCategory) {
             this.bySource = bySource;

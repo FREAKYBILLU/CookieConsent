@@ -11,7 +11,7 @@ import java.time.Instant;
 public class CookieUpdateRequest {
 
     @NotBlank(message = "Cookie name is required and cannot be empty or whitespace")
-    private String name; // CHANGED: was "cookieName", now "name"
+    private String name;
 
     @NotBlank(message = "Category is required and cannot be empty or whitespace")
     private String category;
@@ -19,7 +19,6 @@ public class CookieUpdateRequest {
     @NotBlank(message = "Description is required and cannot be empty or whitespace")
     private String description;
 
-    // NEW FIELDS - matching CookieDto structure
     private String domain;
 
     @URL(message = "Privacy policy URL must be a valid URL")
@@ -28,10 +27,6 @@ public class CookieUpdateRequest {
     @JsonFormat(shape = JsonFormat.Shape.STRING, timezone = "UTC")
     private Instant expires;
 
-    public CookieUpdateRequest() {
-    }
-
-    // Updated constructor with new fields
     public CookieUpdateRequest(String name, String category, String description, String domain,
                                String privacyPolicyUrl, Instant expires) {
         this.name = name;
@@ -42,8 +37,4 @@ public class CookieUpdateRequest {
         this.expires = expires;
     }
 
-    // Backward compatibility constructor
-    public CookieUpdateRequest(String name, String category, String description) {
-        this(name, category, description, null, null, null);
-    }
 }

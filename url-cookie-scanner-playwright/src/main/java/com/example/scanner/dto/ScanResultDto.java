@@ -9,12 +9,11 @@ import java.util.List;
 public class ScanResultDto {
     private String id;
     private String transactionId;
-    private String status; // PENDING, RUNNING, COMPLETED, FAILED
-    private List<CookieDto> cookies; // Changed from CookieEntity to CookieDto
+    private String status;
+    private List<CookieDto> cookies;
     private String errorMessage;
     private String url;
 
     public ScanResultDto() {
     }
-
 }

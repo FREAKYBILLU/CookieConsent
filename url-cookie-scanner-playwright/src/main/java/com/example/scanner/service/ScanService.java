@@ -181,7 +181,6 @@ public class ScanService {
             String normalizedUrl = validationResult.getNormalizedUrl();
             log.info("URL validation passed. Normalized URL: {}", normalizedUrl);
 
-            // Validate subdomains if provided
             List<String> validatedSubdomains = new ArrayList<>();
             if (subdomains != null && !subdomains.isEmpty()) {
                 SubdomainValidationUtil.ValidationResult subdomainValidation =
@@ -369,125 +368,123 @@ public class ScanService {
             log.info("=== PHASE 2: Generic external resource detection and triggering ===");
 
             page.evaluate("""
-    // ENHANCED: Generic pixel tracker and authentication detection
-    (function() {
-        console.log('Starting enhanced resource detection...');
-        
-        // 1. Find ALL external resources
-        const allExternalResources = Array.from(document.querySelectorAll(`
-            script[src], img[src], iframe[src], link[href], 
-            embed[src], object[data], video[src], audio[src],
-            [src*="//"], [href*="//"], [data*="//"]
-        `)).filter(el => {
-            const url = el.src || el.href || el.data || '';
-            return url && typeof url === 'string' && url.includes('//') && !url.includes(window.location.hostname);
-        });
-        
-        console.log('Found external resources:', allExternalResources.length);
-        
-        // 2. Extract unique external domains
-        const externalDomains = [...new Set(
-            allExternalResources.map(el => {
-                try {
-                    const url = el.src || el.href || el.data || '';
-                    if (url && typeof url === 'string') {
-                        return new URL(url).origin;
-                    }
-                    return null;
-                } catch(e) { 
-                    return null; 
-                }
-            }).filter(Boolean)
-        )];
-        
-        console.log('Unique external domains:', externalDomains.length);
-        
-        // 3. GENERIC: Comprehensive pixel patterns
-        const pixelPatterns = [
-            '/c.gif', '/px.gif', '/pixel.gif', '/collect', '/beacon',
-            '/track', '/analytics', '/log', '/hit', '/event',
-            '/p.gif', '/b.gif', '/i.gif', '/1x1.gif', '/pixel.png',
-            '/tr', '/impression', '/click', '/conversion'
-        ];
-        
-        const trackingParams = [
-            '?t=' + Date.now(),
-            '?r=' + Math.random(),
-            '?pid=' + Math.random().toString(36).substr(2, 9),
-            '?uid=' + Math.random().toString(36).substr(2, 16),
-            '?v=1&t=pageview',
-            '?action=pageview',
-            '?event=page_view',
-            ''
-        ];
-        
-        // 4. GENERIC: Common authentication endpoints
-        const authEndpoints = [
-            '/oauth/authorize', '/auth/login', '/sso', '/login',
-            '/connect', '/token', '/me', '/userinfo'
-        ];
-        
-        // Try pixel patterns on ALL external domains
-        externalDomains.forEach(domain => {
-            pixelPatterns.forEach(pattern => {
-                trackingParams.forEach(params => {
-                    try {
-                        const img = document.createElement('img');
-                        img.src = domain + pattern + params;
-                        img.style.display = 'none';
-                        img.style.width = '1px';
-                        img.style.height = '1px';
-                        img.onload = () => console.log('Pixel loaded:', domain + pattern);
-                        img.onerror = () => {};
-                        document.body.appendChild(img);
-                    } catch(e) {}
-                });
-            });
-            
-            // Try authentication endpoints (for cookie setting)
-            authEndpoints.forEach(endpoint => {
-                try {
-                    const img = document.createElement('img');
-                    img.src = domain + endpoint + '?check=' + Date.now();
-                    img.style.display = 'none';
-                    img.style.width = '1px';
-                    img.style.height = '1px';
-                    img.onerror = () => {};
-                    document.body.appendChild(img);
-                } catch(e) {}
-            });
-        });
-        
-        // 5. Trigger existing resources more aggressively
-        allExternalResources.forEach(resource => {
-            try {
-                ['load', 'loadstart', 'loadend', 'progress'].forEach(eventType => {
-                    resource.dispatchEvent(new Event(eventType, {bubbles: true}));
-                });
-                
-                if (resource.tagName === 'SCRIPT' && resource.src) {
-                    const newScript = document.createElement('script');
-                    newScript.src = resource.src + (resource.src.includes('?') ? '&' : '?') + 
-                                   'cache_bust=' + Date.now();
-                    document.head.appendChild(newScript);
-                }
-            } catch(e) {}
-        });
-        
-        console.log('Enhanced resource detection completed');
-    })();
-""");
+                // ENHANCED: Generic pixel tracker and authentication detection
+                (function() {
+                    console.log('Starting enhanced resource detection...');
+                    
+                    // 1. Find ALL external resources
+                    const allExternalResources = Array.from(document.querySelectorAll(`
+                        script[src], img[src], iframe[src], link[href], 
+                        embed[src], object[data], video[src], audio[src],
+                        [src*="//"], [href*="//"], [data*="//"]
+                    `)).filter(el => {
+                        const url = el.src || el.href || el.data || '';
+                        return url && typeof url === 'string' && url.includes('//') && !url.includes(window.location.hostname);
+                    });
+                    
+                    console.log('Found external resources:', allExternalResources.length);
+                    
+                    // 2. Extract unique external domains
+                    const externalDomains = [...new Set(
+                        allExternalResources.map(el => {
+                            try {
+                                const url = el.src || el.href || el.data || '';
+                                if (url && typeof url === 'string') {
+                                    return new URL(url).origin;
+                                }
+                                return null;
+                            } catch(e) { 
+                                return null; 
+                            }
+                        }).filter(Boolean)
+                    )];
+                    
+                    console.log('Unique external domains:', externalDomains.length);
+                    
+                    // 3. GENERIC: Comprehensive pixel patterns
+                    const pixelPatterns = [
+                        '/c.gif', '/px.gif', '/pixel.gif', '/collect', '/beacon',
+                        '/track', '/analytics', '/log', '/hit', '/event',
+                        '/p.gif', '/b.gif', '/i.gif', '/1x1.gif', '/pixel.png',
+                        '/tr', '/impression', '/click', '/conversion'
+                    ];
+                    
+                    const trackingParams = [
+                        '?t=' + Date.now(),
+                        '?r=' + Math.random(),
+                        '?pid=' + Math.random().toString(36).substr(2, 9),
+                        '?uid=' + Math.random().toString(36).substr(2, 16),
+                        '?v=1&t=pageview',
+                        '?action=pageview',
+                        '?event=page_view',
+                        ''
+                    ];
+                    
+                    // 4. GENERIC: Common authentication endpoints
+                    const authEndpoints = [
+                        '/oauth/authorize', '/auth/login', '/sso', '/login',
+                        '/connect', '/token', '/me', '/userinfo'
+                    ];
+                    
+                    // Try pixel patterns on ALL external domains
+                    externalDomains.forEach(domain => {
+                        pixelPatterns.forEach(pattern => {
+                            trackingParams.forEach(params => {
+                                try {
+                                    const img = document.createElement('img');
+                                    img.src = domain + pattern + params;
+                                    img.style.display = 'none';
+                                    img.style.width = '1px';
+                                    img.style.height = '1px';
+                                    img.onload = () => console.log('Pixel loaded:', domain + pattern);
+                                    img.onerror = () => {};
+                                    document.body.appendChild(img);
+                                } catch(e) {}
+                            });
+                        });
+                        
+                        // Try authentication endpoints (for cookie setting)
+                        authEndpoints.forEach(endpoint => {
+                            try {
+                                const img = document.createElement('img');
+                                img.src = domain + endpoint + '?check=' + Date.now();
+                                img.style.display = 'none';
+                                img.style.width = '1px';
+                                img.style.height = '1px';
+                                img.onerror = () => {};
+                                document.body.appendChild(img);
+                            } catch(e) {}
+                        });
+                    });
+                    
+                    // 5. Trigger existing resources more aggressively
+                    allExternalResources.forEach(resource => {
+                        try {
+                            ['load', 'loadstart', 'loadend', 'progress'].forEach(eventType => {
+                                resource.dispatchEvent(new Event(eventType, {bubbles: true}));
+                            });
+                            
+                            if (resource.tagName === 'SCRIPT' && resource.src) {
+                                const newScript = document.createElement('script');
+                                newScript.src = resource.src + (resource.src.includes('?') ? '&' : '?') + 
+                                               'cache_bust=' + Date.now();
+                                document.head.appendChild(newScript);
+                            }
+                        } catch(e) {}
+                    });
+                    
+                    console.log('Enhanced resource detection completed');
+                })();
+            """);
 
-            triggerPatternBasedCookieDiscovery(page, context, url, discoveredCookies, transactionId, scanMetrics);
-            //detectGenericAuthenticationFlow(page, context, url, discoveredCookies, transactionId, scanMetrics);
+            triggerPatternBasedCookieDiscovery(page, context, discoveredCookies, transactionId, scanMetrics);
             detectGenericPixelTracking(page, context, url, discoveredCookies, transactionId, scanMetrics);
             detectGenericApplicationState(page, context, url, discoveredCookies, transactionId, scanMetrics);
 
-            // === PHASE 3: AGGRESSIVE CONSENT HANDLING ===
             scanMetrics.setScanPhase("HANDLING_CONSENT");
             log.info("=== PHASE 3: Aggressive consent banner handling ===");
 
-            boolean consentHandled = CookieDetectionUtil.handleConsentBanners(page, 8000);
+            boolean consentHandled = CookieDetectionUtil.handleConsentBanners(page);
 
             if (!consentHandled) {
                 log.info("Trying manual consent detection...");
@@ -542,11 +539,7 @@ public class ScanService {
                 log.info("Captured storage after consent handling");
             }
 
-            // === NEW: GENERIC AUTHENTICATION FLOW DETECTION ===
             scanMetrics.setScanPhase("AUTHENTICATION_DETECTION");
-//            log.info("=== PHASE 3.5: Generic authentication flow detection ===");
-//            //detectAndTriggerAuthenticationFlows(page, url, transactionId, discoveredCookies, scanMetrics);
-//            log.info("Captured storage after authentication triggers");
 
             // === NEW: SOCIAL WIDGET DETECTION ===
             scanMetrics.setScanPhase("SOCIAL_WIDGETS");
@@ -554,7 +547,6 @@ public class ScanService {
             detectAndTriggerSocialWidgets(page, url, transactionId, discoveredCookies, scanMetrics);
             log.info("Captured storage after social widget detection");
 
-            // === PHASE 4: AGGRESSIVE USER SIMULATION ===
             scanMetrics.setScanPhase("USER_INTERACTIONS");
 
             log.info("=== PHASE 4: Aggressive user interaction simulation ===");
@@ -563,77 +555,76 @@ public class ScanService {
 
                 // SAFE SCROLL: Check for document.body existence and use fallbacks
                 page.evaluate(String.format("""
-        // Safe scroll implementation with multiple fallbacks
-        (function() {
-            try {
-                let scrollTarget = 0;
-                let totalHeight = 0;
-                
-                // Try different methods to get document height
-                if (document.body && document.body.scrollHeight) {
-                    totalHeight = document.body.scrollHeight;
-                } else if (document.documentElement && document.documentElement.scrollHeight) {
-                    totalHeight = document.documentElement.scrollHeight;
-                } else if (document.scrollingElement && document.scrollingElement.scrollHeight) {
-                    totalHeight = document.scrollingElement.scrollHeight;
-                } else {
-                    // Fallback to window height
-                    totalHeight = window.innerHeight || screen.height || 1000;
-                }
-                
-                scrollTarget = Math.floor(totalHeight * %f);
-                
-                // Safe scroll
-                if (scrollTarget >= 0) {
-                    window.scrollTo(0, scrollTarget);
-                    console.log('Scrolled to:', scrollTarget, 'of', totalHeight);
-                } else {
-                    console.log('Invalid scroll target, skipping scroll');
-                }
-                
-            } catch(e) {
-                console.log('Scroll operation failed:', e.message);
-                // Fallback: just scroll to a fixed position
-                try {
-                    window.scrollTo(0, %d);
-                } catch(e2) {
-                    console.log('Fallback scroll also failed:', e2.message);
-                }
-            }
-        })();
-    """, scrollPercent, (int)(scrollPercent * 1000)));
-
-                // SAFE ANALYTICS TRIGGERING: Also fix the gtag call
-                page.evaluate("""
-        (function() {
-            try {
-                window.dispatchEvent(new Event('scroll'));
-                window.dispatchEvent(new Event('resize'));
-                
-                // Safe gtag call with proper height calculation
-                if (typeof gtag === 'function') {
-                    let currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
-                    let totalHeight = 0;
-                    
-                    if (document.body && document.body.scrollHeight) {
-                        totalHeight = document.body.scrollHeight;
-                    } else if (document.documentElement && document.documentElement.scrollHeight) {
-                        totalHeight = document.documentElement.scrollHeight;
-                    } else {
-                        totalHeight = window.innerHeight || 1000;
+                // Safe scroll implementation with multiple fallbacks
+                (function() {
+                    try {
+                        let scrollTarget = 0;
+                        let totalHeight = 0;
+                        
+                        // Try different methods to get document height
+                        if (document.body && document.body.scrollHeight) {
+                            totalHeight = document.body.scrollHeight;
+                        } else if (document.documentElement && document.documentElement.scrollHeight) {
+                            totalHeight = document.documentElement.scrollHeight;
+                        } else if (document.scrollingElement && document.scrollingElement.scrollHeight) {
+                            totalHeight = document.scrollingElement.scrollHeight;
+                        } else {
+                            // Fallback to window height
+                            totalHeight = window.innerHeight || screen.height || 1000;
+                        }
+                        
+                        scrollTarget = Math.floor(totalHeight * %f);
+                        
+                        // Safe scroll
+                        if (scrollTarget >= 0) {
+                            window.scrollTo(0, scrollTarget);
+                            console.log('Scrolled to:', scrollTarget, 'of', totalHeight);
+                        } else {
+                            console.log('Invalid scroll target, skipping scroll');
+                        }
+                        
+                    } catch(e) {
+                        console.log('Scroll operation failed:', e.message);
+                        // Fallback: just scroll to a fixed position
+                        try {
+                            window.scrollTo(0, %d);
+                        } catch(e2) {
+                            console.log('Fallback scroll also failed:', e2.message);
+                        }
                     }
-                    
-                    let percentScrolled = totalHeight > 0 ? Math.round((currentScroll / totalHeight) * 100) : 0;
-                    
-                    gtag('event', 'scroll', {
-                        percent_scrolled: percentScrolled
-                    });
-                }
-            } catch(e) {
-                console.log('Analytics event failed:', e.message);
-            }
-        })();
-    """);
+                })();
+            """, scrollPercent, (int)(scrollPercent * 1000)));
+
+                        page.evaluate("""
+                (function() {
+                    try {
+                        window.dispatchEvent(new Event('scroll'));
+                        window.dispatchEvent(new Event('resize'));
+                        
+                        // Safe gtag call with proper height calculation
+                        if (typeof gtag === 'function') {
+                            let currentScroll = window.pageYOffset || document.documentElement.scrollTop || 0;
+                            let totalHeight = 0;
+                            
+                            if (document.body && document.body.scrollHeight) {
+                                totalHeight = document.body.scrollHeight;
+                            } else if (document.documentElement && document.documentElement.scrollHeight) {
+                                totalHeight = document.documentElement.scrollHeight;
+                            } else {
+                                totalHeight = window.innerHeight || 1000;
+                            }
+                            
+                            let percentScrolled = totalHeight > 0 ? Math.round((currentScroll / totalHeight) * 100) : 0;
+                            
+                            gtag('event', 'scroll', {
+                                percent_scrolled: percentScrolled
+                            });
+                        }
+                    } catch(e) {
+                        console.log('Analytics event failed:', e.message);
+                    }
+                })();
+            """);
 
                 page.waitForTimeout(300);
             }
@@ -679,114 +670,114 @@ public class ScanService {
             log.info("=== PHASE 5: Generic analytics event triggering ===");
 
             page.evaluate("""
-    // GENERIC - Trigger whatever analytics functions exist on the page
-    (function() {
-        console.log('Starting generic analytics triggering...');
-        
-        // Common analytics function names to look for
-        const analyticsFunctions = [
-            'gtag', 'ga', '_gaq', 'fbq', '_fbq', 'analytics', 'track',
-            'mixpanel', 'amplitude', '_paq', 'snowplow', 'segment'
-        ];
-        
-        // Try to trigger existing analytics functions
-        analyticsFunctions.forEach(funcName => {
-            if (typeof window[funcName] === 'function') {
-                try {
-                    console.log('Found analytics function:', funcName);
+                // GENERIC - Trigger whatever analytics functions exist on the page
+                (function() {
+                    console.log('Starting generic analytics triggering...');
                     
-                    // Try common event patterns for each function type
-                    if (funcName === 'gtag') {
-                        window[funcName]('event', 'page_view');
-                        window[funcName]('event', 'scroll', {percent_scrolled: 50});
-                    } else if (funcName.includes('fb')) {
-                        window[funcName]('track', 'PageView');
-                    } else if (funcName === 'ga') {
-                        window[funcName]('send', 'pageview');
-                        window[funcName]('send', 'event', 'engagement', 'scroll', 'generic', 1);
-                    } else {
-                        // Generic function call
-                        window[funcName]('send', 'pageview');
+                    // Common analytics function names to look for
+                    const analyticsFunctions = [
+                        'gtag', 'ga', '_gaq', 'fbq', '_fbq', 'analytics', 'track',
+                        'mixpanel', 'amplitude', '_paq', 'snowplow', 'segment'
+                    ];
+                    
+                    // Try to trigger existing analytics functions
+                    analyticsFunctions.forEach(funcName => {
+                        if (typeof window[funcName] === 'function') {
+                            try {
+                                console.log('Found analytics function:', funcName);
+                                
+                                // Try common event patterns for each function type
+                                if (funcName === 'gtag') {
+                                    window[funcName]('event', 'page_view');
+                                    window[funcName]('event', 'scroll', {percent_scrolled: 50});
+                                } else if (funcName.includes('fb')) {
+                                    window[funcName]('track', 'PageView');
+                                } else if (funcName === 'ga') {
+                                    window[funcName]('send', 'pageview');
+                                    window[funcName]('send', 'event', 'engagement', 'scroll', 'generic', 1);
+                                } else {
+                                    // Generic function call
+                                    window[funcName]('send', 'pageview');
+                                }
+                            } catch(e) {
+                                console.log('Error calling', funcName, ':', e.message);
+                            }
+                        }
+                    });
+                    
+                    // Generic DOM event triggering
+                    const events = ['scroll', 'click', 'focus', 'blur', 'load', 'resize', 'beforeunload'];
+                    events.forEach(eventType => {
+                        try {
+                            window.dispatchEvent(new Event(eventType, {bubbles: true}));
+                        } catch(e) {}
+                    });
+                    
+                    // Trigger any custom tracking events found in page
+                    if (window.dataLayer && Array.isArray(window.dataLayer)) {
+                        window.dataLayer.push({'event': 'generic_page_view'});
                     }
-                } catch(e) {
-                    console.log('Error calling', funcName, ':', e.message);
-                }
-            }
-        });
-        
-        // Generic DOM event triggering
-        const events = ['scroll', 'click', 'focus', 'blur', 'load', 'resize', 'beforeunload'];
-        events.forEach(eventType => {
-            try {
-                window.dispatchEvent(new Event(eventType, {bubbles: true}));
-            } catch(e) {}
-        });
-        
-        // Trigger any custom tracking events found in page
-        if (window.dataLayer && Array.isArray(window.dataLayer)) {
-            window.dataLayer.push({'event': 'generic_page_view'});
-        }
-        
-        console.log('Generic analytics triggering completed');
-    })();
-""");
+                    
+                    console.log('Generic analytics triggering completed');
+                })();
+            """);
 
             // Add this right after the analytics event triggering section
             scanMetrics.setScanPhase("COOKIE_SYNC_DETECTION");
             log.info("=== PHASE 6: Cookie synchronization detection ===");
 
             page.evaluate("""
-    // Cookie synchronization detection
-    const syncEndpoints = [
-        '/sync', '/cookie-sync', '/cm', '/match', '/usersync',
-        '/pixel/sync', '/rtb/sync', '/dsp/sync'
-    ];
-    
-    // Common sync parameters
-    const syncParams = [
-        'gdpr=1&gdpr_consent=dummy',
-        'redir=' + encodeURIComponent(window.location.href),
-        'partner_uid=dummy',
-        'sync_type=iframe'
-    ];
-    
-    // Trigger cookie sync for discovered domains
-    const domains = Array.from(document.querySelectorAll('[src*="//"], [href*="//"]'))
-        .map(el => {
-            try {
-                const url = el.src || el.href;
-                return new URL(url).origin;
-            } catch(e) { return null; }
-        })
-        .filter(Boolean)
-        .filter((v, i, a) => a.indexOf(v) === i) // unique
-        .slice(0, 10);
-    
-    domains.forEach(domain => {
-        syncEndpoints.forEach(endpoint => {
-            syncParams.forEach(params => {
-                try {
-                    const syncUrl = domain + endpoint + '?' + params;
-                    
-                    // Iframe sync
-                    const iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.style.width = '1px';
-                    iframe.style.height = '1px';
-                    iframe.src = syncUrl;
-                    document.body.appendChild(iframe);
-                    
-                    // Image sync
-                    const img = new Image();
-                    img.style.display = 'none';
-                    img.src = syncUrl;
-                    document.body.appendChild(img);
-                    
-                } catch(e) {}
-            });
-        });
-    });
-""");
+                // Cookie synchronization detection
+                const syncEndpoints = [
+                    '/sync', '/cookie-sync', '/cm', '/match', '/usersync',
+                    '/pixel/sync', '/rtb/sync', '/dsp/sync'
+                ];
+                
+                // Common sync parameters
+                const syncParams = [
+                    'gdpr=1&gdpr_consent=dummy',
+                    'redir=' + encodeURIComponent(window.location.href),
+                    'partner_uid=dummy',
+                    'sync_type=iframe'
+                ];
+                
+                // Trigger cookie sync for discovered domains
+                const domains = Array.from(document.querySelectorAll('[src*="//"], [href*="//"]'))
+                    .map(el => {
+                        try {
+                            const url = el.src || el.href;
+                            return new URL(url).origin;
+                        } catch(e) { return null; }
+                    })
+                    .filter(Boolean)
+                    .filter((v, i, a) => a.indexOf(v) === i) // unique
+                    .slice(0, 10);
+                
+                domains.forEach(domain => {
+                    syncEndpoints.forEach(endpoint => {
+                        syncParams.forEach(params => {
+                            try {
+                                const syncUrl = domain + endpoint + '?' + params;
+                                
+                                // Iframe sync
+                                const iframe = document.createElement('iframe');
+                                iframe.style.display = 'none';
+                                iframe.style.width = '1px';
+                                iframe.style.height = '1px';
+                                iframe.src = syncUrl;
+                                document.body.appendChild(iframe);
+                                
+                                // Image sync
+                                const img = new Image();
+                                img.style.display = 'none';
+                                img.src = syncUrl;
+                                document.body.appendChild(img);
+                                
+                            } catch(e) {}
+                        });
+                    });
+                });
+            """);
 
             page.waitForTimeout(4000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics);
@@ -822,7 +813,7 @@ public class ScanService {
                                     transactionId, scanMetrics, subdomainName);
                             log.info("CAPTURE BROWSER COOKIES WITH SUBDOMAIN NAME");
                             try {
-                                boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page, 5000); // SHORTER
+                                boolean subdomainConsentHandled = CookieDetectionUtil.handleConsentBanners(page); // SHORTER
                                 log.info("HANDLED CONSENT BANNER");
                                 if (subdomainConsentHandled) {
                                     page.waitForTimeout(1000);
@@ -847,14 +838,12 @@ public class ScanService {
                     }
                 }
 
-                // INFORMATION: Log what was skipped
                 if (subdomains.size() > maxSubdomainsToScan) {
                     log.info("COMPLIANCE: Skipped {} subdomains for focused scanning",
                             subdomains.size() - maxSubdomainsToScan);
                 }
             }
 
-            // === AGGRESSIVE FINAL CAPTURE ===
             scanMetrics.setScanPhase("FINAL_CAPTURE");
             log.info("=== SINGLE FINAL CAPTURE ===");
             page.waitForTimeout(1000);
@@ -876,18 +865,14 @@ public class ScanService {
             String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
             String currentRootDomain = UrlAndCookieUtil.extractRootDomain(currentUrl);
 
-            // Only process cookies from same root domain
             if (!rootDomain.equalsIgnoreCase(currentRootDomain)) {
                 return null;
             }
 
-            // If no subdomains provided, everything goes to "main"
             if (subdomains == null || subdomains.isEmpty()) {
                 return "main";
             }
 
-            // **KEY LOGIC: Track which domain we're currently scanning**
-            // You need to pass the "intended target domain" not the "current redirect URL"
             return determineIntendedSubdomain(mainUrl, subdomains);
 
         } catch (Exception e) {
@@ -928,10 +913,7 @@ public class ScanService {
 
             log.info("=== CAPTURING {} browser cookies for subdomain: {} ===", browserCookies.size(), subdomainName);
 
-            // NEW: List to collect cookies for saving
             List<CookieDto> cookiesToSave = new ArrayList<>();
-
-            // MODIFIED: Loop to collect cookies without saving
             for (Cookie playwrightCookie : browserCookies) {
                 try {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
@@ -952,7 +934,6 @@ public class ScanService {
                 }
             }
 
-            // NEW: Categorize all collected cookies and save them
             categorizeCookiesAndSave(cookiesToSave, transactionId);
 
             log.info("Completed capturing and saving {} subdomain cookies", cookiesToSave.size());
@@ -1027,12 +1008,9 @@ public class ScanService {
             String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
             List<Cookie> browserCookies = context.cookies();
 
-            log.info("=== CAPTURING {} browser cookies ===", browserCookies.size());
-
-            // NEW: List to collect cookies for saving
+           log.info("=== CAPTURING {} browser cookies ===", browserCookies.size());
             List<CookieDto> cookiesToSave = new ArrayList<>();
 
-            // MODIFIED: Loop to collect cookies without saving
             for (Cookie playwrightCookie : browserCookies) {
                 try {
                     CookieDto cookieDto = mapPlaywrightCookie(playwrightCookie, scanUrl, siteRoot);
@@ -1052,8 +1030,6 @@ public class ScanService {
                     log.warn("Error processing browser cookie {}: {}", playwrightCookie.name, e.getMessage());
                 }
             }
-
-            // NEW: Categorize all collected cookies and save them
             categorizeCookiesAndSave(cookiesToSave, transactionId);
 
             log.info("Completed capturing and saving {} browser cookies", cookiesToSave.size());
@@ -1093,18 +1069,15 @@ public class ScanService {
         try {
             ScanResultEntity result = repository.findById(transactionId).orElse(null);
             if (result != null) {
-                // Initialize grouped structure if needed
                 if (result.getCookiesBySubdomain() == null) {
                     result.setCookiesBySubdomain(new HashMap<>());
                 }
 
                 String subdomainName = cookieDto.getSubdomainName() != null ? cookieDto.getSubdomainName() : "main";
 
-                // Get or create subdomain cookie list
                 List<CookieEntity> subdomainCookies = result.getCookiesBySubdomain()
                         .computeIfAbsent(subdomainName, k -> new ArrayList<>());
 
-                // Check for duplicates within this subdomain
                 boolean exists = subdomainCookies.stream()
                         .anyMatch(c -> c.getName().equals(cookieDto.getName()) &&
                                 Objects.equals(c.getDomain(), cookieDto.getDomain()));
@@ -1166,19 +1139,16 @@ public class ScanService {
             List<IframeInfo> iframes = detectAllIframes(page);
             log.info("Found {} iframes/embeds on page", iframes.size());
 
-            // ENHANCED: Better frame processing with URL validation
             for (Frame frame : page.frames()) {
                 try {
                     String frameUrl = frame.url();
 
-                    // FIX: Add validation for empty or invalid URLs
                     if (frameUrl == null || frameUrl.trim().isEmpty() ||
                             frameUrl.equals("about:blank") || frameUrl.equals(url)) {
                         log.debug("Skipping frame with invalid/empty URL: {}", frameUrl);
                         continue;
                     }
 
-                    // FIX: Additional validation for proper URL format
                     if (!frameUrl.startsWith("http://") && !frameUrl.startsWith("https://")) {
                         log.debug("Skipping frame with non-HTTP URL: {}", frameUrl);
                         continue;
@@ -1193,7 +1163,6 @@ public class ScanService {
                         log.debug("Frame load timeout: {}", frameUrl);
                     }
 
-                    // ENHANCED: Generic authentication iframe detection
                     try {
                         frame.evaluate("""
                         // Generic authentication detection within iframe
@@ -1228,17 +1197,14 @@ public class ScanService {
                         log.debug("Frame js execution failed for {}: {}", frameUrl, e.getMessage());
                     }
 
-                    // FIX: Add URL validation before getting cookies
                     try {
-                        // Validate URL before passing to cookies()
-                        new URL(frameUrl); // This will throw if invalid
+                        new URL(frameUrl);
 
                         List<Cookie> frameCookies = page.context().cookies(frameUrl);
                         String frameRoot = UrlAndCookieUtil.extractRootDomain(frameUrl);
                         String siteRoot = UrlAndCookieUtil.extractRootDomain(url);
                         Source frameSource = siteRoot.equalsIgnoreCase(frameRoot) ? Source.FIRST_PARTY : Source.THIRD_PARTY;
 
-                        // NEW: List to collect frame cookies for saving
                         List<CookieDto> frameCookiesToSave = new ArrayList<>();
 
                         for (Cookie frameCookie : frameCookies) {
@@ -1258,8 +1224,6 @@ public class ScanService {
                                         cookieDto.getName(), frameUrl, frameSource);
                             }
                         }
-
-                        // NEW: Categorize all collected frame cookies and save them
                         categorizeCookiesAndSave(frameCookiesToSave, transactionId);
 
                     } catch (java.net.MalformedURLException e) {
@@ -1273,7 +1237,6 @@ public class ScanService {
                 }
             }
 
-            // Rest of the method continues unchanged...
             interactWithAllIframes(page, iframes);
             page.waitForTimeout(1500);
             captureBrowserCookiesEnhanced(page.context(), url, discoveredCookies, transactionId, scanMetrics);
@@ -1376,7 +1339,6 @@ public class ScanService {
     }
 
     private void cleanupResources(BrowserContext context, Browser browser, Playwright playwright) {
-        // Close pages first
         try {
             if (context != null) {
                 List<Page> pages = context.pages();
@@ -1391,7 +1353,6 @@ public class ScanService {
             log.warn("Error closing context: {}", e.getMessage());
         }
 
-        // Close browser
         try {
             if (browser != null && browser.isConnected()) {
                 browser.close();
@@ -1400,14 +1361,11 @@ public class ScanService {
             log.warn("Error closing browser: {}", e.getMessage());
         }
 
-        // Close playwright
         try {
             if (playwright != null) playwright.close();
         } catch (Exception e) {
             log.warn("Error closing playwright: {}", e.getMessage());
         }
-
-        // Force garbage collection
         System.gc();
     }
 
@@ -1424,7 +1382,6 @@ public class ScanService {
         }
 
         try {
-            // Step 1: Extract unique cookie names
             Set<String> uniqueCookieNames = cookiesToSave.stream()
                     .map(CookieDto::getName)
                     .collect(Collectors.toSet());
@@ -1433,11 +1390,9 @@ public class ScanService {
             log.info("Categorizing {} unique cookie names with ONE API call (from {} cookies to save)",
                     cookieNames.size(), cookiesToSave.size());
 
-            // Step 2: Make single API call for all unique names
             Map<String, CookieCategorizationResponse> results =
                     cookieCategorizationService.categorizeCookies(cookieNames);
 
-            // Step 3: Apply categorization to all cookies
             for (CookieDto cookie : cookiesToSave) {
                 String cookieName = cookie.getName();
                 CookieCategorizationResponse response = results.get(cookieName);
@@ -1461,7 +1416,6 @@ public class ScanService {
         } catch (Exception e) {
             log.error("Failed to categorize and save cookies: {}", e.getMessage(), e);
 
-            // Fallback: Save cookies without categorization
             log.info("Falling back to save cookies without categorization");
             for (CookieDto cookie : cookiesToSave) {
                 try {
@@ -1606,7 +1560,6 @@ public class ScanService {
         try {
             log.info("=== GENERIC APPLICATION STATE DETECTION ===");
 
-            // Trigger application-specific interactions that commonly set state cookies
             page.evaluate("""
             console.log('Starting generic application state detection...');
             
@@ -1743,13 +1696,12 @@ public class ScanService {
         }
     }
 
-    private void triggerPatternBasedCookieDiscovery(Page page, BrowserContext context, String mainUrl,
+    private void triggerPatternBasedCookieDiscovery(Page page, BrowserContext context,
                                                     Map<String, CookieDto> discoveredCookies,
                                                     String transactionId, ScanPerformanceTracker.ScanMetrics scanMetrics) {
         try {
             log.info("=== PATTERN-BASED COOKIE DISCOVERY ===");
 
-            // FIX: Wrap the JavaScript code in an IIFE (Immediately Invoked Function Expression)
             Map<String, String> domainPatterns = (Map<String, String>) page.evaluate("""
         (function() {
             const domains = {};
@@ -1786,7 +1738,6 @@ public class ScanService {
         })();
         """);
 
-            // Rest of your method continues unchanged...
             for (Map.Entry<String, String> entry : domainPatterns.entrySet()) {
                 String domain = entry.getKey();
                 String purpose = entry.getValue();
@@ -1800,7 +1751,7 @@ public class ScanService {
                         page.waitForTimeout(500);
                         captureBrowserCookiesEnhanced(context, testUrl, discoveredCookies, transactionId, scanMetrics);
                     } catch (Exception e) {
-                        // Expected to fail for many URLs - continue silently
+                        log.warn("Error in pattern-based discovery: {}", e.getMessage());
                     }
                 }
             }
