@@ -35,7 +35,7 @@ public class ScanResultMapper {
                 dto.getDescription_gpt(),
                 dto.getSubdomainName() != null ? dto.getSubdomainName() : "main",
                 dto.getPrivacyPolicyUrl(),
-                dto.getProvider() // NEW: provider field mapping
+                dto.getProvider()
         );
     }
 

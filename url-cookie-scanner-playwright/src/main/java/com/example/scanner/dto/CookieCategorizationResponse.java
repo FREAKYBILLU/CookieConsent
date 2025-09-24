@@ -12,7 +12,4 @@ public class CookieCategorizationResponse {
     private String description;
     private String description_gpt;
 
-    public CookieCategorizationResponse() {
-    }
-
 }

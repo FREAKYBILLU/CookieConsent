@@ -14,6 +14,4 @@ public class ScanResultDto {
     private String errorMessage;
     private String url;
 
-    public ScanResultDto() {
-    }
 }

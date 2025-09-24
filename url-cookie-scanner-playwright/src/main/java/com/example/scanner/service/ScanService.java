@@ -57,16 +57,6 @@ public class ScanService {
 
     private static final Logger log = LoggerFactory.getLogger(ScanService.class);
 
-    @Autowired
-    @Qualifier("scanCircuitBreaker")
-    private CircuitBreaker scanCircuitBreaker;
-
-    @Value("${scanner.cookie.collection.phases:2}")
-    private int cookieCollectionPhases;
-
-    @Value("${scanner.cookie.collection.interval.ms:1500}")
-    private int cookieCollectionInterval;
-
     private final CookieCategorizationService cookieCategorizationService;
     private final CookieScanMetrics metrics;
     private final MultiTenantMongoConfig mongoConfig;
@@ -74,96 +64,6 @@ public class ScanService {
     @Lazy
     @Autowired
     private ScanService self;
-
-    public String startScanWithProtection(String tenantId, String url, List<String> subdomains)
-            throws UrlValidationException, ScanExecutionException {
-
-        log.info("Starting protected scan for URL: {} with circuit breaker", url);
-
-        Supplier<String> decoratedSupplier = CircuitBreaker.decorateSupplier(
-                scanCircuitBreaker,
-                () -> {
-                    try {
-                        return self.startScan(tenantId, url, subdomains);
-                    } catch (UrlValidationException | ScanExecutionException e) {
-                        throw new RuntimeException(e);
-                    }
-                }
-        );
-
-        try {
-            String result = decoratedSupplier.get();
-            log.info("Protected scan completed successfully for URL: {}", url);
-            return result;
-
-        } catch (CallNotPermittedException e) {
-            log.error("Circuit breaker is OPEN - scan service unavailable for URL: {}", url);
-            throw new ScanExecutionException(
-                    "Scan service is temporarily unavailable due to high error rate. Please try again later."
-            );
-
-        } catch (RuntimeException e) {
-            // Unwrap the original exception
-            if (e.getCause() instanceof UrlValidationException) {
-                throw (UrlValidationException) e.getCause();
-            } else if (e.getCause() instanceof ScanExecutionException) {
-                throw (ScanExecutionException) e.getCause();
-            } else {
-                log.error("Unexpected error in protected scan for URL: {}", url, e);
-                throw new ScanExecutionException("Unexpected error during scan: " + e.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Async method to check circuit breaker health
-     */
-    @Async
-    public CompletableFuture<CircuitBreakerHealthInfo> getCircuitBreakerHealth() {
-        CircuitBreaker.State state = scanCircuitBreaker.getState();
-        CircuitBreaker.Metrics metrics = scanCircuitBreaker.getMetrics();
-
-        CircuitBreakerHealthInfo health = new CircuitBreakerHealthInfo(
-                state.toString(),
-                metrics.getFailureRate(),
-                metrics.getNumberOfSuccessfulCalls(),
-                metrics.getNumberOfFailedCalls(),
-                metrics.getNumberOfSlowCalls()
-        );
-
-        return CompletableFuture.completedFuture(health);
-    }
-
-    /**
-     * Health information for circuit breaker
-     */
-    public static class CircuitBreakerHealthInfo {
-        private final String state;
-        private final float failureRate;
-        private final long successfulCalls;
-        private final long failedCalls;
-        private final long slowCalls;
-
-        public CircuitBreakerHealthInfo(String state, float failureRate, long successfulCalls,
-                                        long failedCalls, long slowCalls) {
-            this.state = state;
-            this.failureRate = failureRate;
-            this.successfulCalls = successfulCalls;
-            this.failedCalls = failedCalls;
-            this.slowCalls = slowCalls;
-        }
-
-        // Getters
-        public String getState() { return state; }
-        public float getFailureRate() { return failureRate; }
-        public long getSuccessfulCalls() { return successfulCalls; }
-        public long getFailedCalls() { return failedCalls; }
-        public long getSlowCalls() { return slowCalls; }
-
-        public boolean isHealthy() {
-            return "CLOSED".equals(state) && failureRate < 25.0f;
-        }
-    }
 
 
     public String startScan(String tenantId, String url, List<String> subdomains)

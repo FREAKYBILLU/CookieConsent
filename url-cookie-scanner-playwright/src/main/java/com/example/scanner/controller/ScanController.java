@@ -77,7 +77,7 @@ public class ScanController {
     try {
       String transactionId;
         log.info("Using ENHANCED scan service with protection for URL: {}", url);
-        transactionId = scanService.startScanWithProtection(tenantId, url, subdomains);
+        transactionId = scanService.startScan(tenantId, url, subdomains);
 
       log.info("Scan initiated successfully with transactionId: {}", transactionId);
 
@@ -296,34 +296,6 @@ public class ScanController {
     protection.put("circuitBreaker", scanService != null);
     protection.put("bulkhead", true);
     healthInfo.put("protection", protection);
-
-    // Get circuit breaker health if available
-    if (scanService != null) {
-      try {
-        CompletableFuture<ScanService.CircuitBreakerHealthInfo> cbHealth =
-                scanService.getCircuitBreakerHealth();
-
-        ScanService.CircuitBreakerHealthInfo cbInfo = cbHealth.get();
-
-        Map<String, Object> circuitBreaker = new HashMap<>();
-        circuitBreaker.put("state", cbInfo.getState());
-        circuitBreaker.put("healthy", cbInfo.isHealthy());
-        circuitBreaker.put("failureRate", String.format("%.2f%%", cbInfo.getFailureRate()));
-        circuitBreaker.put("successfulCalls", cbInfo.getSuccessfulCalls());
-        circuitBreaker.put("failedCalls", cbInfo.getFailedCalls());
-        circuitBreaker.put("slowCalls", cbInfo.getSlowCalls());
-
-        healthInfo.put("circuitBreaker", circuitBreaker);
-
-      } catch (Exception e) {
-        log.warn("Failed to get circuit breaker health: {}", e.getMessage());
-        Map<String, Object> circuitBreaker = new HashMap<>();
-        circuitBreaker.put("state", "UNKNOWN");
-        circuitBreaker.put("healthy", false);
-        circuitBreaker.put("error", "Unable to retrieve circuit breaker status");
-        healthInfo.put("circuitBreaker", circuitBreaker);
-      }
-    }
 
     return ResponseEntity.ok(healthInfo);
   }
