@@ -1,0 +1,27 @@
+package com.example.scanner.dto;
+
+import com.example.scanner.enums.Period;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class Duration {
+
+    @NotNull(message = "JCMP1025")
+    @Positive(message = "JCMP1026")
+    int value;
+
+    @NotNull(message = "JCMP1027")
+    Period unit;
+}

@@ -34,7 +34,28 @@ public class ScanResultMapper {
                 dto.getDescription(),
                 dto.getDescription_gpt(),
                 dto.getSubdomainName() != null ? dto.getSubdomainName() : "main",
-                dto.getPrivacyPolicyUrl() // NEW FIELD
+                dto.getPrivacyPolicyUrl(),
+                dto.getProvider() // NEW: provider field mapping
+        );
+    }
+
+    public static CookieDto cookieEntityToDto(CookieEntity entity) {
+        return new CookieDto(
+                entity.getName(),
+                entity.getUrl(),
+                entity.getDomain(),
+                entity.getPath(),
+                entity.getExpires(),
+                entity.isSecure(),
+                entity.isHttpOnly(),
+                entity.getSameSite(),
+                entity.getSource(),
+                entity.getCategory(),
+                entity.getDescription(),
+                entity.getDescription_gpt(),
+                entity.getSubdomainName() != null ? entity.getSubdomainName() : "main",
+                entity.getPrivacyPolicyUrl(),
+                entity.getProvider()
         );
     }
 }

@@ -27,14 +27,5 @@ public class CookieUpdateRequest {
     @JsonFormat(shape = JsonFormat.Shape.STRING, timezone = "UTC")
     private Instant expires;
 
-    public CookieUpdateRequest(String name, String category, String description, String domain,
-                               String privacyPolicyUrl, Instant expires) {
-        this.name = name;
-        this.category = category;
-        this.description = description;
-        this.domain = domain;
-        this.privacyPolicyUrl = privacyPolicyUrl;
-        this.expires = expires;
-    }
-
+    private String provider;
 }

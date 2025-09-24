@@ -1,15 +1,16 @@
 package com.example.scanner.entity;
 
+import com.example.scanner.dto.*;
+import com.example.scanner.enums.TemplateStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
-import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 
 @Document(collection = "consent_templates")
 @Data
@@ -33,7 +34,7 @@ public class ConsentTemplate {
 
     @Field("status")
     @JsonProperty("status")
-    private String status;
+    private TemplateStatus status;
 
     @Field("multilingual")
     @JsonProperty("multilingual")
@@ -46,6 +47,10 @@ public class ConsentTemplate {
     @Field("documentMeta")
     @JsonProperty("documentMeta")
     private DocumentMeta documentMeta;
+
+    @Field("privacyPolicyDocument")
+    @JsonProperty("privacyPolicyDocument")
+    private String privacyPolicyDocument;
 
     @Field("preferences")
     @JsonProperty("preferences")
@@ -72,129 +77,48 @@ public class ConsentTemplate {
     public ConsentTemplate() {
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
-        this.className = "com.jio.consent.entity.ConsentTemplate";
+        this.className = "com.example.scanner.entity.ConsentTemplate";
         this.version = 1;
-        this.status = "DRAFT";
+        this.status = TemplateStatus.DRAFT;
     }
-}
 
-@Data
-@NoArgsConstructor
-class Multilingual {
-    @JsonProperty("supportedLanguages")
-    private List<String> supportedLanguages;
-
-    @JsonProperty("languageSpecificContentMap")
-    private Map<String, LanguageContent> languageSpecificContentMap;
-
-}
-
-@Data
-@NoArgsConstructor
-class LanguageContent {
-    @JsonProperty("description")
-    private String description;
-
-    @JsonProperty("label")
-    private String label;
-
-    @JsonProperty("rightsText")
-    private String rightsText;
-
-    @JsonProperty("permissionText")
-    private String permissionText;
-
-}
-
-@Data
-class UiConfig {
-    @JsonProperty("logo")
-    private String logo;
-
-    @JsonProperty("theme")
-    private String theme; // Increased size for theme datatype
-
-    @JsonProperty("darkMode")
-    private Boolean darkMode;
-
-    @JsonProperty("mobileView")
-    private Boolean mobileView;
-
-    @JsonProperty("parentalControl")
-    private Boolean parentalControl;
-
-    @JsonProperty("dataTypeToBeShown")
-    private Boolean dataTypeToBeShown;
-
-    @JsonProperty("dataItemToBeShown")
-    private Boolean dataItemToBeShown;
-
-    @JsonProperty("processActivityNameToBeShown")
-    private Boolean processActivityNameToBeShown;
-
-    @JsonProperty("processorNameToBeShown")
-    private Boolean processorNameToBeShown;
-
-    @JsonProperty("validitytoBeShown")
-    private Boolean validitytoBeShown;
-
-    public UiConfig() {
-        this.darkMode = false;
-        this.mobileView = true;
-        this.parentalControl = false;
-        this.dataTypeToBeShown = true;
-        this.dataItemToBeShown = true;
-        this.processActivityNameToBeShown = true;
-        this.processorNameToBeShown = true;
-        this.validitytoBeShown = true;
+    // Helper method to create from CreateTemplateRequest
+    public static ConsentTemplate fromCreateRequest(CreateTemplateRequest request, String scanId) {
+        ConsentTemplate template = new ConsentTemplate();
+        template.setScanId(scanId);
+        template.setTemplateName(request.getTemplateName());
+        template.setBusinessId(request.getBusinessId());
+        template.setStatus(request.getStatus() != null ? request.getStatus() : TemplateStatus.DRAFT);
+        template.setMultilingual(request.getMultilingual());
+        template.setUiConfig(request.getUiConfig());
+        template.setPrivacyPolicyDocument(request.getPrivacyPolicyDocument());
+        template.setDocumentMeta(request.getPrivacyPolicyDocumentMeta());
+        template.setPreferences(request.getPreferences());
+        return template;
     }
-}
 
-@Data
-@NoArgsConstructor
-class DocumentMeta {
-    @JsonProperty("documentId")
-    private String documentId;
-
-    @JsonProperty("name")
-    private String name;
-
-    @JsonProperty("contentType")
-    private String contentType;
-
-    @JsonProperty("size")
-    private Long size;
-
-
-}
-@Data
-@NoArgsConstructor
-class Preference {
-    @JsonProperty("preferenceId")
-    private String preferenceId;
-
-    @JsonProperty("purposes")
-    private String purpose;
-
-    @JsonProperty("isMandatory")
-    private Boolean isMandatory;
-
-    @JsonProperty("autoRenew")
-    private Boolean autoRenew;
-
-    @JsonProperty("preferenceValidity")
-    private PreferenceValidity preferenceValidity;
-
-    @JsonProperty("processorActivityIds")
-    private List<String> processorActivityIds;
-}
-
-@Data
-@NoArgsConstructor
-class PreferenceValidity {
-    @JsonProperty("value")
-    private Integer value;
-
-    @JsonProperty("unit")
-    private String unit;
+    public void updateFromRequest(CreateTemplateRequest request) {
+        if (request.getTemplateName() != null) {
+            this.setTemplateName(request.getTemplateName());
+        }
+        if (request.getStatus() != null) {
+            this.setStatus(request.getStatus());
+        }
+        if (request.getMultilingual() != null) {
+            this.setMultilingual(request.getMultilingual());
+        }
+        if (request.getUiConfig() != null) {
+            this.setUiConfig(request.getUiConfig());
+        }
+        if (request.getPrivacyPolicyDocument() != null) {
+            this.setPrivacyPolicyDocument(request.getPrivacyPolicyDocument());
+        }
+        if (request.getPrivacyPolicyDocumentMeta() != null) {
+            this.setDocumentMeta(request.getPrivacyPolicyDocumentMeta());
+        }
+        if (request.getPreferences() != null) {
+            this.setPreferences(request.getPreferences());
+        }
+        this.setUpdatedAt(Instant.now());
+    }
 }

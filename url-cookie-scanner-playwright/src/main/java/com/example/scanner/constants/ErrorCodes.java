@@ -1,9 +1,7 @@
+// src/main/java/com/example/scanner/constants/ErrorCodes.java
 package com.example.scanner.constants;
 
 public class ErrorCodes {
-    // 4xx Client Errors
-
-
     public static final String EMPTY_ERROR = "R1001";
     public static final String INVALID_FORMAT_ERROR = "R1002";
     public static final String INVALID_STATE_ERROR = "R1003";
@@ -18,4 +16,65 @@ public class ErrorCodes {
     public static final String INTERNAL_ERROR = "R5001";
     public static final String EXTERNAL_SERVICE_ERROR = "R5003";
     public static final String CATEGORIZATION_ERROR = "R5004";
+    public static final String JCMP1010 = "Template name is required and cannot be empty";
+    public static final String JCMP1011 = "Business ID is required and cannot be empty";
+    public static final String JCMP1012 = "At least one preference is required";
+    public static final String JCMP1013 = "Multilingual configuration is required";
+    public static final String JCMP1014 = "UI configuration is required";
+    public static final String JCMP1015 = "Invalid preference configuration";
+    public static final String JCMP1016 = "Invalid multilingual configuration";
+    public static final String JCMP1017 = "Purpose IDs are required for each preference";
+    public static final String JCMP1018 = "Preference validity is required";
+    public static final String JCMP1019 = "Processor activity IDs are required for each preference";
+    public static final String JCMP1020 = "Preference status is required";
+    public static final String JCMP1021 = "At least one supported language is required";
+    public static final String JCMP1022 = "Language specific content map is required";
+    public static final String JCMP1023 = "Logo is required in UI configuration";
+    public static final String JCMP1024 = "Theme is required in UI configuration";
+    public static final String JCMP1025 = "Duration value is required";
+    public static final String JCMP1026 = "Duration value must be positive";
+    public static final String JCMP1027 = "Duration unit is required";
+    public static final String JCMP1028 = "Description is required for each language";
+    public static final String JCMP1029 = "Label is required for each language";
+    public static final String JCMP1030 = "Rights text is required for each language";
+    public static final String JCMP1031 = "Permission text is required for each language";
+    public static final String JCMP1032 = "Scan ID is required and must be from a completed scan";
+    public static final String JCMP1033 = "Template status must be either DRAFT or PUBLISHED";
+    public static final String JCMP2001 = "Template name already exists for this tenant";
+    public static final String JCMP2002 = "Template not found";
+    public static final String JCMP2003 = "Cannot delete published template";
+    public static final String JCMP2004 = "Invalid template status transition";
+    public static final String JCMP2005 = "Template has active consent records";
+    public static final String JCMP2006 = "Scan does not exist or is not completed";
+    public static final String JCMP2007 = "Template already exists for this scan ID";
+    public static final String JCMP2008 = "Cannot modify template linked to completed scan";
+    public static final String JCMP2009 = "Scan ID cannot be changed after template creation";
+    public static final String JCMP3001 = "Scan with provided ID does not exist";
+    public static final String JCMP3002 = "Scan status is not COMPLETED";
+    public static final String JCMP3003 = "Scan belongs to different tenant";
+    public static final String JCMP3004 = "Multiple templates not allowed for same scan";
+    public static final String JCMP3005 = "Cannot create template for failed scan";
+    public static final String JCMP3006 = "Cannot create template for pending scan";
+    public static final String JCMP3007 = "Scan has no cookies found - template creation not allowed";
+    public static final String JCMP4001 = "Supported language not found in content map";
+    public static final String JCMP4002 = "Content map contains unsupported language";
+    public static final String JCMP4003 = "At least one supported language must be provided";
+    public static final String JCMP4004 = "Default language content is required";
+    public static final String JCMP4005 = "Language content cannot be empty";
+    public static final String JCMP5001 = "Invalid logo format - must be base64 encoded";
+    public static final String JCMP5002 = "Logo size exceeds maximum allowed limit";
+    public static final String JCMP5003 = "Invalid theme configuration";
+    public static final String JCMP5004 = "UI configuration contains invalid boolean values";
+    public static final String JCMP6001 = "Invalid preference duration unit";
+    public static final String JCMP6002 = "Preference duration cannot be zero or negative";
+    public static final String JCMP6003 = "Mandatory preference cannot have auto-renew disabled";
+    public static final String JCMP6004 = "Invalid purpose ID format";
+    public static final String JCMP6005 = "Invalid processor activity ID format";
+    public static final String JCMP6006 = "Preference validity exceeds maximum allowed duration";
+    public static final String JCMP7001 = "Privacy policy document is required for published templates";
+    public static final String JCMP7002 = "Invalid document format - only PDF allowed";
+    public static final String JCMP7003 = "Document size exceeds maximum allowed limit";
+    public static final String JCMP7004 = "Document metadata is incomplete";
+    public static final String JCMP7005 = "Invalid base64 encoded document";
+
 }

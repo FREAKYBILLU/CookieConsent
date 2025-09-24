@@ -23,12 +23,13 @@ public class CookieDto {
   private String description;
   private String description_gpt;
   private String subdomainName;
-  private String privacyPolicyUrl; // NEW FIELD
+  private String privacyPolicyUrl;
+  private String provider;
 
   public CookieDto(String name, String url, String domain, String path, Instant expires,
                    boolean secure, boolean httpOnly, SameSite sameSite, Source source,
                    String category, String description, String description_gpt, String subdomainName,
-                   String privacyPolicyUrl) {
+                   String privacyPolicyUrl, String provider) {
     this.name = name;
     this.url = url;
     this.domain = domain;
@@ -43,5 +44,6 @@ public class CookieDto {
     this.description_gpt = description_gpt;
     this.subdomainName = subdomainName;
     this.privacyPolicyUrl = privacyPolicyUrl;
+    this.provider = provider;
   }
 }

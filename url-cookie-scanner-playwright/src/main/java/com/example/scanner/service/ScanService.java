@@ -658,6 +658,9 @@ public class ScanService {
         Source source = determineSourceType(cookieDomain, siteRoot);
         SameSite sameSite = parseSameSiteAttribute(playwrightCookie.sameSite);
 
+        // Extract provider name from domain
+        String provider = null;
+
         return new CookieDto(
                 playwrightCookie.name,
                 scanUrl,
@@ -672,7 +675,8 @@ public class ScanService {
                 null, // description - will be set by categorization service
                 null, // description_gpt - will be set by categorization service
                 "main", // subdomainName - will be updated later
-                null // privacyPolicyUrl - not available during scanning
+                null, // privacyPolicyUrl - not available during scanning
+                provider // NEW: provider name extracted from domain
         );
     }
 
@@ -873,4 +877,5 @@ public class ScanService {
                 lowerUrl.contains("_gid=") ||
                 lowerUrl.contains("fbclid=");
     }
+
 }

@@ -94,7 +94,7 @@ public class CookieService {
             // Return updated response with all fields
             return CookieUpdateResponse.success(transactionId, updateRequest.getName(),
                     updatedCookie.getCategory(), updatedCookie.getDescription(), updatedCookie.getDomain(),
-                    updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires());
+                    updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires(), updatedCookie.getProvider());
 
         } catch (TransactionNotFoundException e) {
             log.warn("Transaction not found for cookie update: {}", transactionId);
@@ -155,7 +155,7 @@ public class CookieService {
             );
         }
 
-        // UPDATED: Search by "name" field instead of "cookieName"
+        // Search by "name" field
         Optional<CookieEntity> cookieToUpdate = allCookies.stream()
                 .filter(cookie -> updateRequest.getName().equals(cookie.getName()))
                 .findFirst();
@@ -171,6 +171,7 @@ public class CookieService {
         String oldDescription = cookie.getDescription();
         String oldDomain = cookie.getDomain();
         String oldPrivacyPolicyUrl = cookie.getPrivacyPolicyUrl();
+        String oldProvider = cookie.getProvider(); // NEW
         Instant oldExpires = cookie.getExpires();
 
         // Update only if new values are provided and different
@@ -180,10 +181,7 @@ public class CookieService {
         if (updateRequest.getDescription() != null && !updateRequest.getDescription().equals(oldDescription)) {
             cookie.setDescription(updateRequest.getDescription());
         }
-
-        // NEW FIELD UPDATES
         if (updateRequest.getDomain() != null && !updateRequest.getDomain().equals(oldDomain)) {
-            // Validate domain against scan URL before updating
             validateCookieDomainAgainstScanUrl(scanResult.getUrl(), updateRequest.getDomain());
             cookie.setDomain(updateRequest.getDomain());
         }
@@ -193,11 +191,16 @@ public class CookieService {
         if (updateRequest.getExpires() != null && !updateRequest.getExpires().equals(oldExpires)) {
             cookie.setExpires(updateRequest.getExpires());
         }
+        // NEW: Provider update
+        if (updateRequest.getProvider() != null && !updateRequest.getProvider().equals(oldProvider)) {
+            cookie.setProvider(updateRequest.getProvider());
+        }
 
-        log.debug("Updated cookie '{}': Category {} -> {}, Description {} -> {}, Domain {} -> {}, PrivacyPolicyUrl {} -> {}, Expires {} -> {}",
+        log.debug("Updated cookie '{}': Category {} -> {}, Description {} -> {}, Domain {} -> {}, PrivacyPolicyUrl {} -> {}, Expires {} -> {}, Provider {} -> {}",
                 updateRequest.getName(), oldCategory, cookie.getCategory(),
                 oldDescription, cookie.getDescription(), oldDomain, cookie.getDomain(),
-                oldPrivacyPolicyUrl, cookie.getPrivacyPolicyUrl(), oldExpires, cookie.getExpires());
+                oldPrivacyPolicyUrl, cookie.getPrivacyPolicyUrl(), oldExpires, cookie.getExpires(),
+                oldProvider, cookie.getProvider());
 
         return cookie;
     }
@@ -277,7 +280,7 @@ public class CookieService {
                     addRequest.getName(), transactionId, subdomainName);
 
             return AddCookieResponse.success(transactionId, addRequest.getName(),
-                    addRequest.getDomain(), subdomainName);
+                    addRequest.getDomain(), subdomainName, addRequest.getProvider());
 
         } catch (TransactionNotFoundException | UrlValidationException e) {
             log.warn("Validation failed for adding cookie '{}' to transactionId: {}: {}",
@@ -395,7 +398,8 @@ public class CookieService {
                 request.getDescription(),
                 request.getDescription_gpt(),
                 request.getSubdomainName(),
-                request.getPrivacyPolicyUrl()
+                request.getPrivacyPolicyUrl(),
+                request.getProvider()
         );
     }
 

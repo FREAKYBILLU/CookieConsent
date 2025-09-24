@@ -46,4 +46,7 @@ public class AddCookieRequest {
     @URL(message = "Privacy policy URL must be a valid URL")
     private String privacyPolicyUrl;
 
+    // NEW FIELD
+    private String provider;
+
 }
