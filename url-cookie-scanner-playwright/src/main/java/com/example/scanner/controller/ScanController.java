@@ -7,7 +7,6 @@ import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
 import com.example.scanner.exception.UrlValidationException;
-import com.example.scanner.repository.ScanResultRepository;
 import com.example.scanner.service.CookieService;
 import com.example.scanner.service.ScanService;
 import com.example.scanner.util.CommonUtil;
@@ -18,6 +17,7 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
@@ -32,23 +32,14 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/")
+@RequiredArgsConstructor
 @CrossOrigin(origins = "*", allowedHeaders = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
 public class ScanController {
 
   private static final Logger log = LoggerFactory.getLogger(ScanController.class);
-
-  private final ScanResultRepository repository;
   private final CookieService cookieService;
   private final ScanService scanService;
-
-  public ScanController(ScanService scanService,
-                        ScanResultRepository repository,
-                        CookieService cookieService) {
-    this.scanService = scanService;
-    this.repository = repository;
-    this.cookieService = cookieService;
-  }
 
   @Operation(
           summary = "Start Website Cookie Scan with Protection",
@@ -63,6 +54,7 @@ public class ScanController {
   @ApiResponse(responseCode = "500", description = "Failed to initiate scan")
   @PostMapping("/scan")
   public ResponseEntity<Map<String, Object>> scanUrl(
+          @RequestHeader("X-Tenant-ID") String tenantId,
           @Valid @RequestBody ScanRequestDto scanRequest) throws UrlValidationException, ScanExecutionException {
 
     String url = scanRequest.getUrl();
@@ -85,7 +77,7 @@ public class ScanController {
     try {
       String transactionId;
         log.info("Using ENHANCED scan service with protection for URL: {}", url);
-        transactionId = scanService.startScanWithProtection(url, subdomains);
+        transactionId = scanService.startScanWithProtection(tenantId, url, subdomains);
 
       log.info("Scan initiated successfully with transactionId: {}", transactionId);
 
@@ -122,6 +114,7 @@ public class ScanController {
   @ApiResponse(responseCode = "404", description = "Transaction ID not found")
   @GetMapping("/status/{transactionId}")
   public ResponseEntity<ScanStatusResponse> getStatus(
+          @RequestHeader("X-Tenant-ID") String tenantId,
           @Parameter(description = "Transaction ID from the scan request", required = true)
           @PathVariable("transactionId") String transactionId) throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
@@ -137,8 +130,7 @@ public class ScanController {
     log.debug("Retrieving status for transactionId: {}", transactionId);
 
     try {
-      Optional<ScanResultEntity> resultOpt = repository.findByTransactionId(transactionId);
-
+      Optional<ScanResultEntity> resultOpt = scanService.getScanResult(tenantId, transactionId);
       if (resultOpt.isEmpty()) {
         log.warn("Transaction not found: {}", transactionId);
         throw new TransactionNotFoundException(transactionId);
@@ -230,6 +222,7 @@ public class ScanController {
   @ApiResponse(responseCode = "500", description = "Internal server error")
   @PutMapping("/transaction/{transactionId}/cookie")
   public ResponseEntity<CookieUpdateResponse> updateCookie(
+          @RequestHeader("X-Tenant-ID") String tenantId,
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
           @Parameter(description = "Cookie update request containing name, category, description, domain, privacy policy URL, and expires", required = true)
@@ -248,7 +241,7 @@ public class ScanController {
             updateRequest.getName(), transactionId); // CHANGED: cookieName to name
 
     try {
-      CookieUpdateResponse response = cookieService.updateCookie(transactionId, updateRequest);
+      CookieUpdateResponse response = cookieService.updateCookie(tenantId, transactionId, updateRequest);
 
       if (response.isUpdated()) {
         log.info("Successfully updated cookie '{}' for transactionId: {}",
@@ -385,6 +378,7 @@ public class ScanController {
   @ApiResponse(responseCode = "500", description = "Internal server error")
   @PostMapping("/transaction/{transactionId}/cookies")
   public ResponseEntity<Map<String, Object>> addCookie(
+          @RequestHeader("X-Tenant-ID") String tenantId,
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
           @Parameter(description = "Cookie information to add", required = true)
@@ -406,7 +400,7 @@ public class ScanController {
     log.info("Received request to add cookie '{}' to transactionId: {} in subdomain: '{}'",
             addRequest.getName(), transactionId, addRequest.getSubdomainName());
 
-    AddCookieResponse response = cookieService.addCookie(transactionId, addRequest);
+    AddCookieResponse response = cookieService.addCookie(tenantId, transactionId, addRequest);
 
     log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
             addRequest.getName(), transactionId, addRequest.getSubdomainName());

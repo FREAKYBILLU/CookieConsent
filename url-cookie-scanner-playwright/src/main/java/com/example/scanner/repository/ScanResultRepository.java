@@ -9,7 +9,4 @@ import java.util.Optional;
 
 public interface ScanResultRepository extends MongoRepository<ScanResultEntity, String> {
 
-    @Query("{ 'transactionId': ?#{#transactionId} }")
-    Optional<ScanResultEntity> findByTransactionId(@Param("transactionId") String transactionId);
-
 }

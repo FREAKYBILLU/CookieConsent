@@ -1,5 +1,6 @@
 package com.example.scanner.service;
 
+import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.AddCookieRequest;
 import com.example.scanner.dto.AddCookieResponse;
@@ -13,34 +14,36 @@ import com.example.scanner.exception.CookieNotFoundException;
 import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
 import com.example.scanner.exception.UrlValidationException;
-import com.example.scanner.repository.ScanResultRepository;
 import com.example.scanner.util.UrlAndCookieUtil;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.example.scanner.config.TenantContext;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+
 import java.time.Instant;
 import java.util.*;
 
 @Service
+@RequiredArgsConstructor
 public class CookieService {
 
     private static final Logger log = LoggerFactory.getLogger(CookieService.class);
 
-    private final ScanResultRepository scanResultRepository;
-
-    public CookieService(ScanResultRepository scanResultRepository) {
-        this.scanResultRepository = scanResultRepository;
-    }
+    private final MultiTenantMongoConfig mongoConfig;
 
     /**
      * Update a specific cookie's category and description within a transaction
      */
     @Transactional
-    public CookieUpdateResponse updateCookie(String transactionId, CookieUpdateRequest updateRequest)
-            throws TransactionNotFoundException, ScanExecutionException, CookieNotFoundException, UrlValidationException {
+    public CookieUpdateResponse updateCookie(String tenantId, String transactionId, CookieUpdateRequest updateRequest)
+    throws TransactionNotFoundException, ScanExecutionException, CookieNotFoundException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
@@ -67,7 +70,7 @@ public class CookieService {
 
         try {
             // Find the scan result by transaction ID
-            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(transactionId);
+            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(tenantId, transactionId);
 
             if (scanResultOpt.isEmpty()) {
                 throw new TransactionNotFoundException(transactionId);
@@ -82,7 +85,7 @@ public class CookieService {
             CookieEntity updatedCookie = findAndUpdateCookie(scanResult, updateRequest, transactionId);
 
             // Save the updated scan result
-            saveScanResult(scanResult, transactionId);
+            saveScanResult(tenantId,scanResult, transactionId);
 
             log.info("Successfully updated cookie '{}' for transactionId: {}. Category: {}, Description: {}, Domain: {}, PrivacyPolicyUrl: {}, Expires: {}",
                     updateRequest.getName(), transactionId, updatedCookie.getCategory(), updatedCookie.getDescription(),
@@ -113,12 +116,15 @@ public class CookieService {
         }
     }
 
-    private Optional<ScanResultEntity> findScanResultByTransactionId(String transactionId) throws DataAccessException {
+    private Optional<ScanResultEntity> findScanResultByTransactionId(String tenantId, String transactionId) throws DataAccessException {  // ADD tenantId
+        TenantContext.setCurrentTenant(tenantId);
         try {
-            return scanResultRepository.findByTransactionId(transactionId);
-        } catch (Exception e) {
-            log.error("Database error finding scan result for transactionId: {}", transactionId, e);
-            throw new DataAccessException("Failed to query database for transaction: " + transactionId, e) {};
+            MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+            Query query = new Query(Criteria.where("transactionId").is(transactionId));
+            ScanResultEntity result = tenantMongoTemplate.findOne(query, ScanResultEntity.class);
+            return Optional.ofNullable(result);
+        } finally {
+            TenantContext.clear();
         }
     }
 
@@ -196,18 +202,20 @@ public class CookieService {
         return cookie;
     }
 
-    private void saveScanResult(ScanResultEntity scanResult, String transactionId) throws DataAccessException {
+
+    private void saveScanResult(String tenantId, ScanResultEntity scanResult, String transactionId) throws DataAccessException {  // ADD tenantId
+        TenantContext.setCurrentTenant(tenantId);
         try {
-            scanResultRepository.save(scanResult);
-        } catch (Exception e) {
-            log.error("Failed to save updated scan result for transactionId: {}", transactionId, e);
-            throw new DataAccessException("Failed to save cookie updates to database", e) {};
+            MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+            tenantMongoTemplate.save(scanResult);
+        } finally {
+            TenantContext.clear();
         }
     }
 
     @Transactional
-    public AddCookieResponse addCookie(String transactionId, AddCookieRequest addRequest)
-            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
+    public AddCookieResponse addCookie(String tenantId, String transactionId, AddCookieRequest addRequest)
+    throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
@@ -225,7 +233,7 @@ public class CookieService {
 
         try {
             // Find the scan result by transaction ID
-            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(transactionId);
+            Optional<ScanResultEntity> scanResultOpt = findScanResultByTransactionId(tenantId, transactionId);
 
             if (scanResultOpt.isEmpty()) {
                 throw new TransactionNotFoundException(transactionId);
@@ -263,7 +271,7 @@ public class CookieService {
             addCookieToSubdomain(scanResult, newCookie, subdomainName);
 
             // Save the updated scan result
-            saveScanResult(scanResult, transactionId);
+            saveScanResult(tenantId, scanResult, transactionId);
 
             log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
                     addRequest.getName(), transactionId, subdomainName);
@@ -284,8 +292,6 @@ public class CookieService {
             throw new ScanExecutionException("Unexpected error during cookie addition: " + e.getMessage());
         }
     }
-
-// Helper methods
 
     private String validateAndNormalizeSubdomainName(String subdomainName) throws UrlValidationException {
         if (subdomainName == null || subdomainName.trim().isEmpty()) {

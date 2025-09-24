@@ -88,8 +88,7 @@ public class UrlAndCookieUtil {
         }
         normalizedUrl = trimmedUrl;
       } else {
-        // No protocol - add https
-        normalizedUrl = "https://" + trimmedUrl;
+        return ValidationResult.invalid("URL must include HTTP or HTTPS protocol (e.g., https://example.com)");
       }
 
       // Rest of your validation logic remains the same...
