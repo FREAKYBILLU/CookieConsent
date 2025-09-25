@@ -60,6 +60,23 @@ public class ConsentTemplateService {
         }
     }
 
+    public Optional<ConsentTemplate> getTemplateByTenantAndTemplateIdAndBusinessId(String tenantId, String templateId,
+                                                                                   String businessId) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "template ID cannot be null or empty");
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("_id").is(templateId).and("businessId").is(businessId));
+            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(template);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
     public List<ConsentTemplate> getTemplatesByTenantId(String tenantId) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
 

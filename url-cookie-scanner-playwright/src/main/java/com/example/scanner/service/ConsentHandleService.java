@@ -12,6 +12,7 @@ import com.example.scanner.exception.ScannerException;
 import com.example.scanner.repository.ConsentHandleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 
@@ -40,7 +41,6 @@ public class ConsentHandleService {
         TenantContext.setCurrentTenant(tenantId);
 
         try {
-            // Check for existing handle
             Map<String, Object> handleSearchParams = Map.of(
                     "templateId", request.getTemplateId(),
                     "templateVersion", request.getTemplateVersion(),
@@ -57,14 +57,11 @@ public class ConsentHandleService {
                         "Duplicate consent handle found for templateId: " + request.getTemplateId());
             }
 
-            // Validate template exists
-            validateTemplate(tenantId, request.getTemplateId());
+            validateTemplate(tenantId, request.getTemplateId(), headers.get(Constants.BUSINESS_ID_HEADER));
 
             String consentHandleId = UUID.randomUUID().toString();
 
-            ConsentHandle consentHandle;
-            // Set timestamps and expiry
-            consentHandle = new ConsentHandle(
+            ConsentHandle consentHandle = new ConsentHandle(
                     consentHandleId,
                     headers.get(Constants.BUSINESS_ID_HEADER),
                     headers.get(Constants.TXN_ID),
@@ -81,6 +78,26 @@ public class ConsentHandleService {
 
             return savedHandle;
 
+        } catch (IllegalStateException e) {
+            if (e.getMessage().contains("Database") && e.getMessage().contains("does not exist")) {
+                log.error("Database does not exist for tenant: {}", tenantId);
+                throw new ScannerException(ErrorCodes.VALIDATION_ERROR,
+                        "Invalid tenant - database does not exist",
+                        "Database 'template_" + tenantId + "' does not exist. Please check the tenant ID.");
+            }
+            throw e;
+        } catch (ScannerException e) {
+            throw e;
+        } catch (DataAccessException e) {
+            log.error("Database access error for tenant {}: {}", tenantId, e.getMessage());
+            throw new ScannerException(ErrorCodes.INTERNAL_ERROR,
+                    "Database access error",
+                    "Failed to access tenant database: " + e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error creating consent handle for tenant: {}", tenantId, e);
+            throw new ScannerException(ErrorCodes.INTERNAL_ERROR,
+                    "Failed to create consent handle",
+                    "Unexpected error: " + e.getMessage());
         } finally {
             TenantContext.clear();
         }
@@ -105,7 +122,7 @@ public class ConsentHandleService {
             }
 
             // Get template information
-            Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndScanId(
+            Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateId(
                     tenantId, consentHandle.getTemplateId());
 
             if (templateOpt.isEmpty()) {
@@ -138,14 +155,14 @@ public class ConsentHandleService {
         }
     }
 
-    private void validateTemplate(String tenantId, String templateId) throws ScannerException {
+    private void validateTemplate(String tenantId, String templateId, String businessid) throws ScannerException {
         // Check if template exists using the existing ConsentTemplateService
-        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateId(tenantId, templateId);
+        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndBusinessId(tenantId, templateId, businessid);
 
         if (templateOpt.isEmpty()) {
             throw new ScannerException(ErrorCodes.NOT_FOUND,
                     "Template not found",
-                    "Template with ID " + templateId + " does not exist for tenant " + tenantId);
+                    "Template with ID " + templateId + " and business Id " + businessid + " does not exist for tenant " + tenantId);
         }
 
         ConsentTemplate template = templateOpt.get();
