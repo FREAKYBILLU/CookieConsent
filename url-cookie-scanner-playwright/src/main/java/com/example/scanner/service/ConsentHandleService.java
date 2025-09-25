@@ -12,6 +12,7 @@ import com.example.scanner.exception.ScannerException;
 import com.example.scanner.repository.ConsentHandleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
@@ -28,6 +29,9 @@ public class ConsentHandleService {
 
     private final ConsentHandleRepository consentHandleRepository;
     private final ConsentTemplateService consentTemplateService;
+
+    @Value("${consent.handle.expiry.minutes:15}")
+    private int handleExpiryMinutes;
 
     public ConsentHandle createConsentHandle(String tenantId, CreateHandleRequest request, Map<String, String> headers)
             throws ScannerException {
@@ -68,7 +72,8 @@ public class ConsentHandleService {
                     request.getTemplateId(),
                     request.getTemplateVersion(),
                     request.getCustomerIdentifiers(),
-                    ConsentHandleStatus.PENDING
+                    ConsentHandleStatus.PENDING,
+                    handleExpiryMinutes
             );
 
             ConsentHandle savedHandle = this.consentHandleRepository.save(consentHandle, tenantId);
@@ -121,6 +126,8 @@ public class ConsentHandleService {
                         "No consent handle found with ID: " + consentHandleId);
             }
 
+            validateNotExpired(consentHandle, tenantId);
+
             // Get template information
             Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateId(
                     tenantId, consentHandle.getTemplateId());
@@ -172,6 +179,17 @@ public class ConsentHandleService {
             throw new ScannerException(ErrorCodes.INVALID_STATE_ERROR,
                     "Template is not published",
                     "Template " + templateId + " has status: " + template.getStatus());
+        }
+    }
+
+    private void validateNotExpired(ConsentHandle handle, String tenantId) throws ScannerException {
+        if (handle.isExpired()) {
+            handle.setStatus(ConsentHandleStatus.EXPIRED);
+            consentHandleRepository.save(handle, tenantId);
+
+            throw new ScannerException(ErrorCodes.NOT_FOUND,
+                    "Consent handle has expired",
+                    "Consent handle " + handle.getConsentHandleId() + " expired at " + handle.getExpiresAt());
         }
     }
 }

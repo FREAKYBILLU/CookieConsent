@@ -12,6 +12,7 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 
+import java.time.Duration;
 import java.time.Instant;
 
 @Data
@@ -63,7 +64,7 @@ public class ConsentHandle {
 
     public ConsentHandle(String consentHandleId, String businessId, String txnId,
                          String templateId, int templateVersion, CustomerIdentifiers customerIdentifiers,
-                         ConsentHandleStatus status) {
+                         ConsentHandleStatus status, int expiryMinutes) {
         this.consentHandleId = consentHandleId;
         this.businessId = businessId;
         this.txnId = txnId;
@@ -73,7 +74,11 @@ public class ConsentHandle {
         this.status = status;
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
-        this.expiresAt = Instant.now().plusSeconds(900); // 15 minutes expiry
+        this.expiresAt = Instant.now().plus(Duration.ofMinutes(expiryMinutes));
         this.className = "com.example.scanner.entity.ConsentHandle";
+    }
+
+    public boolean isExpired() {
+        return expiresAt != null && Instant.now().isAfter(expiresAt);
     }
 }
