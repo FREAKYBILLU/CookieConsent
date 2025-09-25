@@ -142,7 +142,6 @@
       <scope>test</scope>
     </dependency>
 
-
     <dependency>
       <groupId>com.github.vladimir-bukhtoyarov</groupId>
       <artifactId>bucket4j-core</artifactId>
@@ -173,6 +172,12 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-core</artifactId>
     </dependency>
+
+      <dependency>
+          <groupId>com.nimbusds</groupId>
+          <artifactId>nimbus-jose-jwt</artifactId>
+          <version>9.37.3</version>
+      </dependency>
   </dependencies>
 
   <build>
