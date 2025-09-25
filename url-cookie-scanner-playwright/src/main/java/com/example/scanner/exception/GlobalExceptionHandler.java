@@ -1,7 +1,7 @@
 package com.example.scanner.exception;
 
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.ErrorResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;

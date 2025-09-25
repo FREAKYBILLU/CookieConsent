@@ -2,10 +2,10 @@ package com.example.scanner.service;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.AddCookieRequest;
-import com.example.scanner.dto.AddCookieResponse;
-import com.example.scanner.dto.CookieUpdateRequest;
-import com.example.scanner.dto.CookieUpdateResponse;
+import com.example.scanner.dto.request.AddCookieRequest;
+import com.example.scanner.dto.response.AddCookieResponse;
+import com.example.scanner.dto.request.CookieUpdateRequest;
+import com.example.scanner.dto.response.CookieUpdateResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.SameSite;

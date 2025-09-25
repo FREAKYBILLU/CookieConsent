@@ -1,7 +1,12 @@
 package com.example.scanner.controller;
 
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.*;
+import com.example.scanner.dto.request.AddCookieRequest;
+import com.example.scanner.dto.request.CookieUpdateRequest;
+import com.example.scanner.dto.request.ScanRequestDto;
+import com.example.scanner.dto.response.AddCookieResponse;
+import com.example.scanner.dto.response.CookieUpdateResponse;
+import com.example.scanner.dto.response.ScanStatusResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.exception.ScanExecutionException;
@@ -27,7 +32,6 @@ import jakarta.validation.Valid;
 import com.example.scanner.exception.CookieNotFoundException;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @RestController

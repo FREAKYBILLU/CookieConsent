@@ -1,9 +1,9 @@
 package com.example.scanner.controller;
 
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.CreateTemplateRequest;
-import com.example.scanner.dto.ErrorResponse;
-import com.example.scanner.dto.TemplateResponse;
+import com.example.scanner.dto.request.CreateTemplateRequest;
+import com.example.scanner.dto.response.ErrorResponse;
+import com.example.scanner.dto.response.TemplateResponse;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.service.ConsentTemplateService;
 import io.swagger.v3.oas.annotations.Operation;

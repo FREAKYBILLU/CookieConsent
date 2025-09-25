@@ -2,7 +2,7 @@ package com.example.scanner.service;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
-import com.example.scanner.dto.CreateTemplateRequest;
+import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.entity.ScanResultEntity;
@@ -37,6 +37,22 @@ public class ConsentTemplateService {
 
         try {
             Query query = new Query(Criteria.where("scanId").is(scanId));
+            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(template);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    public Optional<ConsentTemplate> getTemplateByTenantAndTemplateId(String tenantId, String templateId) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "template ID cannot be null or empty");
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("_id").is(templateId));
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);
         } finally {

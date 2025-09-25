@@ -1,7 +1,7 @@
 package com.example.scanner.controller;
 
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.ErrorResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.web.servlet.error.ErrorController;

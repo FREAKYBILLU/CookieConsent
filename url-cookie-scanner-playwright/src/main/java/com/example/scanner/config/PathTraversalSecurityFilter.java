@@ -1,7 +1,7 @@
 package com.example.scanner.config;
 
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.ErrorResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;

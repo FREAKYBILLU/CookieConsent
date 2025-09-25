@@ -1,7 +1,7 @@
 package com.example.scanner.service;
 
-import com.example.scanner.dto.CookieCategorizationRequest;
-import com.example.scanner.dto.CookieCategorizationResponse;
+import com.example.scanner.dto.request.CookieCategorizationRequest;
+import com.example.scanner.dto.response.CookieCategorizationResponse;
 import com.example.scanner.exception.CookieCategorizationException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

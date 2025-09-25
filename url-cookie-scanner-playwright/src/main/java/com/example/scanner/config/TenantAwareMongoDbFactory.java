@@ -3,6 +3,7 @@ package com.example.scanner.config;
 import com.example.scanner.util.TenantContextHolder;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.MongoIterable;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 
@@ -23,11 +24,31 @@ public class TenantAwareMongoDbFactory extends SimpleMongoClientDatabaseFactory 
         try {
             String tenantId = TenantContextHolder.getTenant();
             String dbName = tenantDatabasePrefix + tenantId;
+
+            if (!databaseExists(dbName)) {
+                throw new IllegalStateException("Database does not exist for tenant: " + tenantId);
+            }
+
             log.debug("TenantAwareMongoDbFactory: Retrieved tenantId: {}, Resolved DB Name: {}", tenantId, dbName);
-            return super.getMongoDatabase(dbName); // Use the tenant-specific database
+            return super.getMongoDatabase(dbName);
         } catch (IllegalStateException e) {
-            log.warn("TenantAwareMongoDbFactory: No tenant context found, falling back to shared database: {}. This might indicate a missing tenantId in the request or an operation outside a tenant context.", sharedDatabase);
-            return super.getMongoDatabase(sharedDatabase); // Fallback to shared
+            log.warn("TenantAwareMongoDbFactory: No tenant context found or database doesn't exist, falling back to shared database: {}", sharedDatabase);
+            return super.getMongoDatabase(sharedDatabase);
+        }
+    }
+
+    private boolean databaseExists(String databaseName) {
+        try {
+            MongoIterable<String> databaseNames = getMongoClient().listDatabaseNames();
+            for (String name : databaseNames) {
+                if (name.equals(databaseName)) {
+                    return true;
+                }
+            }
+            return false;
+        } catch (Exception e) {
+            log.error("Error checking database existence for: {}", databaseName, e);
+            return false;
         }
     }
 }

@@ -1,7 +1,7 @@
 // File: src/main/java/com/example/scanner/config/RateLimitInterceptor.java
 package com.example.scanner.config;
 
-import com.example.scanner.dto.ErrorResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.bucket4j.Bucket;
 import io.github.bucket4j.ConsumptionProbe;

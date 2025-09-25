@@ -1,6 +1,7 @@
 package com.example.scanner.entity;
 
 import com.example.scanner.dto.*;
+import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.enums.TemplateStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonProperty;
