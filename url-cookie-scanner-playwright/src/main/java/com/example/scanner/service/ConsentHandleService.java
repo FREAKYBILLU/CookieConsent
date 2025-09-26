@@ -45,22 +45,6 @@ public class ConsentHandleService {
         TenantContext.setCurrentTenant(tenantId);
 
         try {
-            Map<String, Object> handleSearchParams = Map.of(
-                    "templateId", request.getTemplateId(),
-                    "templateVersion", request.getTemplateVersion(),
-                    "customerIdentifiers.type", request.getCustomerIdentifiers().getType(),
-                    "customerIdentifiers.value", request.getCustomerIdentifiers().getValue()
-            );
-
-            List<ConsentHandle> existingHandles = this.consentHandleRepository.findConsentHandleByParams(handleSearchParams, tenantId);
-            if (!ObjectUtils.isEmpty(existingHandles) && !existingHandles.isEmpty()) {
-                log.warn("Consent handle already exists for templateId: {}, customer: {}",
-                        request.getTemplateId(), request.getCustomerIdentifiers().getValue());
-                throw new ScannerException(ErrorCodes.DUPLICATE_ERROR,
-                        "Consent handle already exists for this template and customer",
-                        "Duplicate consent handle found for templateId: " + request.getTemplateId());
-            }
-
             validateTemplate(tenantId, request.getTemplateId(), headers.get(Constants.BUSINESS_ID_HEADER));
 
             String consentHandleId = UUID.randomUUID().toString();
@@ -169,7 +153,7 @@ public class ConsentHandleService {
         if (templateOpt.isEmpty()) {
             throw new ScannerException(ErrorCodes.NOT_FOUND,
                     "Template not found",
-                    "Template with ID " + templateId + " and business Id " + businessid + " does not exist for tenant " + tenantId);
+                    "Template with ID " + templateId + " and business Id " + businessid + " with status PUBLISHED and Template Status ACTIVE does not exist for tenant " + tenantId);
         }
 
         ConsentTemplate template = templateOpt.get();

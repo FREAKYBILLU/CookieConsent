@@ -4,18 +4,23 @@ import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
 import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.dto.Preference;
+import com.example.scanner.dto.request.UpdateTemplateRequest;
+import com.example.scanner.dto.response.UpdateTemplateResponse;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.TemplateStatus;
+import com.example.scanner.enums.VersionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -52,7 +57,7 @@ public class ConsentTemplateService {
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
         try {
-            Query query = new Query(Criteria.where("_id").is(templateId));
+            Query query = new Query(Criteria.where("templateId").is(templateId));
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);
         } finally {
@@ -69,7 +74,9 @@ public class ConsentTemplateService {
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
         try {
-            Query query = new Query(Criteria.where("_id").is(templateId).and("businessId").is(businessId));
+            Query query = new Query(Criteria.where("templateId").is(templateId).and("businessId").is(businessId)
+                    .and("status").is("PUBLISHED").and("templateStatus").is("ACTIVE"));
+
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);
         } finally {
@@ -238,5 +245,210 @@ public class ConsentTemplateService {
 
         log.debug("Create template request validation passed for: {} with scan: {}",
                 request.getTemplateName(), request.getScanId());
+    }
+
+
+    /**
+     * Update an existing template by creating a new version
+     * This is the core versioning logic - creates new version and marks old as UPDATED
+     *
+     * @param tenantId The tenant identifier
+     * @param templateId Logical template ID (not document ID)
+     * @param updateRequest The update request with changes
+     * @return UpdateTemplateResponse with new version details
+     * @throws IllegalArgumentException if template not found or validation fails
+     * @throws IllegalStateException if template is in invalid state for update
+     */
+    @Transactional
+    public UpdateTemplateResponse updateTemplate(String tenantId, String templateId, UpdateTemplateRequest updateRequest) {
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            // Step 1: Find current ACTIVE template
+            Query activeQuery = new Query(Criteria.where("templateId").is(templateId)
+                    .and("templateStatus").is(VersionStatus.ACTIVE));
+            ConsentTemplate currentActiveTemplate = tenantMongoTemplate.findOne(activeQuery, ConsentTemplate.class);
+
+            if (currentActiveTemplate == null) {
+                throw new IllegalArgumentException("Template not found: " + templateId);
+            }
+
+            // Step 2: Create new template record
+            ConsentTemplate newTemplate = new ConsentTemplate();
+
+            // Keep same: templateId, businessId, scanId
+            newTemplate.setTemplateId(currentActiveTemplate.getTemplateId());
+            newTemplate.setBusinessId(currentActiveTemplate.getBusinessId());
+            newTemplate.setScanId(currentActiveTemplate.getScanId());
+
+            // Set version: current version + 1
+            newTemplate.setVersion(currentActiveTemplate.getVersion() + 1);
+
+            // Set templateStatus: ACTIVE
+            newTemplate.setTemplateStatus(VersionStatus.ACTIVE);
+
+            // Apply updates from request or keep existing values
+            newTemplate.setTemplateName(updateRequest.getTemplateName() != null ?
+                    updateRequest.getTemplateName() : currentActiveTemplate.getTemplateName());
+            newTemplate.setStatus(updateRequest.getStatus() != null ?
+                    updateRequest.getStatus() : currentActiveTemplate.getStatus());
+            newTemplate.setMultilingual(updateRequest.getMultilingual() != null ?
+                    updateRequest.getMultilingual() : currentActiveTemplate.getMultilingual());
+            newTemplate.setUiConfig(updateRequest.getUiConfig() != null ?
+                    updateRequest.getUiConfig() : currentActiveTemplate.getUiConfig());
+            newTemplate.setPrivacyPolicyDocument(updateRequest.getPrivacyPolicyDocument() != null ?
+                    updateRequest.getPrivacyPolicyDocument() : currentActiveTemplate.getPrivacyPolicyDocument());
+            newTemplate.setDocumentMeta(updateRequest.getPrivacyPolicyDocumentMeta() != null ?
+                    updateRequest.getPrivacyPolicyDocumentMeta() : currentActiveTemplate.getDocumentMeta());
+            newTemplate.setPreferences(updateRequest.getPreferences() != null ?
+                    updateRequest.getPreferences() : currentActiveTemplate.getPreferences());
+
+            // Set timestamps
+            newTemplate.setCreatedAt(Instant.now());
+            newTemplate.setUpdatedAt(Instant.now());
+            newTemplate.setClassName("com.example.scanner.entity.ConsentTemplate");
+
+            // Step 3: Save new template record
+            ConsentTemplate savedNewTemplate = tenantMongoTemplate.save(newTemplate);
+
+            // Step 4: Update old template: templateStatus ACTIVE -> UPDATED
+            currentActiveTemplate.setTemplateStatus(VersionStatus.UPDATED);
+            currentActiveTemplate.setUpdatedAt(Instant.now());
+            tenantMongoTemplate.save(currentActiveTemplate);
+
+            return UpdateTemplateResponse.success(
+                    templateId,
+                    savedNewTemplate.getId(),
+                    savedNewTemplate.getVersion(),
+                    currentActiveTemplate.getVersion()
+            );
+
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Find active template or throw descriptive exception
+     */
+    private ConsentTemplate findActiveTemplateOrThrow(MongoTemplate mongoTemplate, String templateId, String tenantId) {
+        Query query = new Query(Criteria.where("templateId").is(templateId)
+                .and("templateStatus").is(VersionStatus.ACTIVE));
+
+        ConsentTemplate activeTemplate = mongoTemplate.findOne(query, ConsentTemplate.class);
+
+        if (activeTemplate == null) {
+            log.warn("Active template not found: {} in tenant: {}", templateId, tenantId);
+            throw new IllegalArgumentException("Template with ID '" + templateId + "' not found or not active");
+        }
+
+        return activeTemplate;
+    }
+
+    /**
+     * Validate that template can be updated
+     */
+    private void validateTemplateCanBeUpdated(ConsentTemplate template) {
+        // Business rule: Only published templates can be updated to create new versions
+        // Draft templates should be edited directly, not versioned
+        if (template.getStatus() != TemplateStatus.PUBLISHED) {
+            throw new IllegalStateException("Only published templates can be updated to create new versions. " +
+                    "Current template status: " + template.getStatus());
+        }
+
+        // Ensure template is in ACTIVE state
+        if (template.getTemplateStatus() != VersionStatus.ACTIVE) {
+            throw new IllegalStateException("Template is not in ACTIVE state. Current status: " + template.getTemplateStatus());
+        }
+    }
+
+    /**
+     * Get template history (all versions) for a logical template ID
+     *
+     * @param tenantId The tenant identifier
+     * @param templateId Logical template ID
+     * @return List of all template versions ordered by version DESC (newest first)
+     */
+    public List<ConsentTemplate> getTemplateHistory(String tenantId, String templateId) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "Template ID cannot be null or empty");
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("templateId").is(templateId))
+                    .with(Sort.by(Sort.Direction.DESC, "version"));
+
+            List<ConsentTemplate> history = tenantMongoTemplate.find(query, ConsentTemplate.class);
+
+            if (history.isEmpty()) {
+                log.warn("No template versions found for templateId: {} in tenant: {}", templateId, tenantId);
+                throw new IllegalArgumentException("Template with ID '" + templateId + "' not found");
+            }
+
+            log.info("Retrieved {} versions for template: {} in tenant: {}", history.size(), templateId, tenantId);
+            return history;
+
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error retrieving template history for templateId: {} in tenant: {}", templateId, tenantId, e);
+            throw new RuntimeException("Failed to retrieve template history: " + e.getMessage(), e);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Get active template by logical template ID (updated to use new versioning)
+     * This replaces/enhances existing methods to work with versioning
+     */
+    public Optional<ConsentTemplate> getActiveTemplateByTemplateId(String tenantId, String templateId) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "Template ID cannot be null or empty");
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("templateId").is(templateId)
+                    .and("templateStatus").is(VersionStatus.ACTIVE));
+
+            ConsentTemplate activeTemplate = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(activeTemplate);
+
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Get specific version of a template
+     * Used when consent handles reference specific template versions
+     */
+    public Optional<ConsentTemplate> getTemplateByIdAndVersion(String tenantId, String templateId, Integer version) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "Template ID cannot be null or empty");
+
+        if (version == null || version <= 0) {
+            throw new IllegalArgumentException("Version must be a positive integer");
+        }
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("templateId").is(templateId)
+                    .and("version").is(version));
+
+            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(template);
+
+        } finally {
+            TenantContext.clear();
+        }
     }
 }

@@ -28,13 +28,10 @@ public class Preference {
 
     @Schema(description = "List of purpose IDs", example = "[\"UUID_1\", \"UUID_2\"]")
     @NotEmpty(message = "JCMP1017")
-    private List<String> purposeIds;
+    private String purposeIds;
 
     @Schema(description = "Is this preference mandatory?", example = "false")
     private boolean isMandatory;
-
-    @Schema(description = "Should this preference auto-renew?", example = "false")
-    private boolean autoRenew;
 
     @Schema(description = "Validity of the preference")
     @NotNull(message = "JCMP1018")
@@ -46,10 +43,6 @@ public class Preference {
 
     @Schema(hidden = true)
     private LocalDateTime endDate;
-
-    @Schema(description = "List of purpose activity IDs", example = "[\"UUID_1\", \"UUID_2\"]")
-    @NotEmpty(message = "JCMP1019")
-    private List<String> processorActivityIds;
 
     @Schema(hidden = true)
     private PreferenceStatus preferenceStatus;

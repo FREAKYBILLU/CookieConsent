@@ -3,8 +3,10 @@ package com.example.scanner.service;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateConsentRequest;
+import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.ConsentCreateResponse;
 import com.example.scanner.dto.response.ConsentTokenValidateResponse;
+import com.example.scanner.dto.response.UpdateConsentResponse;
 import com.example.scanner.entity.Consent;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
@@ -12,9 +14,12 @@ import com.example.scanner.enums.ConsentHandleStatus;
 import com.example.scanner.enums.Period;
 import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Status;
+import com.example.scanner.enums.VersionStatus;
 import com.example.scanner.exception.ConsentException;
 import com.example.scanner.repository.ConsentHandleRepository;
 import com.example.scanner.repository.ConsentRepository;
+import com.example.scanner.repository.impl.ConsentRepositoryImpl;
+import com.example.scanner.util.InstantTypeAdapter;
 import com.example.scanner.util.LocalDateTypeAdapter;
 import com.example.scanner.util.TokenUtility;
 import com.google.gson.Gson;
@@ -23,10 +28,13 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -36,7 +44,9 @@ public class ConsentService {
     private final ConsentHandleRepository consentHandleRepository;
     private final ConsentTemplateService templateService;
     private final TokenUtility tokenUtility;
-    private final ConsentRepository consentRepository;
+    private final ConsentRepositoryImpl consentRepositoryImpl;
+
+    // ==== EXISTING CONSENT CREATION METHOD ====
 
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
@@ -45,23 +55,23 @@ public class ConsentService {
         ConsentHandle currentHandle = this.consentHandleRepository.getByConsentHandleId(request.getConsentHandleId(), tenantId);
         if (ObjectUtils.isEmpty(currentHandle)) {
             log.error("Consent handle not found: {}", request.getConsentHandleId());
-            throw new ConsentException(ErrorCodes.JCMP3003);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND);
         }
 
         // Check if consent handle is already used
         if (currentHandle.getStatus().equals(ConsentHandleStatus.USED)) {
             log.error("Consent handle already used: {}", request.getConsentHandleId());
-            throw new ConsentException(ErrorCodes.JCMP3004);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_ALREADY_USED);
         }
 
         // Check if consent handle is expired
         if (currentHandle.isExpired()) {
             log.error("Consent handle expired: {}", request.getConsentHandleId());
-            throw new ConsentException(ErrorCodes.JCMP3005);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_EXPIRED);
         }
 
         // Check if consent already exists for this template and customer
-        Consent isAlreadyExist = this.consentRepository.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
+        Consent isAlreadyExist = this.consentRepositoryImpl.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
                 currentHandle.getTemplateId(), currentHandle.getTemplateVersion(), currentHandle.getCustomerIdentifiers(), tenantId);
 
         if (!ObjectUtils.isEmpty(isAlreadyExist)) {
@@ -79,7 +89,7 @@ public class ConsentService {
         Optional<ConsentTemplate> templateOpt = this.templateService.getTemplateByTenantAndTemplateId(tenantId, currentHandle.getTemplateId());
         if (templateOpt.isEmpty()) {
             log.error("Template not found for templateId: {}", currentHandle.getTemplateId());
-            throw new ConsentException(ErrorCodes.JCMP3002);
+            throw new ConsentException(ErrorCodes.TEMPLATE_NOT_FOUND);
         }
         ConsentTemplate template = templateOpt.get();
 
@@ -120,7 +130,7 @@ public class ConsentService {
 
         LocalDateTime consentExpiry = consentExpiryList[0];
 
-        // Create consent entity
+        // Create consent entity (version 1 for initial creation)
         Consent consent = Consent.builder()
                 .consentId(consentId)
                 .consentHandleId(currentHandle.getConsentHandleId())
@@ -132,26 +142,22 @@ public class ConsentService {
                 .customerIdentifiers(currentHandle.getCustomerIdentifiers())
                 .preferences(updatedPreferences)
                 .status(determineConsentStatus(updatedPreferences))
+                .consentStatus(VersionStatus.ACTIVE) // First version is always active
+                .version(1) // First version
                 .startDate(now)
                 .endDate(consentExpiry)
-                .createdAt(now)
-                .updatedAt(now)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
                 .className("com.example.scanner.entity.Consent")
                 .build();
 
         // Generate JWT token
-        Gson gson = new GsonBuilder()
-                .registerTypeAdapter(LocalDateTime.class, new LocalDateTypeAdapter())
-                .create();
-        String consentJsonString = gson.toJson(consent);
-        String consentToken = this.tokenUtility.generateToken(consentJsonString,
-                Date.from(consent.getEndDate().atZone(ZoneId.systemDefault()).toInstant()));
-
+        String consentToken = generateConsentToken(consent);
         consent.setConsentJwtToken(consentToken);
 
         // Save consent and update consent handle status
         try {
-            this.consentRepository.save(consent, tenantId);
+            this.consentRepositoryImpl.save(consent, tenantId);
             currentHandle.setStatus(ConsentHandleStatus.USED);
             this.consentHandleRepository.save(currentHandle, tenantId);
 
@@ -171,6 +177,351 @@ public class ConsentService {
         return response;
     }
 
+    // ==== NEW CONSENT UPDATE METHOD (VERSIONING) ====
+
+    /**
+     * Update an existing consent by creating a new version
+     * This follows the same security model as consent creation - requires valid consent handle
+     *
+     * @param consentId Logical consent ID (not document ID)
+     * @param updateRequest The update request with changes and consent handle
+     * @param tenantId The tenant identifier
+     * @return UpdateConsentResponse with new version details
+     * @throws ConsentException for various validation and business rule violations
+     */
+    @Transactional
+    public UpdateConsentResponse updateConsent(String consentId, UpdateConsentRequest updateRequest, String tenantId)
+            throws Exception {
+
+        log.info("Processing consent update for consentId: {}, tenant: {}", consentId, tenantId);
+
+        // STEP 1: Validate inputs
+        validateUpdateInputs(consentId, updateRequest, tenantId);
+
+        // STEP 2: Validate consent handle (same security as consent creation)
+        ConsentHandle consentHandle = validateConsentHandle(updateRequest.getConsentHandleId(), tenantId);
+
+        // STEP 3: Find current active consent
+        Consent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
+
+        // STEP 4: Validate consent can be updated
+        validateConsentCanBeUpdated(activeConsent, consentHandle);
+
+        // STEP 5: Get template for processing preferences
+        ConsentTemplate template = getTemplateForUpdate(consentHandle, tenantId);
+
+        // STEP 6: Create new consent version
+        Consent newVersion = createNewConsentVersion(activeConsent, updateRequest, consentHandle, template);
+
+        // STEP 7: Save new version and update statuses (with rollback on failure)
+        return saveConsentUpdate(activeConsent, newVersion, consentHandle, tenantId);
+    }
+
+    // ==== CONSENT HISTORY METHODS ====
+
+    /**
+     * Get consent history (all versions) for a logical consent ID
+     */
+    public List<Consent> getConsentHistory(String consentId, String tenantId) throws Exception {
+        if (tenantId == null || tenantId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (consentId == null || consentId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        List<Consent> history = consentRepositoryImpl.findAllVersionsByConsentId(consentId, tenantId);
+
+        if (history.isEmpty()) {
+            log.warn("No consent versions found for consentId: {} in tenant: {}", consentId, tenantId);
+            throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND);
+        }
+
+        log.info("Retrieved {} versions for consent: {} in tenant: {}", history.size(), consentId, tenantId);
+        return history;
+    }
+
+    /**
+     * Get specific version of a consent by logical consent ID and version number
+     * Used for historical consent lookups and audit trails
+     */
+    public Optional<Consent> getConsentByIdAndVersion(String tenantId, String consentId, Integer version)
+            throws Exception {
+
+        if (tenantId == null || tenantId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (consentId == null || consentId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (version == null || version <= 0) {
+            throw new ConsentException(ErrorCodes.VERSION_NUMBER_INVALID);
+        }
+
+        try {
+            Optional<Consent> consentOpt = consentRepositoryImpl.findByConsentIdAndVersion(consentId, version, tenantId);
+
+            log.info("Retrieved consent version {} for consentId: {} in tenant: {}", version, consentId, tenantId);
+            return consentOpt;
+
+        } catch (Exception e) {
+            log.error("Error retrieving consent version for consentId: {}, version: {}, tenant: {}",
+                    consentId, version, tenantId, e);
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR);
+        }
+    }
+
+    public ConsentTokenValidateResponse validateConsentToken(String token) throws Exception {
+        return this.tokenUtility.verifyConsentToken(token);
+    }
+
+    /**
+     * Validate update request inputs
+     */
+    private void validateUpdateInputs(String consentId, UpdateConsentRequest updateRequest, String tenantId) throws ConsentException {
+        if (tenantId == null || tenantId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (consentId == null || consentId.trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (updateRequest == null) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (updateRequest.getConsentHandleId() == null || updateRequest.getConsentHandleId().trim().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+
+        if (!updateRequest.hasUpdates()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR);
+        }
+    }
+
+    /**
+     * Validate consent handle for update operation
+     * Uses same validation as consent creation for security consistency
+     */
+    private ConsentHandle validateConsentHandle(String consentHandleId, String tenantId) throws Exception {
+        ConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
+
+        if (consentHandle == null) {
+            log.error("Consent handle not found for update: {}", consentHandleId);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND);
+        }
+
+        if (consentHandle.getStatus() == ConsentHandleStatus.USED) {
+            log.error("Consent handle already used for update: {}", consentHandleId);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_ALREADY_USED);
+        }
+
+        if (consentHandle.isExpired()) {
+            log.error("Consent handle expired for update: {}", consentHandleId);
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_EXPIRED);
+        }
+
+        return consentHandle;
+    }
+
+    /**
+     * Find active consent or throw exception
+     */
+    private Consent findActiveConsentOrThrow(String consentId, String tenantId) throws ConsentException {
+        Consent activeConsent = consentRepositoryImpl.findActiveByConsentId(consentId, tenantId);
+
+        if (activeConsent == null) {
+            log.warn("Active consent not found: {} in tenant: {}", consentId, tenantId);
+            throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND);
+        }
+
+        return activeConsent;
+    }
+
+    /**
+     * Validate that consent can be updated
+     */
+    private void validateConsentCanBeUpdated(Consent consent, ConsentHandle consentHandle) throws ConsentException {
+        // Business rule: Consent handle must be for the same customer
+        if (!consent.getCustomerIdentifiers().getValue().equals(consentHandle.getCustomerIdentifiers().getValue())) {
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_CUSTOMER_MISMATCH);
+        }
+
+        // Business rule: Consent handle must be for the same business
+        if (!consent.getBusinessId().equals(consentHandle.getBusinessId())) {
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_BUSINESS_MISMATCH);
+        }
+
+        // Business rule: Only active consents can be updated
+        if (consent.getConsentStatus() != VersionStatus.ACTIVE) {
+            throw new ConsentException(ErrorCodes.BUSINESS_RULE_VIOLATION);
+        }
+
+        // Business rule: Don't allow updating expired consents
+        if (consent.getStatus() == Status.EXPIRED) {
+            throw new ConsentException(ErrorCodes.CONSENT_CANNOT_UPDATE_EXPIRED);
+        }
+    }
+
+    /**
+     * Get template for processing the update
+     */
+    private ConsentTemplate getTemplateForUpdate(ConsentHandle consentHandle, String tenantId) throws Exception {
+        Optional<ConsentTemplate> templateOpt = templateService.getTemplateByIdAndVersion(
+                tenantId, consentHandle.getTemplateId(), consentHandle.getTemplateVersion());
+
+        if (templateOpt.isEmpty()) {
+            log.error("Template not found for consent update: templateId={}, version={}",
+                    consentHandle.getTemplateId(), consentHandle.getTemplateVersion());
+            throw new ConsentException(ErrorCodes.TEMPLATE_NOT_FOUND);
+        }
+
+        return templateOpt.get();
+    }
+
+    /**
+     * Create new consent version with updates applied
+     */
+    private Consent createNewConsentVersion(Consent existingConsent, UpdateConsentRequest updateRequest,
+                                            ConsentHandle consentHandle, ConsentTemplate template) {
+
+        // Create new version using the helper method in Consent entity
+        Consent newVersion = Consent.createNewVersionFrom(
+                existingConsent,
+                updateRequest,
+                consentHandle.getConsentHandleId(),
+                consentHandle.getTemplateVersion()
+        );
+
+        // Process preferences if they were updated
+        if (updateRequest.hasPreferenceUpdates()) {
+            List<Preference> updatedPreferences = processPreferenceUpdates(
+                    template.getPreferences(),
+                    updateRequest.getPreferencesStatus()
+            );
+            newVersion.setPreferences(updatedPreferences);
+
+            // Recalculate end date based on new preferences
+            LocalDateTime consentExpiry = calculateConsentExpiry(updatedPreferences);
+            newVersion.setEndDate(consentExpiry);
+
+            // Recalculate status based on new preferences
+            Status newStatus = determineConsentStatus(updatedPreferences);
+            newVersion.setStatus(newStatus);
+        }
+
+        return newVersion;
+    }
+
+    /**
+     * Process preference updates with user's new choices
+     */
+    private List<Preference> processPreferenceUpdates(List<Preference> templatePreferences,
+                                                      Map<String, PreferenceStatus> userChoices) {
+        LocalDateTime now = LocalDateTime.now();
+
+        return templatePreferences.stream()
+                .peek(preference -> {
+                    if (userChoices.containsKey(preference.getPreferenceId())) {
+                        // Apply user's new choice
+                        preference.setPreferenceStatus(userChoices.get(preference.getPreferenceId()));
+                        preference.setStartDate(now);
+
+                        // Recalculate end date based on preference validity
+                        LocalDateTime endDate = now;
+                        if (preference.getPreferenceValidity() != null) {
+                            if (preference.getPreferenceValidity().getUnit().equals(Period.YEARS)) {
+                                endDate = endDate.plusYears(preference.getPreferenceValidity().getValue());
+                            } else if (preference.getPreferenceValidity().getUnit().equals(Period.MONTHS)) {
+                                endDate = endDate.plusMonths(preference.getPreferenceValidity().getValue());
+                            } else {
+                                endDate = endDate.plusDays(preference.getPreferenceValidity().getValue());
+                            }
+                        } else {
+                            // Default to 1 year if no validity specified
+                            endDate = endDate.plusYears(1);
+                        }
+                        preference.setEndDate(endDate);
+                    }
+                })
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Save consent update with proper transaction management
+     */
+    @Transactional
+    private UpdateConsentResponse saveConsentUpdate(Consent activeConsent, Consent newVersion,
+                                                    ConsentHandle consentHandle, String tenantId) throws Exception {
+        try {
+            // Generate JWT token for new version
+            String consentToken = generateConsentToken(newVersion);
+            newVersion.setConsentJwtToken(consentToken);
+
+            // STEP 1: Save new version first
+            consentRepositoryImpl.save(newVersion, tenantId);
+            log.info("Created new consent version: {} (v{}) for consentId: {}",
+                    newVersion.getId(), newVersion.getVersion(), newVersion.getConsentId());
+
+            // STEP 2: Mark previous version as UPDATED
+            activeConsent.setConsentStatus(VersionStatus.UPDATED);
+            activeConsent.setUpdatedAt(Instant.now());
+            consentRepositoryImpl.save(activeConsent, tenantId);
+            log.info("Marked previous consent version {} as UPDATED", activeConsent.getVersion());
+
+            // STEP 3: Mark consent handle as USED
+            consentHandle.setStatus(ConsentHandleStatus.USED);
+            consentHandleRepository.save(consentHandle, tenantId);
+            log.info("Marked consent handle as USED: {}", consentHandle.getConsentHandleId());
+
+            return UpdateConsentResponse.success(
+                    newVersion.getConsentId(),
+                    newVersion.getId(),
+                    newVersion.getVersion(),
+                    activeConsent.getVersion(),
+                    consentToken,
+                    newVersion.getEndDate()
+            );
+
+        } catch (Exception e) {
+            log.error("Error saving consent update, rolling back", e);
+            // In a real application, transaction management would handle rollback
+            // For now, we rely on @Transactional annotation
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR);
+        }
+    }
+
+    /**
+     * Generate JWT token for consent
+     */
+    private String generateConsentToken(Consent consent) throws Exception {
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(LocalDateTime.class, new LocalDateTypeAdapter())
+                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                .create();
+        String consentJsonString = gson.toJson(consent);
+        return tokenUtility.generateToken(consentJsonString,
+                Date.from(consent.getEndDate().atZone(ZoneId.systemDefault()).toInstant()));
+    }
+
+    /**
+     * Calculate consent expiry based on preference validities
+     */
+    private LocalDateTime calculateConsentExpiry(List<Preference> preferences) {
+        return preferences.stream()
+                .map(Preference::getEndDate)
+                .filter(Objects::nonNull)
+                .max(LocalDateTime::compareTo)
+                .orElse(LocalDateTime.now().plusYears(1)); // Default to 1 year
+    }
+
+    /**
+     * Determine consent status based on preference statuses
+     */
     private Status determineConsentStatus(List<Preference> preferences) {
         boolean hasAccept = preferences.stream()
                 .anyMatch(preference -> preference.getPreferenceStatus().equals(PreferenceStatus.ACCEPTED));
@@ -188,9 +539,5 @@ public class ConsentService {
         }
 
         return Status.INACTIVE;
-    }
-
-    public ConsentTokenValidateResponse validateConsentToken(String token) throws Exception {
-        return this.tokenUtility.verifyConsentToken(token);
     }
 }
