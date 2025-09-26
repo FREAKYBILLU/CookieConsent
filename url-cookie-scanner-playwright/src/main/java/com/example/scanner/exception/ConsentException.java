@@ -3,14 +3,14 @@ package com.example.scanner.exception;
 import com.example.scanner.constants.ErrorCodes;
 
 public class ConsentException extends Exception {
-    private final ErrorCodes errorCode;
+    private final String errorCode;
 
-    public ConsentException(ErrorCodes errorCode) {
-        super(errorCode.getMessage());
+    public ConsentException(String errorCode) {
+        super(errorCode);
         this.errorCode = errorCode;
     }
 
-    public ErrorCodes getErrorCode() {
+    public String getErrorCode() {
         return errorCode;
     }
 }

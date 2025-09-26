@@ -20,7 +20,7 @@ import java.util.Map;
 
 @CrossOrigin(origins = "*")
 @RestController
-@RequestMapping("/v1.0/consent")
+@RequestMapping("/consent")
 @RequiredArgsConstructor
 @Slf4j
 @Tag(name = "Consent Management System", description = "Operations pertaining to consents")

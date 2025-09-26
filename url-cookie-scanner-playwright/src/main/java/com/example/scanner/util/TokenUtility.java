@@ -24,10 +24,14 @@ import java.util.Date;
 public class TokenUtility {
     public static RSAKey loadRSAKey() throws Exception {
         try (InputStream is = TokenUtility.class.getResourceAsStream("/jwt-set.json")) {
-            assert is != null;
+            if (is == null) {
+                throw new IllegalStateException("jwt-set.json file not found in classpath resources");
+            }
             String json = new String(is.readAllBytes(), StandardCharsets.UTF_8);
             JWK jwk = JWK.parse(json);
             return (RSAKey) jwk;
+        } catch (Exception e) {
+            throw new Exception("Unable to load JWT signing key: " + e.getMessage(), e);
         }
     }
 

@@ -76,7 +76,7 @@ public class ConsentService {
         }
 
         // Get template using your existing ConsentTemplateService method
-        Optional<ConsentTemplate> templateOpt = this.templateService.getTemplateByTenantAndScanId(tenantId, currentHandle.getTemplateId());
+        Optional<ConsentTemplate> templateOpt = this.templateService.getTemplateByTenantAndTemplateId(tenantId, currentHandle.getTemplateId());
         if (templateOpt.isEmpty()) {
             log.error("Template not found for templateId: {}", currentHandle.getTemplateId());
             throw new ConsentException(ErrorCodes.JCMP3002);
