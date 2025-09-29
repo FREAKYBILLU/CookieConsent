@@ -38,24 +38,4 @@ public class ScanResultMapper {
                 dto.getProvider()
         );
     }
-
-    public static CookieDto cookieEntityToDto(CookieEntity entity) {
-        return new CookieDto(
-                entity.getName(),
-                entity.getUrl(),
-                entity.getDomain(),
-                entity.getPath(),
-                entity.getExpires(),
-                entity.isSecure(),
-                entity.isHttpOnly(),
-                entity.getSameSite(),
-                entity.getSource(),
-                entity.getCategory(),
-                entity.getDescription(),
-                entity.getDescription_gpt(),
-                entity.getSubdomainName() != null ? entity.getSubdomainName() : "main",
-                entity.getPrivacyPolicyUrl(),
-                entity.getProvider()
-        );
-    }
 }

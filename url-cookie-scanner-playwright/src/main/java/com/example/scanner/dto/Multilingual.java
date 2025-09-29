@@ -23,11 +23,11 @@ import java.util.Map;
 public class Multilingual {
 
     @Schema(description = "Supported languages", example = "[\"ENGLISH\", \"HINDI\"]")
-    @NotEmpty(message = "JCMP1021")
+    @NotEmpty(message = "At least one supported language is required")
     private List<LANGUAGE> supportedLanguages;
 
     @Schema(description = "Language specific content map")
-    @NotNull(message = "JCMP1022")
+    @NotNull(message = "Language specific content map is required")
     @Valid
     Map<LANGUAGE, LanguageSpecificContent> languageSpecificContentMap;
 }

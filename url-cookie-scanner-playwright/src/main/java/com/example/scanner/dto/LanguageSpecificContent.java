@@ -18,18 +18,18 @@ import lombok.NoArgsConstructor;
 public class LanguageSpecificContent {
 
     @Schema(description = "Description", example = "While using JioMeet...")
-    @NotBlank(message = "JCMP1028")
+    @NotBlank(message = "Description is required and cannot be empty")
     private String description;
 
     @Schema(description = "Label", example = "Required")
-    @NotBlank(message = "JCMP1029")
+    @NotBlank(message = "Label is required and cannot be empty")
     private String label;
 
     @Schema(description = "Rights text", example = "To withdraw your consent...")
-    @NotBlank(message = "JCMP1030")
+    @NotBlank(message = "Rights text is required and cannot be empty")
     private String rightsText;
 
     @Schema(description = "Permission text", example = "By clicking 'Allow all'...")
-    @NotBlank(message = "JCMP1031")
+    @NotBlank(message = "Permission text is required and cannot be empty")
     private String permissionText;
 }

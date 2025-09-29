@@ -11,5 +11,4 @@ public interface ConsentHandleRepository {
 
     ConsentHandle getByConsentHandleId(String consentHandleId, String tenantId);
 
-    List<ConsentHandle> findConsentHandleByParams(Map<String, Object> searchParams, String tenentId);
 }

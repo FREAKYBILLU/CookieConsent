@@ -18,10 +18,10 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Duration {
 
-    @NotNull(message = "JCMP1025")
-    @Positive(message = "JCMP1026")
+    @NotNull(message = "Duration value is required")
+    @Positive(message = "Duration value must be positive")
     int value;
 
-    @NotNull(message = "JCMP1027")
+    @NotNull(message = "Duration unit is required")
     Period unit;
 }

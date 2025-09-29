@@ -50,7 +50,6 @@ public class TenantContextHolder {
         return business;
     }
 
-    // Legacy methods for backward compatibility
     public static void setTenant(String tenantId) {
         setTenantId(tenantId);
     }

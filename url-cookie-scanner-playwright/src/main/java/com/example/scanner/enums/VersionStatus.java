@@ -7,5 +7,8 @@ package com.example.scanner.enums;
  */
 public enum VersionStatus {
     ACTIVE,   // Current version in use
-    UPDATED   // Previous version (superseded)
+    UPDATED,   // Previous version (superseded)
+    INACTIVE
+
+
 }

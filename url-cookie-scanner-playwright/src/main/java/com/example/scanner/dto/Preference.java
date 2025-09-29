@@ -26,15 +26,16 @@ public class Preference {
     @Schema(hidden = true)
     private String preferenceId;
 
-    @Schema(description = "List of purpose IDs", example = "[\"UUID_1\", \"UUID_2\"]")
-    @NotEmpty(message = "JCMP1017")
+    @Schema(description = "List of purpose IDs for this preference category",
+            example = "essential-cookies, functionality-cookies")
+    @NotEmpty(message = "Purpose IDs are required for each preference")
     private String purposeIds;
 
     @Schema(description = "Is this preference mandatory?", example = "false")
     private boolean isMandatory;
 
     @Schema(description = "Validity of the preference")
-    @NotNull(message = "JCMP1018")
+    @NotNull(message = "Preference validity is required")
     @Valid
     private Duration preferenceValidity;
 

@@ -1,86 +1,90 @@
 package com.example.scanner.constants;
 
 /**
- * Comprehensive error codes for the consent management system
- * Organized by functional area with clear naming conventions
+ * COMPLETELY CORRECTED error codes for the consent management system
+ *
+ * FIXES APPLIED:
+ * - All JCMP codes converted to R-format
+ * - No duplicate error codes
+ * - Proper user-friendly descriptions
+ * - Removed JCMP utility methods
+ * - Consistent naming and organization
  */
 public final class ErrorCodes {
 
-    // ==== GENERAL ERROR CODES ====
+    // ==== GENERAL ERROR CODES (R4001-R4004) ====
     public static final String VALIDATION_ERROR = "R4001";
-    public static final String NOT_FOUND = "R4041";
-    public static final String INTERNAL_ERROR = "R5001";
-    public static final String DUPLICATE_ERROR = "R1004";
-    public static final String BUSINESS_RULE_VIOLATION = "R4002"; // Changed from R4001
+    public static final String BUSINESS_RULE_VIOLATION = "R4002";
+    public static final String NOT_FOUND = "R4003";
+    public static final String TRANSACTION_NOT_FOUND = "R4004";
 
-    // ==== COOKIE AND SCAN RELATED ERRORS ====
+    // ==== TEMPLATE VALIDATION ERRORS (R4005-R4019) ====
+    public static final String TEMPLATE_NAME_REQUIRED = "R4005";
+    public static final String BUSINESS_ID_REQUIRED = "R4006";
+    public static final String SCAN_ID_REQUIRED = "R4007";
+    public static final String SCAN_NOT_COMPLETED = "R4008";
+    public static final String INVALID_TEMPLATE_STATUS = "R4009";
+    public static final String VERSION_NUMBER_INVALID = "R4010";
+    public static final String VERSION_STATUS_TRANSITION_INVALID = "R4011";
+    public static final String PREFERENCES_REQUIRED = "R4012";
+    public static final String MULTILINGUAL_CONFIG_REQUIRED = "R4013";
+    public static final String UI_CONFIG_REQUIRED = "R4014";
+    public static final String PURPOSE_IDS_REQUIRED = "R4015";
+    public static final String PREFERENCE_VALIDITY_REQUIRED = "R4016";
+    public static final String PROCESSOR_ACTIVITY_IDS_REQUIRED = "R4017";
+
+    // ==== PERMISSION/SECURITY ERRORS (R4031-R4039) ====
+    public static final String INSUFFICIENT_PERMISSIONS = "R4031";
+
+    // ==== NOT FOUND ERRORS (R4041-R4059) ====
+    public static final String TEMPLATE_NOT_FOUND = "R4041";
+    public static final String NO_COOKIES_FOUND = "R4042";
+    public static final String COOKIE_NOT_FOUND = "R4043";
+    public static final String TEMPLATE_VERSION_NOT_FOUND = "R4044";
+    public static final String TEMPLATE_NO_ACTIVE_VERSION = "R4045";
+    public static final String CONSENT_HANDLE_NOT_FOUND = "R4046";
+    public static final String CONSENT_NOT_FOUND = "R4047";
+    public static final String CONSENT_VERSION_NOT_FOUND = "R4048";
+    public static final String CONSENT_NO_ACTIVE_VERSION = "R4049";
+
+    // ==== HTTP METHOD ERRORS (R4051-R4059) ====
+    public static final String METHOD_NOT_ALLOWED = "R4051";
+
+    // ==== CONFLICT ERRORS (R4091-R4099) ====
+    public static final String TEMPLATE_NAME_EXISTS = "R4091";
+    public static final String TEMPLATE_EXISTS_FOR_SCAN = "R4092";
+    public static final String CONSENT_HANDLE_ALREADY_USED = "R4093";
+    public static final String CONSENT_HANDLE_EXPIRED = "R4094";
+    public static final String CONSENT_CANNOT_UPDATE_EXPIRED = "R4095";
+    public static final String CONSENT_HANDLE_CUSTOMER_MISMATCH = "R4096";
+    public static final String CONSENT_HANDLE_BUSINESS_MISMATCH = "R4097";
+    public static final String CONSENT_VERSION_CONFLICT = "R4098";
+    public static final String TEMPLATE_VERSION_CONFLICT = "R4099";
+
+    // ==== COOKIE AND SCAN RELATED ERRORS (R1001-R1099) ====
     public static final String EMPTY_ERROR = "R1001";
     public static final String INVALID_FORMAT_ERROR = "R1002";
     public static final String INVALID_STATE_ERROR = "R1003";
-    public static final String TRANSACTION_NOT_FOUND = "R4004";
-    public static final String COOKIE_NOT_FOUND = "R4043"; // Changed from R4041 to avoid conflict
-    public static final String NO_COOKIES_FOUND = "R4042";
+    public static final String DUPLICATE_ERROR = "R1004";
+
+    // ==== SERVER ERROR CODES (R5001-R5099) ====
+    public static final String INTERNAL_ERROR = "R5001";
     public static final String SCAN_EXECUTION_ERROR = "R5002";
-    public static final String METHOD_NOT_ALLOWED = "R4051";
     public static final String EXTERNAL_SERVICE_ERROR = "R5003";
     public static final String CATEGORIZATION_ERROR = "R5004";
+    public static final String VERSION_INTEGRITY_CHECK_FAILED = "R5005";
+    public static final String REFERENCE_INTEGRITY_VIOLATION = "R5006";
+    public static final String TENANT_ISOLATION_VIOLATION = "R5007";
 
-    // ==== TEMPLATE ERRORS ====
-    public static final String TEMPLATE_NOT_FOUND = "JCMP2002";
-    public static final String TEMPLATE_NAME_REQUIRED = "JCMP1010";
-    public static final String BUSINESS_ID_REQUIRED = "JCMP1011";
-    public static final String SCAN_ID_REQUIRED = "JCMP1032";
-    public static final String TEMPLATE_NAME_EXISTS = "JCMP2001";
-    public static final String SCAN_NOT_COMPLETED = "JCMP3002";
-    public static final String TEMPLATE_EXISTS_FOR_SCAN = "JCMP2007";
-    public static final String INVALID_TEMPLATE_STATUS = "JCMP1033";
-
-    // ==== TEMPLATE VERSIONING ERRORS ====
-    public static final String TEMPLATE_NOT_UPDATABLE = "JCMP4001";
-    public static final String TEMPLATE_VERSION_NOT_FOUND = "JCMP4002";
-    public static final String TEMPLATE_NO_ACTIVE_VERSION = "JCMP4003";
-    public static final String TEMPLATE_MULTIPLE_ACTIVE_VERSIONS = "JCMP4004";
-    public static final String TEMPLATE_UPDATE_DRAFT_NOT_ALLOWED = "JCMP4005";
-    public static final String TEMPLATE_VERSION_CONFLICT = "JCMP4007";
-
-    // ==== CONSENT HANDLE ERRORS ====
-    public static final String CONSENT_HANDLE_NOT_FOUND = "JCMP3003";
-    public static final String CONSENT_HANDLE_ALREADY_USED = "JCMP3004";
-    public static final String CONSENT_HANDLE_EXPIRED = "JCMP3005";
-
-    // ==== CONSENT ERRORS ====
-    public static final String CONSENT_NOT_FOUND = "JCMP5001"; // Changed from JCMP5003
-    public static final String CONSENT_VERSION_NOT_FOUND = "JCMP5002";
-    public static final String CONSENT_NO_ACTIVE_VERSION = "JCMP5003";
-    public static final String CONSENT_MULTIPLE_ACTIVE_VERSIONS = "JCMP5004";
-    public static final String CONSENT_CANNOT_UPDATE_EXPIRED = "JCMP5005";
-    public static final String CONSENT_HANDLE_CUSTOMER_MISMATCH = "JCMP5006";
-    public static final String CONSENT_HANDLE_BUSINESS_MISMATCH = "JCMP5007";
-    public static final String CONSENT_VERSION_CONFLICT = "JCMP5008";
-
-    // ==== VERSION MANAGEMENT ERRORS ====
-    public static final String VERSION_NUMBER_INVALID = "JCMP6001";
-    public static final String VERSION_STATUS_TRANSITION_INVALID = "JCMP6002";
-    public static final String CONCURRENT_VERSION_CREATION = "JCMP6005";
-    public static final String VERSION_INTEGRITY_CHECK_FAILED = "JCMP6006";
-
-    // ==== DATA INTEGRITY ERRORS ====
-    public static final String IMMUTABLE_FIELD_MODIFICATION = "JCMP7001";
-    public static final String REFERENCE_INTEGRITY_VIOLATION = "JCMP7003";
-    public static final String TENANT_ISOLATION_VIOLATION = "JCMP7004";
-
-    // ==== BUSINESS RULE VIOLATIONS ====
-    public static final String UPDATE_FREQUENCY_LIMIT_EXCEEDED = "JCMP8001";
-    public static final String UPDATE_NOT_ALLOWED_BUSINESS_HOURS = "JCMP8002";
-    public static final String INSUFFICIENT_PERMISSIONS = "JCMP8003";
-
-    // ==== VALIDATION SPECIFIC ERRORS ====
-    public static final String PREFERENCES_REQUIRED = "JCMP1012";
-    public static final String MULTILINGUAL_CONFIG_REQUIRED = "JCMP1013";
-    public static final String UI_CONFIG_REQUIRED = "JCMP1014";
-    public static final String PURPOSE_IDS_REQUIRED = "JCMP1017";
-    public static final String PREFERENCE_VALIDITY_REQUIRED = "JCMP1018";
-    public static final String PROCESSOR_ACTIVITY_IDS_REQUIRED = "JCMP1019";
+    // ==== BUSINESS RULE VIOLATIONS (R4221-R4299) ====
+    public static final String TEMPLATE_NOT_UPDATABLE = "R4221";
+    public static final String TEMPLATE_MULTIPLE_ACTIVE_VERSIONS = "R4222";
+    public static final String TEMPLATE_UPDATE_DRAFT_NOT_ALLOWED = "R4223";
+    public static final String CONSENT_MULTIPLE_ACTIVE_VERSIONS = "R4224";
+    public static final String CONCURRENT_VERSION_CREATION = "R4225";
+    public static final String IMMUTABLE_FIELD_MODIFICATION = "R4226";
+    public static final String UPDATE_FREQUENCY_LIMIT_EXCEEDED = "R4227";
+    public static final String UPDATE_NOT_ALLOWED_BUSINESS_HOURS = "R4228";
 
     // Private constructor to prevent instantiation
     private ErrorCodes() {
@@ -96,65 +100,18 @@ public final class ErrorCodes {
         return switch (errorCode) {
             // General errors
             case VALIDATION_ERROR -> "Validation failed";
-            case NOT_FOUND -> "Resource not found";
-            case INTERNAL_ERROR -> "Internal server error";
-            case DUPLICATE_ERROR -> "Duplicate resource";
             case BUSINESS_RULE_VIOLATION -> "Business rule violation";
-
-            // Scan errors
+            case NOT_FOUND -> "Resource not found";
             case TRANSACTION_NOT_FOUND -> "Transaction not found";
-            case SCAN_EXECUTION_ERROR -> "Scan execution error";
 
-            // Template errors
-            case TEMPLATE_NOT_FOUND -> "Template not found";
+            // Template validation errors
             case TEMPLATE_NAME_REQUIRED -> "Template name is required and cannot be empty";
             case BUSINESS_ID_REQUIRED -> "Business ID is required and cannot be empty";
             case SCAN_ID_REQUIRED -> "Scan ID is required and must be from a completed scan";
-            case TEMPLATE_NAME_EXISTS -> "Template name already exists for this tenant";
             case SCAN_NOT_COMPLETED -> "Scan status is not COMPLETED";
-            case TEMPLATE_EXISTS_FOR_SCAN -> "Template already exists for this scan ID";
             case INVALID_TEMPLATE_STATUS -> "Template status must be either DRAFT or PUBLISHED";
-
-            // Template versioning
-            case TEMPLATE_NOT_UPDATABLE -> "Template not in valid state for update";
-            case TEMPLATE_VERSION_NOT_FOUND -> "Template version not found";
-            case TEMPLATE_NO_ACTIVE_VERSION -> "Template has no active version";
-            case TEMPLATE_MULTIPLE_ACTIVE_VERSIONS -> "Multiple active template versions found";
-            case TEMPLATE_UPDATE_DRAFT_NOT_ALLOWED -> "Cannot update draft template - use direct edit instead";
-            case TEMPLATE_VERSION_CONFLICT -> "Template version conflict during update";
-
-            // Consent handle errors
-            case CONSENT_HANDLE_NOT_FOUND -> "Consent handle not found";
-            case CONSENT_HANDLE_ALREADY_USED -> "Consent handle already used";
-            case CONSENT_HANDLE_EXPIRED -> "Consent handle expired";
-
-            // Consent errors
-            case CONSENT_NOT_FOUND -> "Consent not found";
-            case CONSENT_VERSION_NOT_FOUND -> "Consent version not found";
-            case CONSENT_NO_ACTIVE_VERSION -> "Consent has no active version";
-            case CONSENT_MULTIPLE_ACTIVE_VERSIONS -> "Multiple active consent versions found";
-            case CONSENT_CANNOT_UPDATE_EXPIRED -> "Cannot update expired consent";
-            case CONSENT_HANDLE_CUSTOMER_MISMATCH -> "Consent handle customer does not match consent customer";
-            case CONSENT_HANDLE_BUSINESS_MISMATCH -> "Consent handle business does not match consent business";
-            case CONSENT_VERSION_CONFLICT -> "Consent version conflict during update";
-
-            // Version management
             case VERSION_NUMBER_INVALID -> "Invalid version number";
             case VERSION_STATUS_TRANSITION_INVALID -> "Invalid version status transition";
-            case CONCURRENT_VERSION_CREATION -> "Concurrent version creation detected";
-            case VERSION_INTEGRITY_CHECK_FAILED -> "Version integrity check failed";
-
-            // Data integrity
-            case IMMUTABLE_FIELD_MODIFICATION -> "Immutable field modification attempted";
-            case REFERENCE_INTEGRITY_VIOLATION -> "Reference integrity violation";
-            case TENANT_ISOLATION_VIOLATION -> "Tenant isolation violation";
-
-            // Business rules
-            case UPDATE_FREQUENCY_LIMIT_EXCEEDED -> "Update frequency limit exceeded";
-            case UPDATE_NOT_ALLOWED_BUSINESS_HOURS -> "Update not allowed during business hours";
-            case INSUFFICIENT_PERMISSIONS -> "Insufficient permissions for version operation";
-
-            // Validation specific
             case PREFERENCES_REQUIRED -> "At least one preference is required";
             case MULTILINGUAL_CONFIG_REQUIRED -> "Multilingual configuration is required";
             case UI_CONFIG_REQUIRED -> "UI configuration is required";
@@ -162,23 +119,61 @@ public final class ErrorCodes {
             case PREFERENCE_VALIDITY_REQUIRED -> "Preference validity is required";
             case PROCESSOR_ACTIVITY_IDS_REQUIRED -> "Processor activity IDs are required for each preference";
 
+            // Permission errors
+            case INSUFFICIENT_PERMISSIONS -> "Insufficient permissions for operation";
+
+            // Not found errors
+            case TEMPLATE_NOT_FOUND -> "Template not found";
+            case NO_COOKIES_FOUND -> "No cookies found";
+            case COOKIE_NOT_FOUND -> "Cookie not found";
+            case TEMPLATE_VERSION_NOT_FOUND -> "Template version not found";
+            case TEMPLATE_NO_ACTIVE_VERSION -> "Template has no active version";
+            case CONSENT_HANDLE_NOT_FOUND -> "Consent handle not found";
+            case CONSENT_NOT_FOUND -> "Consent not found";
+            case CONSENT_VERSION_NOT_FOUND -> "Consent version not found";
+            case CONSENT_NO_ACTIVE_VERSION -> "Consent has no active version";
+
+            // HTTP method errors
+            case METHOD_NOT_ALLOWED -> "HTTP method not allowed";
+
+            // Conflict errors
+            case TEMPLATE_NAME_EXISTS -> "Template name already exists for this tenant";
+            case TEMPLATE_EXISTS_FOR_SCAN -> "Template already exists for this scan ID";
+            case CONSENT_HANDLE_ALREADY_USED -> "Consent handle already used";
+            case CONSENT_HANDLE_EXPIRED -> "Consent handle has expired";
+            case CONSENT_CANNOT_UPDATE_EXPIRED -> "Cannot update expired consent";
+            case CONSENT_HANDLE_CUSTOMER_MISMATCH -> "Consent handle customer does not match consent customer";
+            case CONSENT_HANDLE_BUSINESS_MISMATCH -> "Consent handle business does not match consent business";
+            case CONSENT_VERSION_CONFLICT -> "Consent version conflict during update";
+            case TEMPLATE_VERSION_CONFLICT -> "Template version conflict during update";
+
+            // Cookie and scan errors
+            case EMPTY_ERROR -> "Empty data provided";
+            case INVALID_FORMAT_ERROR -> "Invalid data format";
+            case INVALID_STATE_ERROR -> "Invalid state for operation";
+            case DUPLICATE_ERROR -> "Duplicate resource";
+
+            // Server errors
+            case INTERNAL_ERROR -> "Internal server error";
+            case SCAN_EXECUTION_ERROR -> "Scan execution error";
+            case EXTERNAL_SERVICE_ERROR -> "External service error";
+            case CATEGORIZATION_ERROR -> "Cookie categorization error";
+            case VERSION_INTEGRITY_CHECK_FAILED -> "Version integrity check failed";
+            case REFERENCE_INTEGRITY_VIOLATION -> "Reference integrity violation";
+            case TENANT_ISOLATION_VIOLATION -> "Tenant isolation violation";
+
+            // Business rule violations
+            case TEMPLATE_NOT_UPDATABLE -> "Template not in valid state for update";
+            case TEMPLATE_MULTIPLE_ACTIVE_VERSIONS -> "Multiple active template versions found";
+            case TEMPLATE_UPDATE_DRAFT_NOT_ALLOWED -> "Cannot update draft template - use direct edit instead";
+            case CONSENT_MULTIPLE_ACTIVE_VERSIONS -> "Multiple active consent versions found";
+            case CONCURRENT_VERSION_CREATION -> "Concurrent version creation detected";
+            case IMMUTABLE_FIELD_MODIFICATION -> "Immutable field modification attempted";
+            case UPDATE_FREQUENCY_LIMIT_EXCEEDED -> "Update frequency limit exceeded";
+            case UPDATE_NOT_ALLOWED_BUSINESS_HOURS -> "Update not allowed during business hours";
+
             default -> "Unknown error";
         };
-    }
-
-    /**
-     * Check if error code is related to versioning
-     * @param errorCode The error code to check
-     * @return true if it's a versioning-related error
-     */
-    public static boolean isVersioningError(String errorCode) {
-        return errorCode != null && (
-                errorCode.startsWith("JCMP4") ||
-                        errorCode.startsWith("JCMP5") ||
-                        errorCode.startsWith("JCMP6") ||
-                        errorCode.startsWith("JCMP7") ||
-                        errorCode.startsWith("JCMP8")
-        );
     }
 
     /**
@@ -249,4 +244,7 @@ public final class ErrorCodes {
                 TENANT_ISOLATION_VIOLATION
         };
     }
+
+    // REMOVED: isVersioningError() method that checked for JCMP prefixes
+    // This method was checking for JCMP4, JCMP5, etc. which no longer exist
 }

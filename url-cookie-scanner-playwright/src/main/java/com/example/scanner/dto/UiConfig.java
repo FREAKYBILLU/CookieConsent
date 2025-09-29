@@ -18,11 +18,11 @@ import lombok.NoArgsConstructor;
 public class UiConfig {
 
     @Schema(description = "Logo in Base64", example = "Base64ofPNG")
-    @NotBlank(message = "JCMP1023")
+    @NotBlank(message = "Logo is required and cannot be empty")
     private String logo;
 
     @Schema(description = "Theme", example = "theme-data")
-    @NotBlank(message = "JCMP1024")
+    @NotBlank(message = "Theme is required and cannot be empty")
     private String theme;
 
     @Schema(description = "Dark mode enabled", example = "false")

@@ -28,29 +28,29 @@ import java.util.List;
 public class CreateTemplateRequest {
 
     @Schema(description = "Scan ID from completed cookie scan", example = "550e8400-e29b-41d4-a716-446655440000", required = true)
-    @NotBlank(message = "JCMP1032")
+    @NotBlank(message = "Scan ID is required and must be from a completed scan")
     private String scanId;
 
     @Schema(description = "Name of the template", example = "Template1")
-    @NotBlank(message = "JCMP1010")
+    @NotBlank(message = "Template name is required and cannot be empty")
     private String templateName;
 
     @Schema(description = "Business ID", example = "0c092ed7-e99d-4ef7-8b1f-a3898e788832")
-    @NotBlank(message = "JCMP1011")
+    @NotBlank(message = "Business ID is required and cannot be empty")
     private String businessId;
 
     @Schema(description = "List of preferences")
-    @NotEmpty(message = "JCMP1012")
+    @NotEmpty(message = "At least one preference is required")
     @Valid
     private List<Preference> preferences;
 
     @Schema(description = "Multilingual content")
-    @NotNull(message = "JCMP1013")
+    @NotNull(message = "Multilingual configuration is required")
     @Valid
     private Multilingual multilingual;
 
     @Schema(description = "UI configuration")
-    @NotNull(message = "JCMP1014")
+    @NotNull(message = "UI configuration is required")
     @Valid
     private UiConfig uiConfig;
 

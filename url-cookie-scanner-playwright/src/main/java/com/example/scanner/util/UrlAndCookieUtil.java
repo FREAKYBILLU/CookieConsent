@@ -49,22 +49,6 @@ public class UrlAndCookieUtil {
     }
   }
 
-  public static String normalizeUrl(String url) throws URISyntaxException {
-    URI u = new URI(url);
-    if (u.getHost() == null) throw new URISyntaxException(url, "Host is required");
-    String asciiHost = IDN.toASCII(u.getHost());
-    int port = u.getPort();
-    return new URI(
-            u.getScheme().toLowerCase(Locale.ROOT),
-            u.getUserInfo(),
-            asciiHost.toLowerCase(Locale.ROOT),
-            port,
-            (u.getPath() == null || u.getPath().isEmpty()) ? "/" : u.getPath(),
-            u.getQuery(),
-            u.getFragment()
-    ).toString();
-  }
-
   /**
    * Comprehensive URL validation for cookie consent crawler
    * Validates security, accessibility, and appropriateness for cookie scanning

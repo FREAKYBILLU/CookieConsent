@@ -57,7 +57,6 @@ public class ScanService {
     @Autowired
     private ScanService self;
 
-
     public String startScan(String tenantId, String url, List<String> subdomains)
             throws UrlValidationException, ScanExecutionException {
         log.info("Received request to scan URL: {} with {} subdomains", url, subdomains != null ? subdomains.size() : 0);

@@ -11,9 +11,6 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
-import java.util.Map;
-
 @Repository
 @RequiredArgsConstructor
 @Slf4j
@@ -56,24 +53,4 @@ public class ConsentHandleRepositoryImpl implements ConsentHandleRepository {
         }
     }
 
-    @Override
-    public List<ConsentHandle> findConsentHandleByParams(Map<String, Object> searchParams, String tenantId) {
-        if (tenantId == null) {
-            throw new IllegalStateException("Tenant context is not set");
-        }
-
-        TenantContext.setCurrentTenant(tenantId);
-        try {
-            MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
-            Criteria criteria = new Criteria();
-            for (Map.Entry<String, Object> entry : searchParams.entrySet()) {
-                criteria.and(entry.getKey()).is(entry.getValue());
-            }
-            Query query = new Query(criteria);
-            query.fields().exclude("_id");
-            return tenantMongoTemplate.find(query, ConsentHandle.class);
-        } finally {
-            TenantContext.clear();
-        }
-    }
 }
