@@ -26,15 +26,26 @@ public class Preference {
     @Schema(hidden = true)
     private String preferenceId;
 
-    @Schema(description = "List of purpose IDs for this preference category",
-            example = "essential-cookies, functionality-cookies")
+    @Schema(
+            description = "Comma-separated string of purpose IDs (e.g., 'essential-cookies,functionality-cookies'). This is a single string, not an array.",
+            example = "essential-cookies,functionality-cookies,analytics-cookies",
+            required = true
+    )
     @NotEmpty(message = "Purpose IDs are required for each preference")
     private String purposeIds;
 
-    @Schema(description = "Is this preference mandatory?", example = "false")
+    @Schema(
+            description = "Whether this preference category is mandatory (true) or optional (false)",
+            example = "false",
+            required = true
+    )
     private boolean isMandatory;
 
-    @Schema(description = "Validity of the preference")
+    @Schema(
+            description = "Validity period for this preference",
+            required = true,
+            implementation = Duration.class
+    )
     @NotNull(message = "Preference validity is required")
     @Valid
     private Duration preferenceValidity;

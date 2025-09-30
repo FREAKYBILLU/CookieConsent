@@ -17,17 +17,34 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class DocumentMeta {
 
+    @Schema(
+            description = "Unique document identifier",
+            example = "doc_123e4567-e89b-12d3-a456-426614174000"
+    )
     private String documentId;
 
-    @Schema(description = "Document name", example = "sample-local-pdf.pdf")
+
+    @Schema(
+            description = "Original filename",
+            example = "privacy-policy.pdf"
+    )
     private String name;
 
-    @Schema(description = "Content type", example = "application/pdf")
+    @Schema(
+            description = "MIME type of the document",
+            example = "application/pdf"
+    )
     private String contentType;
 
-    @Schema(description = "Document size in bytes", example = "327467")
+    @Schema(
+            description = "File size in bytes",
+            example = "327467"
+    )
     private Long size;
 
-    @Schema(description = "Tag object")
+    @Schema(
+            description = "Document classification tags",
+            implementation = Tag.class
+    )
     private Tag tag;
 }

@@ -22,11 +22,20 @@ import java.util.Map;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class Multilingual {
 
-    @Schema(description = "Supported languages", example = "[\"ENGLISH\", \"HINDI\"]")
+    @Schema(
+            description = "List of supported languages using LANGUAGE enum values",
+            example = "[\"ASSAMESE, BENGALI, BODO, DOGRI, GUJARATI, HINDI, KANNADA, KASHMIRI,\n" +
+                    "    KONKANI, MAITHILI, MALAYALAM, MANIPURI, MARATHI, NEPALI, ODIA,\n" +
+                    "    PUNJABI, SANSKRIT, SANTALI, SINDHI, TAMIL, TELUGU, URDU, ENGLISH]",
+            required = true
+    )
     @NotEmpty(message = "At least one supported language is required")
     private List<LANGUAGE> supportedLanguages;
 
-    @Schema(description = "Language specific content map")
+    @Schema(
+            description = "Map of language to its specific content. Keys must be LANGUAGE enum values",
+            required = true
+    )
     @NotNull(message = "Language specific content map is required")
     @Valid
     Map<LANGUAGE, LanguageSpecificContent> languageSpecificContentMap;

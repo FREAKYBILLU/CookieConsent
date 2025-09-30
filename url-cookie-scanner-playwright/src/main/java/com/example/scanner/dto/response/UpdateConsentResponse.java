@@ -37,13 +37,22 @@ public class UpdateConsentResponse {
     @Schema(description = "JWT token for the new consent version")
     private String consentJwtToken;
 
-    @Schema(description = "Consent expiry date for the new version")
+    @Schema(
+            description = "New expiry date for updated consent",
+            example = "2026-09-29T10:30:00"
+    )
     private LocalDateTime consentExpiry;
 
-    @Schema(description = "Success message")
+    @Schema(
+            description = "Success message",
+            example = "Consent updated successfully. New version 2 created."
+    )
     private String message;
 
-    @Schema(description = "Timestamp when the update was processed")
+    @Schema(
+            description = "Timestamp of the update",
+            example = "2025-09-29T10:30:00.123Z"
+    )
     private Instant updatedAt;
 
     public static UpdateConsentResponse success(String consentId, String newVersionId,

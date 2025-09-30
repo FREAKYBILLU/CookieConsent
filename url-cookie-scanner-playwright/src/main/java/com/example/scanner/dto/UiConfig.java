@@ -17,35 +17,44 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UiConfig {
 
-    @Schema(description = "Logo in Base64", example = "Base64ofPNG")
+    @Schema(
+            description = "Logo image as Base64 encoded string (PNG/JPG/SVG)",
+            example = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAUA...",
+            required = true
+    )
     @NotBlank(message = "Logo is required and cannot be empty")
     private String logo;
 
-    @Schema(description = "Theme", example = "theme-data")
+
+    @Schema(
+            description = "Theme configuration as JSON string",
+            example = "{\"primaryColor\":\"#0066cc\",\"secondaryColor\":\"#ffffff\",\"fontFamily\":\"Arial\",\"fontSize\":\"14px\"}",
+            required = true
+    )
     @NotBlank(message = "Theme is required and cannot be empty")
     private String theme;
 
-    @Schema(description = "Dark mode enabled", example = "false")
+    @Schema(description = "Enable dark mode", example = "false")
     private boolean darkMode;
 
-    @Schema(description = "Mobile view enabled", example = "true")
+    @Schema(description = "Optimize for mobile devices", example = "true")
     private boolean mobileView;
 
-    @Schema(description = "Parental control enabled", example = "false")
+    @Schema(description = "Enable parental control features", example = "false")
     private boolean parentalControl;
 
-    @Schema(description = "Show data type", example = "true")
+    @Schema(description = "Show data type in UI", example = "true")
     private boolean dataTypeToBeShown;
 
-    @Schema(description = "Show data item", example = "true")
+    @Schema(description = "Show data items in UI", example = "true")
     private boolean dataItemToBeShown;
 
-    @Schema(description = "Show process activity name", example = "true")
+    @Schema(description = "Show process activity names in UI", example = "true")
     private boolean processActivityNameToBeShown;
 
-    @Schema(description = "Show processor name", example = "true")
+    @Schema(description = "Show processor names in UI", example = "true")
     private boolean processorNameToBeShown;
 
-    @Schema(description = "Show validity", example = "true")
+    @Schema(description = "Show validity period in UI", example = "true")
     private boolean validitytoBeShown;
 }

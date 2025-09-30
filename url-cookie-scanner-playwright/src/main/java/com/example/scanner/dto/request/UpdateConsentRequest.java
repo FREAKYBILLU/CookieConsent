@@ -26,17 +26,24 @@ public class UpdateConsentRequest {
     @NotNull(message = "Consent handle ID is required for updates")
     private String consentHandleId;
 
-    @Schema(description = "Updated language preference", example = "en-US")
+    @Schema(
+            description = "Updated language preference - must be one of LANGUAGE enum values",
+            example = "HINDI",
+            allowableValues = {"ASSAMESE", "BENGALI", "BODO", "DOGRI", "GUJARATI", "HINDI", "KANNADA", "KASHMIRI", "KONKANI", "MAITHILI", "MALAYALAM", "MANIPURI", "MARATHI", "NEPALI", "ODIA", "PUNJABI", "SANSKRIT", "SANTALI", "SINDHI", "TAMIL", "TELUGU", "URDU", "ENGLISH"}
+    )
     private String languagePreference;
 
-    @Schema(description = "Updated user preferences with their new choices",
-            example = "{\"analytics\": \"ACCEPTED\", \"marketing\": \"NOTACCEPTED\"}")
+    @Schema(
+            description = "Updated preferences map with new status values",
+            example = "{\"analytics-cookies,marketing-cookies\": \"ACCEPTED\", \"tracking-cookies\": \"NOTACCEPTED\"}"
+    )
     private Map<String, PreferenceStatus> preferencesStatus;
 
-    @Schema(description = "Template version to reference (optional - uses latest if not provided)",
-            example = "2")
+    @Schema(
+            description = "Template version to reference (optional - uses latest if not provided)",
+            example = "2"
+    )
     private Integer templateVersion;
-
     /**
      * Validation method to ensure at least one field is provided for update
      */
