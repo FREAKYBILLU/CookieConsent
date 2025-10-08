@@ -6,6 +6,7 @@ import com.example.scanner.dto.request.CookieUpdateRequest;
 import com.example.scanner.dto.request.ScanRequestDto;
 import com.example.scanner.dto.response.AddCookieResponse;
 import com.example.scanner.dto.response.CookieUpdateResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.ScanStatusResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
@@ -45,17 +46,39 @@ public class ScanController {
   private final CookieService cookieService;
   private final ScanService scanService;
 
-  @Operation(
-          summary = "Start Website Cookie Scan with Protection",
-          description = "Initiates a comprehensive cookie scan with rate limiting and circuit breaker protection. " +
-                  "All subdomains must belong to the same root domain as the main URL. " +
-                  "Returns a transaction ID to track the scan progress. Protected against DoS attacks."
-  )
-  @ApiResponse(responseCode = "200", description = "Scan initiated successfully")
-  @ApiResponse(responseCode = "400", description = "Invalid URL or subdomains provided")
-  @ApiResponse(responseCode = "429", description = "Too many requests - rate limit exceeded")
-  @ApiResponse(responseCode = "503", description = "Service temporarily unavailable")
-  @ApiResponse(responseCode = "500", description = "Failed to initiate scan")
+    @Operation(
+            summary = "Start Website Cookie Scan with Protection",
+            description = "Initiates a comprehensive cookie scan with rate limiting and circuit breaker protection. " +
+                    "All subdomains must belong to the same root domain as the main URL. " +
+                    "Returns a transaction ID to track the scan progress. Protected against DoS attacks.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Scan initiated successfully",
+                            content = @Content(schema = @Schema(implementation = Map.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid URL or subdomains provided",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "429",
+                            description = "Too many requests - rate limit exceeded",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "503",
+                            description = "Service temporarily unavailable",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Failed to initiate scan",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
+    )
   @PostMapping("/scan")
   public ResponseEntity<Map<String, Object>> scanUrl(
           @RequestHeader("X-Tenant-ID") String tenantId,
@@ -108,14 +131,33 @@ public class ScanController {
     }
   }
 
-  @Operation(
-          summary = "Get Scan Status and Results",
-          description = "Retrieves the current status and detailed results of a cookie scan using the transaction ID. " +
-                  "Results include cookies from main URL and all scanned subdomains with subdomain attribution."
-  )
-  @ApiResponse(responseCode = "200", description = "Scan status retrieved successfully")
-  @ApiResponse(responseCode = "400", description = "Invalid transaction ID")
-  @ApiResponse(responseCode = "404", description = "Transaction ID not found")
+    @Operation(
+            summary = "Get Scan Status and Results",
+            description = "Retrieves the current status and detailed results of a cookie scan using the transaction ID. " +
+                    "Results include cookies from main URL and all scanned subdomains with subdomain attribution.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Scan status retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = ScanStatusResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid transaction ID",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Transaction ID not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
+    )
   @GetMapping("/status/{transactionId}")
   public ResponseEntity<ScanStatusResponse> getStatus(
           @RequestHeader("X-Tenant-ID") String tenantId,
@@ -212,18 +254,32 @@ public class ScanController {
     }
   }
 
-  @Operation(
-          summary = "Update Cookie Information",
-          description = "Updates the category, description, domain, privacy policy URL, and expires date for a specific cookie within a scan transaction."
-  )
-  @ApiResponse(
-          responseCode = "200",
-          description = "Cookie updated successfully",
-          content = @Content(schema = @Schema(implementation = CookieUpdateResponse.class))
-  )
-  @ApiResponse(responseCode = "400", description = "Invalid request or cookie not found")
-  @ApiResponse(responseCode = "404", description = "Transaction not found")
-  @ApiResponse(responseCode = "500", description = "Internal server error")
+    @Operation(
+            summary = "Update Cookie Information",
+            description = "Updates the category, description, domain, privacy policy URL, and expires date for a specific cookie within a scan transaction.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Cookie updated successfully",
+                            content = @Content(schema = @Schema(implementation = CookieUpdateResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request or cookie not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Transaction not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
+    )
   @PutMapping("/transaction/{transactionId}/cookie")
   public ResponseEntity<CookieUpdateResponse> updateCookie(
           @RequestHeader("X-Tenant-ID") String tenantId,
@@ -269,11 +325,17 @@ public class ScanController {
     }
   }
 
-  @Operation(
-          summary = "Enhanced Health Check with Protection Status",
-          description = "Enhanced health check that includes circuit breaker state and protection status."
-  )
-  @ApiResponse(responseCode = "200", description = "Service is healthy")
+    @Operation(
+            summary = "Enhanced Health Check with Protection Status",
+            description = "Enhanced health check that includes circuit breaker state and protection status.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Service is healthy",
+                            content = @Content(schema = @Schema(implementation = Map.class))
+                    )
+            }
+    )
   @GetMapping("/health")
   public ResponseEntity<Map<String, Object>> healthCheck() {
     log.debug("Enhanced health check requested");
@@ -304,10 +366,17 @@ public class ScanController {
     return ResponseEntity.ok(healthInfo);
   }
 
-  @Operation(
-          summary = "System Metrics and Performance",
-          description = "Get detailed system metrics including rate limiting and protection status."
-  )
+    @Operation(
+            summary = "System Metrics and Performance",
+            description = "Get detailed system metrics including rate limiting and protection status.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Metrics retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = Map.class))
+                    )
+            }
+    )
   @GetMapping("/metrics")
   public ResponseEntity<Map<String, Object>> getMetrics() {
     Map<String, Object> metrics = new HashMap<>();
@@ -339,19 +408,33 @@ public class ScanController {
     return ResponseEntity.ok(metrics);
   }
 
-  @Operation(
-          summary = "Add Cookie to Scan Transaction",
-          description = "Manually adds a cookie to a specific transaction and subdomain. " +
-                  "The cookie domain must belong to the same root domain as the scanned URL."
-  )
-  @ApiResponse(
-          responseCode = "200",
-          description = "Cookie added successfully",
-          content = @Content(schema = @Schema(implementation = AddCookieResponse.class))
-  )
-  @ApiResponse(responseCode = "400", description = "Invalid request data or duplicate cookie")
-  @ApiResponse(responseCode = "404", description = "Transaction not found")
-  @ApiResponse(responseCode = "500", description = "Internal server error")
+    @Operation(
+            summary = "Add Cookie to Scan Transaction",
+            description = "Manually adds a cookie to a specific transaction and subdomain. " +
+                    "The cookie domain must belong to the same root domain as the scanned URL.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Cookie added successfully",
+                            content = @Content(schema = @Schema(implementation = AddCookieResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request data or duplicate cookie",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Transaction not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
+    )
   @PostMapping("/transaction/{transactionId}/cookies")
   public ResponseEntity<Map<String, Object>> addCookie(
           @RequestHeader("X-Tenant-ID") String tenantId,

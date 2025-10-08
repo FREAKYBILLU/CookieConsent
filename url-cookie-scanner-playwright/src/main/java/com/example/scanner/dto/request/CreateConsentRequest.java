@@ -38,5 +38,5 @@ public class CreateConsentRequest {
     @Schema(description = "Map of purpose IDs to their acceptance status. Key is purpose ID (string), value is status (ACCEPTED/NOTACCEPTED/EXPIRED)",
             example = "{\"essential-cookies\": \"ACCEPTED\", \"analytics-cookies\": \"ACCEPTED\", \"marketing-cookies\": \"NOTACCEPTED\"}",
             implementation = Map.class)
-    private Map<String, PreferenceStatus> preferencesStatus;
+    Map<String, PreferenceStatus> preferencesStatus;
 }

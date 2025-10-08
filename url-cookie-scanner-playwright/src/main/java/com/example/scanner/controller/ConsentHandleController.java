@@ -3,6 +3,7 @@ package com.example.scanner.controller;
 import com.example.scanner.constants.Constants;
 import com.example.scanner.dto.response.ConsentHandleResponse;
 import com.example.scanner.dto.request.CreateHandleRequest;
+import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.GetHandleResponse;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.exception.ScannerException;
@@ -51,11 +52,26 @@ public class ConsentHandleController {
                             example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
             },
             responses = {
-                    @ApiResponse(responseCode = "201", description = "Consent Handle created successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentHandleResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid request or validation failed"),
-                    @ApiResponse(responseCode = "409", description = "Consent handle already exists"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "201",
+                            description = "Consent Handle created successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentHandleResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request or validation failed",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "409",
+                            description = "Consent handle already exists",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<ConsentHandleResponse> createConsentHandle(
@@ -93,11 +109,26 @@ public class ConsentHandleController {
                             example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Consent Handle retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = GetHandleResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid consent handle ID"),
-                    @ApiResponse(responseCode = "404", description = "Consent Handle not found or expired"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent Handle retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = GetHandleResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid consent handle ID",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Consent Handle not found or expired",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<GetHandleResponse> getHandleById(
@@ -112,18 +143,5 @@ public class ConsentHandleController {
         log.info("Successfully retrieved consent handle: {} for tenant: {}", consentHandleId, tenantId);
 
         return new ResponseEntity<>(response, HttpStatus.OK);
-    }
-
-    @GetMapping("/health")
-    @Operation(
-            summary = "Health check for consent handle service",
-            description = "Simple health check endpoint for consent handle management system"
-    )
-    public ResponseEntity<Map<String, String>> healthCheck() {
-        return ResponseEntity.ok(Map.of(
-                "status", "UP",
-                "service", "Consent Handle Management",
-                "timestamp", java.time.Instant.now().toString()
-        ));
     }
 }

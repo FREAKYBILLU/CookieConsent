@@ -39,12 +39,30 @@ public class ConsentTemplateController {
 
     @Operation(
             summary = "Create consent template for completed scan",
-            description = "Creates a consent template linked to a completed cookie scan. The scanId must exist in scan_results table with COMPLETED status."
+            description = "Creates a consent template linked to a completed cookie scan. The scanId must exist in scan_results table with COMPLETED status.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "201",
+                            description = "Template created successfully",
+                            content = @Content(schema = @Schema(implementation = TemplateResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Validation failed, missing tenant header, or scan not completed",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Scan ID not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
     )
-    @ApiResponse(responseCode = "201", description = "Template created successfully")
-    @ApiResponse(responseCode = "400", description = "Validation failed, missing tenant header, or scan not completed")
-    @ApiResponse(responseCode = "404", description = "Scan ID not found")
-    @ApiResponse(responseCode = "500", description = "Internal server error")
     @PostMapping
     public ResponseEntity<?> createTemplate(
             @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
@@ -116,11 +134,30 @@ public class ConsentTemplateController {
 
     @Operation(
             summary = "Get templates by tenant ID with optional scan ID filter",
-            description = "Retrieves consent templates from tenant-specific database."
+            description = "Retrieves consent templates from tenant-specific database.",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Templates retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentTemplate.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid tenant ID or missing header",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "No templates found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
+            }
     )
-    @ApiResponse(responseCode = "200", description = "Templates retrieved successfully")
-    @ApiResponse(responseCode = "400", description = "Invalid tenant ID or missing header")
-    @ApiResponse(responseCode = "404", description = "No templates found")
     @GetMapping("/tenant")
     public ResponseEntity<?> getTemplatesByTenantAndScanId(
             @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
@@ -209,11 +246,26 @@ public class ConsentTemplateController {
                             example = "tpl_123e4567-e89b-12d3-a456-426614174000")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Template updated successfully (new version created)",
-                            content = @Content(schema = @Schema(implementation = UpdateTemplateResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid request or template not found"),
-                    @ApiResponse(responseCode = "422", description = "Template cannot be updated (e.g., not published)"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Template updated successfully (new version created)",
+                            content = @Content(schema = @Schema(implementation = UpdateTemplateResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request or template not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "422",
+                            description = "Template cannot be updated (e.g., not published)",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> updateTemplate(
@@ -265,10 +317,26 @@ public class ConsentTemplateController {
                     @Parameter(name = "templateId", description = "Logical Template ID", required = true)
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Template history retrieved successfully"),
-                    @ApiResponse(responseCode = "400", description = "Invalid template ID"),
-                    @ApiResponse(responseCode = "404", description = "Template not found"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Template history retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentTemplate.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid template ID",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Template not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> getTemplateHistory(
@@ -311,10 +379,26 @@ public class ConsentTemplateController {
                     @Parameter(name = "version", description = "Version number", required = true, example = "2")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Template version retrieved successfully"),
-                    @ApiResponse(responseCode = "400", description = "Invalid template ID or version"),
-                    @ApiResponse(responseCode = "404", description = "Template version not found"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Template version retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentTemplate.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid template ID or version",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Template version not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> getTemplateVersion(

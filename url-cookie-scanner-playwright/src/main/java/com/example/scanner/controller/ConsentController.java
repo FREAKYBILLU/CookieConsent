@@ -5,6 +5,7 @@ import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.ConsentCreateResponse;
 import com.example.scanner.dto.response.ConsentTokenValidateResponse;
+import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.UpdateConsentResponse;
 import com.example.scanner.entity.Consent;
 import com.example.scanner.exception.ConsentException;
@@ -49,11 +50,26 @@ public class ConsentController {
                             example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },
             responses = {
-                    @ApiResponse(responseCode = "201", description = "Consent created successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentCreateResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid request or consent handle not found"),
-                    @ApiResponse(responseCode = "409", description = "Consent handle already used or expired"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "201",
+                            description = "Consent created successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentCreateResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request or consent handle not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "409",
+                            description = "Consent handle already used or expired",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> createConsentByConsentHandleId(
@@ -97,12 +113,31 @@ public class ConsentController {
                             example = "cst_123e4567-e89b-12d3-a456-426614174000")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Consent updated successfully (new version created)",
-                            content = @Content(schema = @Schema(implementation = UpdateConsentResponse.class))),
-                    @ApiResponse(responseCode = "400", description = "Invalid request or consent not found"),
-                    @ApiResponse(responseCode = "409", description = "Consent handle already used or expired"),
-                    @ApiResponse(responseCode = "422", description = "Consent cannot be updated (e.g., expired, wrong customer)"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent updated successfully (new version created)",
+                            content = @Content(schema = @Schema(implementation = UpdateConsentResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request or consent not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "409",
+                            description = "Consent handle already used or expired",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "422",
+                            description = "Consent cannot be updated (e.g., expired, wrong customer)",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> updateConsent(
@@ -154,10 +189,26 @@ public class ConsentController {
                     @Parameter(name = "consentId", description = "Logical Consent ID", required = true)
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Consent history retrieved successfully"),
-                    @ApiResponse(responseCode = "400", description = "Invalid consent ID"),
-                    @ApiResponse(responseCode = "404", description = "Consent not found"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent history retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = Consent.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid consent ID",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Consent not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> getConsentHistory(
@@ -199,10 +250,26 @@ public class ConsentController {
                     @Parameter(name = "version", description = "Version number", required = true, example = "2")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Consent version retrieved successfully"),
-                    @ApiResponse(responseCode = "400", description = "Invalid consent ID or version"),
-                    @ApiResponse(responseCode = "404", description = "Consent version not found"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent version retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = Consent.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid consent ID or version",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Consent version not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<?> getConsentVersion(
@@ -283,10 +350,21 @@ public class ConsentController {
                     @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true, example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },
             responses = {
-                    @ApiResponse(responseCode = "200", description = "Consent token validated successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentTokenValidateResponse.class))),
-                    @ApiResponse(responseCode = "404", description = "Consent token not found"),
-                    @ApiResponse(responseCode = "500", description = "Internal server error")
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent token validated successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentTokenValidateResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Consent token not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    )
             }
     )
     public ResponseEntity<ConsentTokenValidateResponse> validateConsent(@RequestHeader("consent-token") String consentToken) throws Exception {
