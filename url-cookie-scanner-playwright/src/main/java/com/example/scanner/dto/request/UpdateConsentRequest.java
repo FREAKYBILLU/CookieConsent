@@ -1,6 +1,7 @@
 package com.example.scanner.dto.request;
 
 import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -37,7 +38,7 @@ public class UpdateConsentRequest {
             description = "Updated preferences map with new status values",
             example = "{\"analytics-cookies,marketing-cookies\": \"ACCEPTED\", \"tracking-cookies\": \"NOTACCEPTED\"}"
     )
-    private Map<String, PreferenceStatus> preferencesStatus;
+    private Map<Purpose, PreferenceStatus> preferencesStatus;
 
     @Schema(
             description = "Template version to reference (optional - uses latest if not provided)",

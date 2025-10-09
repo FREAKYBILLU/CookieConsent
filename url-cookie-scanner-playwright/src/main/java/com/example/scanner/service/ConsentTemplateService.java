@@ -2,6 +2,7 @@ package com.example.scanner.service;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
+import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.UpdateTemplateRequest;
@@ -11,6 +12,7 @@ import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.TemplateStatus;
 import com.example.scanner.enums.VersionStatus;
+import com.example.scanner.exception.ConsentException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
@@ -41,7 +43,7 @@ public class ConsentTemplateService {
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
         try {
-            Query query = new Query(Criteria.where("scanId").is(scanId));
+            Query query = new Query(Criteria.where("scanId").is(scanId).and("templateStatus").is("ACTIVE"));
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);
         } finally {
@@ -58,6 +60,22 @@ public class ConsentTemplateService {
 
         try {
             Query query = new Query(Criteria.where("templateId").is(templateId));
+            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
+            return Optional.ofNullable(template);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    public Optional<ConsentTemplate> getTemplateByTenantAndTemplateIdAndTemplateVersion(String tenantId, String templateId, int templateVersion) {
+        validateInputs(tenantId, "Tenant ID cannot be null or empty");
+        validateInputs(templateId, "template ID cannot be null or empty");
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("templateId").is(templateId).and("version").is(templateVersion));
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);
         } finally {
@@ -98,7 +116,7 @@ public class ConsentTemplateService {
     }
 
     @Transactional
-    public ConsentTemplate createTemplate(String tenantId, CreateTemplateRequest createRequest) {
+    public ConsentTemplate createTemplate(String tenantId, CreateTemplateRequest createRequest) throws ConsentException {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateCreateRequest(createRequest);
 
@@ -116,6 +134,8 @@ public class ConsentTemplateService {
 
             // Create template from request (using the provided scanId)
             ConsentTemplate template = ConsentTemplate.fromCreateRequest(createRequest, createRequest.getScanId());
+
+            validateTemplatePurposes(template.getPreferences(), template.getStatus());
 
             // Process preferences and set defaults
             processPreferences(template.getPreferences());
@@ -172,9 +192,6 @@ public class ConsentTemplateService {
         LocalDateTime now = LocalDateTime.now();
 
         for (Preference preference : preferences) {
-            if (preference.getPreferenceId() == null || preference.getPreferenceId().isEmpty()) {
-                preference.setPreferenceId(UUID.randomUUID().toString());
-            }
 
             if (preference.getPreferenceStatus() == null) {
                 preference.setPreferenceStatus(PreferenceStatus.NOTACCEPTED);
@@ -260,7 +277,7 @@ public class ConsentTemplateService {
      * @throws IllegalStateException if template is in invalid state for update
      */
     @Transactional
-    public UpdateTemplateResponse updateTemplate(String tenantId, String templateId, UpdateTemplateRequest updateRequest) {
+    public UpdateTemplateResponse updateTemplate(String tenantId, String templateId, UpdateTemplateRequest updateRequest) throws ConsentException {
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -304,6 +321,10 @@ public class ConsentTemplateService {
                     updateRequest.getPrivacyPolicyDocumentMeta() : currentActiveTemplate.getDocumentMeta());
             newTemplate.setPreferences(updateRequest.getPreferences() != null ?
                     updateRequest.getPreferences() : currentActiveTemplate.getPreferences());
+
+            if (updateRequest.getPreferences() != null) {
+                validateTemplatePurposes(newTemplate.getPreferences(), newTemplate.getStatus());
+            }
 
             // Set timestamps
             newTemplate.setCreatedAt(Instant.now());
@@ -450,5 +471,62 @@ public class ConsentTemplateService {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * ✅ UPDATED: Validate template purposes based on template status
+     * DRAFT templates: Preferences are optional
+     * PUBLISHED templates: Preferences are mandatory and must be validated
+     */
+    /**
+     * Validate template purposes structure
+     * - DRAFT templates: No validation, preferences are completely optional
+     * - PUBLISHED templates: Validate preference structure if preferences exist
+     * - Does NOT validate if preferences list is empty (allowed for both DRAFT and PUBLISHED)
+     */
+    private void validateTemplatePurposes(List<Preference> preferences, TemplateStatus status) throws ConsentException {
+        // Empty preferences list is allowed
+        if (preferences == null || preferences.isEmpty()) {
+            log.debug("PUBLISHED template has no preferences - allowed");
+            return;
+        }
+
+        for (Preference preference : preferences) {
+            try {
+                if (preference.getPurpose() == null ) {
+                    throw new ConsentException(
+                            ErrorCodes.INVALID_TEMPLATE,
+                            ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
+                            "Each preference in PUBLISHED template must have at least one purpose"
+                    );
+                }
+
+                // Validate isMandatory is set
+                if (preference.getIsMandatory() == null) {
+                    throw new ConsentException(
+                            ErrorCodes.INVALID_TEMPLATE,
+                            ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
+                            "isMandatory field is required for all preferences in PUBLISHED template"
+                    );
+                }
+
+                log.debug("Preference validation passed for purposes: {}", preference.getPurpose());
+
+            } catch (ConsentException e) {
+                // Re-throw ConsentException as-is
+                log.error("Template preference validation failed: {}", e.getMessage());
+                throw e;
+            } catch (Exception e) {
+                // Convert any other exception to ConsentException
+                log.error("Unexpected error during preference validation", e);
+                throw new ConsentException(
+                        ErrorCodes.INVALID_TEMPLATE,
+                        ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
+                        "Error validating template preferences: " + e.getMessage()
+                );
+            }
+        }
+
+        log.debug("All {} preferences validated successfully for PUBLISHED template", preferences.size());
     }
 }

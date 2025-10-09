@@ -1,6 +1,8 @@
 package com.example.scanner.dto;
 
 import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Purpose;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -14,6 +16,7 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 @Data
 @Builder
@@ -31,15 +34,15 @@ public class Preference {
             example = "essential-cookies,functionality-cookies,analytics-cookies",
             required = true
     )
-    @NotEmpty(message = "Purpose IDs are required for each preference")
-    private String purposeIds;
+    @NotNull(message = "Purpose cannot be null")
+    private Purpose purpose;
 
     @Schema(
             description = "Whether this preference category is mandatory (true) or optional (false)",
             example = "false",
             required = true
     )
-    private boolean isMandatory;
+    private Boolean isMandatory;
 
     @Schema(
             description = "Validity period for this preference",
@@ -51,9 +54,11 @@ public class Preference {
     private Duration preferenceValidity;
 
     @Schema(hidden = true)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     private LocalDateTime startDate;
 
     @Schema(hidden = true)
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     private LocalDateTime endDate;
 
     @Schema(hidden = true)

@@ -482,4 +482,20 @@ public class GlobalExceptionHandler {
                         className.contains("RejectedExecution")
         );
     }
+
+    @ExceptionHandler(ConsentHandleExpiredException.class)
+    public ResponseEntity<ErrorResponse> handleConsentHandleExpired(
+            ConsentHandleExpiredException ex,
+            HttpServletRequest request) {
+
+        ErrorResponse error = new ErrorResponse(
+                ex.getErrorCode(),
+                ex.getMessage(),
+                ex.getDetails(),
+                Instant.now(),
+                "uri=" + request.getRequestURI()
+        );
+
+        return ResponseEntity.status(HttpStatus.GONE).body(error);
+    }
 }

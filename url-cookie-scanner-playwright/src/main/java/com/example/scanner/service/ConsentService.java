@@ -13,6 +13,7 @@ import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.enums.ConsentHandleStatus;
 import com.example.scanner.enums.Period;
 import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Purpose;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
 import com.example.scanner.exception.ConsentException;
@@ -49,6 +50,13 @@ public class ConsentService {
 
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
+
+        // ✅ Validate request has preferences
+        if (request.getPreferencesStatus() == null || request.getPreferencesStatus().isEmpty()) {
+            throw new ConsentException(ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Preferences status cannot be empty");
+        }
 
         // Validate consent handle exists and is valid
         ConsentHandle currentHandle = this.consentHandleRepository.getByConsentHandleId(request.getConsentHandleId(), tenantId);
@@ -103,35 +111,48 @@ public class ConsentService {
         final LocalDateTime[] consentExpiryList = {now};
         List<Preference> updatedPreferences = new ArrayList<>();
 
-        // Process user preferences and update template preferences
-        template.getPreferences().stream()
-                .peek(preference -> {
-                    if (request.getPreferencesStatus().containsKey(preference.getPreferenceId())) {
-                        preference.setPreferenceStatus(request.getPreferencesStatus().get(preference.getPreferenceId()));
-                        preference.setStartDate(now);
-                        LocalDateTime endDate = now;
+        for (Preference preference : template.getPreferences()) {
+            boolean matched = false;
 
-                        // Calculate end date based on preference validity
-                        if (preference.getPreferenceValidity() != null) {
-                            if (preference.getPreferenceValidity().getUnit().equals(Period.YEARS)) {
-                                endDate = endDate.plusYears(preference.getPreferenceValidity().getValue());
-                            } else if (preference.getPreferenceValidity().getUnit().equals(Period.MONTHS)) {
-                                endDate = endDate.plusMonths(preference.getPreferenceValidity().getValue());
-                            } else {
-                                endDate = endDate.plusDays(preference.getPreferenceValidity().getValue());
-                            }
-                        } else {
-                            // Default to 1 year if no validity specified
-                            endDate = endDate.plusYears(1);
-                        }
+            // ✅ Direct check - no inner loop needed
+            if (request.getPreferencesStatus().containsKey(preference.getPurpose())) {
+                // Found a match - apply the status
+                preference.setPreferenceStatus(request.getPreferencesStatus().get(preference.getPurpose()));
+                preference.setStartDate(now);
+                LocalDateTime endDate = now;
 
-                        preference.setEndDate(endDate);
-                        if (endDate.isAfter(consentExpiryList[0])) {
-                            consentExpiryList[0] = endDate;
-                        }
-                        updatedPreferences.add(preference);
+                // Calculate end date based on preference validity
+                if (preference.getPreferenceValidity() != null) {
+                    if (preference.getPreferenceValidity().getUnit().equals(Period.YEARS)) {
+                        endDate = endDate.plusYears(preference.getPreferenceValidity().getValue());
+                    } else if (preference.getPreferenceValidity().getUnit().equals(Period.MONTHS)) {
+                        endDate = endDate.plusMonths(preference.getPreferenceValidity().getValue());
+                    } else {
+                        endDate = endDate.plusDays(preference.getPreferenceValidity().getValue());
                     }
-                });
+                } else {
+                    // Default to 1 year if no validity specified
+                    endDate = endDate.plusYears(1);
+                }
+
+                preference.setEndDate(endDate);
+                if (endDate.isAfter(consentExpiryList[0])) {
+                    consentExpiryList[0] = endDate;
+                }
+                updatedPreferences.add(preference);
+                matched = true;
+            }
+
+            // Handle mandatory preferences
+            if (!matched && preference.getIsMandatory() != null && preference.getIsMandatory()) {
+                log.error("Mandatory preference not provided in request: {}", preference.getPurpose());  // ✅ Changed
+                throw new ConsentException(
+                        ErrorCodes.MISSING_MANDATORY_PREFERENCE,
+                        ErrorCodes.getDescription(ErrorCodes.MISSING_MANDATORY_PREFERENCE),
+                        "Mandatory preference must be provided: " + preference.getPurpose()  // ✅ Changed
+                );
+            }
+        }
 
         LocalDateTime consentExpiry = consentExpiryList[0];
 
@@ -468,17 +489,18 @@ public class ConsentService {
     }
 
     /**
-     * Process preference updates with user's new choices
+     * ✅ UPDATED: Process preference updates with user's new choices using Purpose enum
      */
     private List<Preference> processPreferenceUpdates(List<Preference> templatePreferences,
-                                                      Map<String, PreferenceStatus> userChoices) {
+                                                      Map<Purpose, PreferenceStatus> userChoices) {
         LocalDateTime now = LocalDateTime.now();
 
         return templatePreferences.stream()
                 .peek(preference -> {
-                    if (userChoices.containsKey(preference.getPreferenceId())) {
+                    // ✅ Direct check - no loop needed
+                    if (userChoices.containsKey(preference.getPurpose())) {
                         // Apply user's new choice
-                        preference.setPreferenceStatus(userChoices.get(preference.getPreferenceId()));
+                        preference.setPreferenceStatus(userChoices.get(preference.getPurpose()));
                         preference.setStartDate(now);
 
                         // Recalculate end date based on preference validity

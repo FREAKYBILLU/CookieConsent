@@ -4,6 +4,8 @@ import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.dto.Multilingual;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.UpdateConsentRequest;
+import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Purpose;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -19,6 +21,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Document(collection = "consents")
@@ -188,7 +191,7 @@ public class Consent {
      * Process updated preferences with user's new choices
      */
     private static List<Preference> processUpdatedPreferences(List<Preference> existingPreferences,
-                                                              java.util.Map<String, com.example.scanner.enums.PreferenceStatus> userChoices) {
+                                                              Map<Purpose, PreferenceStatus> userChoices) {
         // Implementation would merge existing preferences with user's new choices
         // This follows the same logic as in ConsentService.createConsentByConsentHandleId
         // but applies updates instead of initial creation

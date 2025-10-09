@@ -8,6 +8,7 @@ import com.example.scanner.dto.response.GetHandleResponse;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.enums.ConsentHandleStatus;
+import com.example.scanner.exception.ConsentHandleExpiredException;
 import com.example.scanner.exception.ScannerException;
 import com.example.scanner.repository.ConsentHandleRepository;
 import lombok.RequiredArgsConstructor;
@@ -112,8 +113,8 @@ public class ConsentHandleService {
             validateNotExpired(consentHandle, tenantId);
 
             // Get template information
-            Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateId(
-                    tenantId, consentHandle.getTemplateId());
+            Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndTemplateVersion(
+                    tenantId, consentHandle.getTemplateId(), consentHandle.getTemplateVersion());
 
             if (templateOpt.isEmpty()) {
                 log.warn("Template not found for consent handle: {}", consentHandleId);
@@ -126,7 +127,7 @@ public class ConsentHandleService {
 
             GetHandleResponse response = GetHandleResponse.builder()
                     .consentHandleId(consentHandle.getConsentHandleId())
-                    .templateId(template.getId())
+                    .templateId(template.getTemplateId())
                     .templateName(template.getTemplateName())
                     .templateVersion(consentHandle.getTemplateVersion())
                     .businessId(consentHandle.getBusinessId())
@@ -165,14 +166,16 @@ public class ConsentHandleService {
         }
     }
 
-    private void validateNotExpired(ConsentHandle handle, String tenantId) throws ScannerException {
+    private void validateNotExpired(ConsentHandle handle, String tenantId) {
         if (handle.isExpired()) {
             handle.setStatus(ConsentHandleStatus.EXPIRED);
             consentHandleRepository.save(handle, tenantId);
 
-            throw new ScannerException(ErrorCodes.NOT_FOUND,
+            throw new ConsentHandleExpiredException(
+                    ErrorCodes.CONSENT_HANDLE_EXPIRED,
                     "Consent handle has expired",
-                    "Consent handle " + handle.getConsentHandleId() + " expired at " + handle.getExpiresAt());
+                    "Consent handle " + handle.getConsentHandleId() + " expired at " + handle.getExpiresAt()
+            );
         }
     }
 }

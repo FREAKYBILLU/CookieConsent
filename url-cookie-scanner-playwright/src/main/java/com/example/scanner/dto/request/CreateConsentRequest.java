@@ -2,6 +2,7 @@ package com.example.scanner.dto.request;
 
 
 import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -38,5 +39,5 @@ public class CreateConsentRequest {
     @Schema(description = "Map of purpose IDs to their acceptance status. Key is purpose ID (string), value is status (ACCEPTED/NOTACCEPTED/EXPIRED)",
             example = "{\"essential-cookies\": \"ACCEPTED\", \"analytics-cookies\": \"ACCEPTED\", \"marketing-cookies\": \"NOTACCEPTED\"}",
             implementation = Map.class)
-    Map<String, PreferenceStatus> preferencesStatus;
+    Map<Purpose, PreferenceStatus> preferencesStatus;
 }

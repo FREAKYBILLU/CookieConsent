@@ -85,6 +85,8 @@ public final class ErrorCodes {
     public static final String IMMUTABLE_FIELD_MODIFICATION = "R4226";
     public static final String UPDATE_FREQUENCY_LIMIT_EXCEEDED = "R4227";
     public static final String UPDATE_NOT_ALLOWED_BUSINESS_HOURS = "R4228";
+    public static final String INVALID_TEMPLATE = "R4229";
+    public static final String MISSING_MANDATORY_PREFERENCE = "MISSING_MANDATORY_PREFERENCE";
 
     // Private constructor to prevent instantiation
     private ErrorCodes() {
@@ -146,6 +148,7 @@ public final class ErrorCodes {
             case CONSENT_HANDLE_BUSINESS_MISMATCH -> "Consent handle business does not match consent business";
             case CONSENT_VERSION_CONFLICT -> "Consent version conflict during update";
             case TEMPLATE_VERSION_CONFLICT -> "Template version conflict during update";
+            case MISSING_MANDATORY_PREFERENCE -> "Mandatory preference must be provided";
 
             // Cookie and scan errors
             case EMPTY_ERROR -> "Empty data provided";

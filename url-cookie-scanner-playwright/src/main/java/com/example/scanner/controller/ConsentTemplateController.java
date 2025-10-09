@@ -7,6 +7,7 @@ import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.TemplateResponse;
 import com.example.scanner.dto.response.UpdateTemplateResponse;
 import com.example.scanner.entity.ConsentTemplate;
+import com.example.scanner.exception.ConsentException;
 import com.example.scanner.service.ConsentTemplateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -297,7 +298,16 @@ public class ConsentTemplateController {
                     e.getMessage(),
                     "/cookie-templates/" + templateId + "/update");
 
-        } catch (Exception e) {
+        } catch (ConsentException e) {
+            log.warn("Business rule violation for template update: {}", e.getMessage());
+            return buildErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY,
+                    ErrorCodes.BUSINESS_RULE_VIOLATION,
+                    "Template cannot be updated",
+                    e.getMessage(),
+                    "/cookie-templates/" + templateId + "/update");
+
+        }
+        catch (Exception e) {
             log.error("Unexpected error updating template: {} in tenant: {}", templateId, tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
