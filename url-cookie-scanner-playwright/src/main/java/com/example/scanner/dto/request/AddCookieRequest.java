@@ -40,8 +40,8 @@ public class AddCookieRequest {
     @Pattern(regexp = "^(?!\\s*$).+", message = "Description GPT cannot contain only whitespace")
     private String description_gpt;
 
-    @NotBlank(message = "Subdomain name is required and cannot be empty or whitespace")
-    private String subdomainName = "main";
+//    @NotBlank(message = "Subdomain name is required and cannot be empty or whitespace")
+//    private String subdomainName = "main";
 
     @URL(message = "Privacy policy URL must be a valid URL")
     private String privacyPolicyUrl;

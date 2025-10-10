@@ -68,7 +68,10 @@ public class TokenUtility {
             return new ConsentTokenValidateResponse("Invalid Consent Token");
         }
 
-        if (!signedJWT.getJWTClaimsSet().getExpirationTime().before(new Date())) {
+        Date now = new Date();
+        Date expirationTime = signedJWT.getJWTClaimsSet().getExpirationTime();
+
+        if (now.after(expirationTime)) {
             return new ConsentTokenValidateResponse("Expired Consent Token");
         }
 

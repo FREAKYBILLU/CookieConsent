@@ -84,7 +84,7 @@ public class ConsentTemplateService {
     }
 
     public Optional<ConsentTemplate> getTemplateByTenantAndTemplateIdAndBusinessId(String tenantId, String templateId,
-                                                                                   String businessId) {
+                                                                                   String businessId, int version) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateInputs(templateId, "template ID cannot be null or empty");
 
@@ -93,7 +93,8 @@ public class ConsentTemplateService {
 
         try {
             Query query = new Query(Criteria.where("templateId").is(templateId).and("businessId").is(businessId)
-                    .and("status").is("PUBLISHED").and("templateStatus").is("ACTIVE"));
+                    .and("status").is("PUBLISHED").and("templateStatus").is("ACTIVE").and("version")
+                    .is(version));
 
             ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
             return Optional.ofNullable(template);

@@ -45,7 +45,7 @@ public class ConsentHandleService {
         TenantContext.setCurrentTenant(tenantId);
 
         try {
-            validateTemplate(tenantId, request.getTemplateId(), headers.get(Constants.BUSINESS_ID_HEADER));
+            validateTemplate(tenantId, request.getTemplateId(), headers.get(Constants.BUSINESS_ID_HEADER), request.getTemplateVersion());
 
             String consentHandleId = UUID.randomUUID().toString();
 
@@ -146,14 +146,14 @@ public class ConsentHandleService {
         }
     }
 
-    private void validateTemplate(String tenantId, String templateId, String businessid) throws ScannerException {
+    private void validateTemplate(String tenantId, String templateId, String businessid, int templateVersion) throws ScannerException {
         // Check if template exists using the existing ConsentTemplateService
-        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndBusinessId(tenantId, templateId, businessid);
+        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndBusinessId(tenantId, templateId, businessid, templateVersion);
 
         if (templateOpt.isEmpty()) {
             throw new ScannerException(ErrorCodes.NOT_FOUND,
                     "Template not found",
-                    "Template with ID " + templateId + " and business Id " + businessid + " with status PUBLISHED and Template Status ACTIVE does not exist for tenant " + tenantId);
+                    "Template with ID " + templateId + " and business Id " + businessid + " and version "+ templateVersion +" with status PUBLISHED and Template Status ACTIVE does not exist for tenant " + tenantId);
         }
 
         ConsentTemplate template = templateOpt.get();

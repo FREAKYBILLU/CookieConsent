@@ -1,5 +1,6 @@
 package com.example.scanner.dto.response;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -41,6 +42,7 @@ public class UpdateConsentResponse {
             description = "New expiry date for updated consent",
             example = "2026-09-29T10:30:00"
     )
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime consentExpiry;
 
     @Schema(
@@ -53,6 +55,7 @@ public class UpdateConsentResponse {
             description = "Timestamp of the update",
             example = "2025-09-29T10:30:00.123Z"
     )
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private Instant updatedAt;
 
     public static UpdateConsentResponse success(String consentId, String newVersionId,

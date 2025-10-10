@@ -456,13 +456,13 @@ public class ScanController {
       throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
     }
 
-    log.info("Received request to add cookie '{}' to transactionId: {} in subdomain: '{}'",
-            addRequest.getName(), transactionId, addRequest.getSubdomainName());
+    log.info("Received request to add cookie '{}' to transactionId: {}",
+            addRequest.getName(), transactionId);
 
     AddCookieResponse response = cookieService.addCookie(tenantId, transactionId, addRequest);
 
-    log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
-            addRequest.getName(), transactionId, addRequest.getSubdomainName());
+    log.info("Successfully added cookie '{}' to transactionId: {}",
+            addRequest.getName(), transactionId);
 
     Map<String, Object> successResponse = new HashMap<>();
     successResponse.put("success", true);

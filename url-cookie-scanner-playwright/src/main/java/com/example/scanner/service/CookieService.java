@@ -35,6 +35,7 @@ import java.util.*;
 public class CookieService {
 
     private static final Logger log = LoggerFactory.getLogger(CookieService.class);
+    private static final String DEFAULT_SUBDOMAIN = "main";
 
     private final MultiTenantMongoConfig mongoConfig;
 
@@ -43,7 +44,7 @@ public class CookieService {
      */
     @Transactional
     public CookieUpdateResponse updateCookie(String tenantId, String transactionId, CookieUpdateRequest updateRequest)
-    throws TransactionNotFoundException, ScanExecutionException, CookieNotFoundException, UrlValidationException {
+            throws TransactionNotFoundException, ScanExecutionException, CookieNotFoundException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
@@ -85,7 +86,7 @@ public class CookieService {
             CookieEntity updatedCookie = findAndUpdateCookie(scanResult, updateRequest, transactionId);
 
             // Save the updated scan result
-            saveScanResult(tenantId,scanResult, transactionId);
+            saveScanResult(tenantId, scanResult, transactionId);
 
             log.info("Successfully updated cookie '{}' for transactionId: {}. Category: {}, Description: {}, Domain: {}, PrivacyPolicyUrl: {}, Expires: {}",
                     updateRequest.getName(), transactionId, updatedCookie.getCategory(), updatedCookie.getDescription(),
@@ -116,7 +117,7 @@ public class CookieService {
         }
     }
 
-    private Optional<ScanResultEntity> findScanResultByTransactionId(String tenantId, String transactionId) throws DataAccessException {  // ADD tenantId
+    private Optional<ScanResultEntity> findScanResultByTransactionId(String tenantId, String transactionId) throws DataAccessException {
         TenantContext.setCurrentTenant(tenantId);
         try {
             MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -171,7 +172,7 @@ public class CookieService {
         String oldDescription = cookie.getDescription();
         String oldDomain = cookie.getDomain();
         String oldPrivacyPolicyUrl = cookie.getPrivacyPolicyUrl();
-        String oldProvider = cookie.getProvider(); // NEW
+        String oldProvider = cookie.getProvider();
         Instant oldExpires = cookie.getExpires();
 
         // Update only if new values are provided and different
@@ -191,7 +192,6 @@ public class CookieService {
         if (updateRequest.getExpires() != null && !updateRequest.getExpires().equals(oldExpires)) {
             cookie.setExpires(updateRequest.getExpires());
         }
-        // NEW: Provider update
         if (updateRequest.getProvider() != null && !updateRequest.getProvider().equals(oldProvider)) {
             cookie.setProvider(updateRequest.getProvider());
         }
@@ -205,8 +205,7 @@ public class CookieService {
         return cookie;
     }
 
-
-    private void saveScanResult(String tenantId, ScanResultEntity scanResult, String transactionId) throws DataAccessException {  // ADD tenantId
+    private void saveScanResult(String tenantId, ScanResultEntity scanResult, String transactionId) throws DataAccessException {
         TenantContext.setCurrentTenant(tenantId);
         try {
             MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -216,9 +215,13 @@ public class CookieService {
         }
     }
 
+    /**
+     * Add a new cookie to a transaction
+     * Note: Cookies are always added to the "main" subdomain
+     */
     @Transactional
     public AddCookieResponse addCookie(String tenantId, String transactionId, AddCookieRequest addRequest)
-    throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
+            throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
         if (transactionId == null || transactionId.trim().isEmpty()) {
             throw new IllegalArgumentException("Transaction ID cannot be null or empty");
@@ -231,8 +234,7 @@ public class CookieService {
             );
         }
 
-        log.info("Adding cookie '{}' to transactionId: {} in subdomain: {}",
-                addRequest.getName(), transactionId, addRequest.getSubdomainName());
+        log.info("Adding cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);
 
         try {
             // Find the scan result by transaction ID
@@ -252,35 +254,30 @@ public class CookieService {
                 );
             }
 
-            // Validate subdomain name
-            String subdomainName = validateAndNormalizeSubdomainName(addRequest.getSubdomainName());
-            addRequest.setSubdomainName(subdomainName);
-
             // Validate cookie domain against scan URL
             validateCookieDomainAgainstScanUrl(scanResult.getUrl(), addRequest.getDomain());
 
-            // Check for duplicate cookie
-            if (cookieExists(scanResult, addRequest)) {
+            // Check for duplicate cookie in the default subdomain
+            if (cookieExistsInSubdomain(scanResult, addRequest, DEFAULT_SUBDOMAIN)) {
                 throw new UrlValidationException(ErrorCodes.DUPLICATE_ERROR,
-                        "Cookie already exists in this subdomain",
-                        "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + subdomainName
+                        "Cookie already exists",
+                        "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + DEFAULT_SUBDOMAIN
                 );
             }
 
             // Create the new cookie entity
             CookieEntity newCookie = createCookieEntityFromRequest(addRequest, scanResult.getUrl());
 
-            // Add cookie to the subdomain group
-            addCookieToSubdomain(scanResult, newCookie, subdomainName);
+            // Add cookie to the default subdomain
+            addCookieToSubdomain(scanResult, newCookie, DEFAULT_SUBDOMAIN);
 
             // Save the updated scan result
             saveScanResult(tenantId, scanResult, transactionId);
 
-            log.info("Successfully added cookie '{}' to transactionId: {} in subdomain: '{}'",
-                    addRequest.getName(), transactionId, subdomainName);
+            log.info("Successfully added cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);
 
             return AddCookieResponse.success(transactionId, addRequest.getName(),
-                    addRequest.getDomain(), subdomainName, addRequest.getProvider());
+                    addRequest.getDomain(), DEFAULT_SUBDOMAIN, addRequest.getProvider());
 
         } catch (TransactionNotFoundException | UrlValidationException e) {
             log.warn("Validation failed for adding cookie '{}' to transactionId: {}: {}",
@@ -294,24 +291,6 @@ public class CookieService {
                     addRequest.getName(), transactionId, e);
             throw new ScanExecutionException("Unexpected error during cookie addition: " + e.getMessage());
         }
-    }
-
-    private String validateAndNormalizeSubdomainName(String subdomainName) throws UrlValidationException {
-        if (subdomainName == null || subdomainName.trim().isEmpty()) {
-            return "main";
-        }
-
-        String normalized = subdomainName.trim().toLowerCase();
-
-        // Validate subdomain name format
-        if (!normalized.matches("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$") && !"main".equals(normalized)) {
-            throw new UrlValidationException(ErrorCodes.INVALID_FORMAT_ERROR,
-                    "Invalid subdomain name format",
-                    "Subdomain name must contain only lowercase letters, numbers, and hyphens: " + subdomainName
-            );
-        }
-
-        return normalized;
     }
 
     private void validateCookieDomainAgainstScanUrl(String scanUrl, String cookieDomain)
@@ -345,13 +324,12 @@ public class CookieService {
         }
     }
 
-    private boolean cookieExists(ScanResultEntity scanResult, AddCookieRequest addRequest) {
+    private boolean cookieExistsInSubdomain(ScanResultEntity scanResult, AddCookieRequest addRequest, String subdomainName) {
         if (scanResult.getCookiesBySubdomain() == null) {
             return false;
         }
 
-        List<CookieEntity> subdomainCookies = scanResult.getCookiesBySubdomain()
-                .get(addRequest.getSubdomainName());
+        List<CookieEntity> subdomainCookies = scanResult.getCookiesBySubdomain().get(subdomainName);
 
         if (subdomainCookies == null) {
             return false;
@@ -397,7 +375,7 @@ public class CookieService {
                 request.getCategory(),
                 request.getDescription(),
                 request.getDescription_gpt(),
-                request.getSubdomainName(),
+                DEFAULT_SUBDOMAIN,  // Always use default subdomain
                 request.getPrivacyPolicyUrl(),
                 request.getProvider()
         );
