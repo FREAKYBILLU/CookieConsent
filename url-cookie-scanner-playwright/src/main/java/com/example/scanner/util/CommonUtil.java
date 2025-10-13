@@ -24,4 +24,40 @@ public class CommonUtil {
         // This regex ensures ONLY valid UUIDs are accepted (36 characters, specific pattern)
         return VALID_TRANSACTION_ID.matcher(transactionId).matches();
     }
+
+    /**
+     * Validate tenant ID
+     */
+    public static void validateTenantId(String tenantId) {
+        if (tenantId == null || tenantId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Tenant ID is required");
+        }
+    }
+
+    /**
+     * Validate template ID
+     */
+    public static void validateTemplateId(String templateId) {
+        if (templateId == null || templateId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Template ID is mandatory");
+        }
+    }
+
+    /**
+     * Validate version number
+     */
+    public static void validateVersion(Integer version) {
+        if (version != null && version <= 0) {
+            throw new IllegalArgumentException("Version must be a positive integer");
+        }
+    }
+
+    /**
+     * Validate date range
+     */
+    public static void validateDateRange(java.time.LocalDateTime startDate, java.time.LocalDateTime endDate) {
+        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
+            throw new IllegalArgumentException("Start date cannot be after end date");
+        }
+    }
 }

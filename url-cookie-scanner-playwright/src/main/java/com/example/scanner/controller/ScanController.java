@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*", allowedHeaders = "*")
+@CrossOrigin(origins = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
 public class ScanController {
 

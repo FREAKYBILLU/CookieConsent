@@ -38,7 +38,8 @@ public class ConsentRepositoryImpl {
     }
 
     public Consent existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
-            String templateId, Integer templateVersion, CustomerIdentifiers customerIdentifiers, String tenantId) {
+            String templateId, Integer templateVersion, CustomerIdentifiers customerIdentifiers, String tenantId,
+            String consentHandleId) {
 
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
@@ -52,7 +53,8 @@ public class ConsentRepositoryImpl {
             criteria.and("templateId").is(templateId)
                     .and("templateVersion").is(templateVersion)
                     .and("customerIdentifiers.type").is(customerIdentifiers.getType())
-                    .and("customerIdentifiers.value").is(customerIdentifiers.getValue());
+                    .and("customerIdentifiers.value").is(customerIdentifiers.getValue())
+                    .and("consentHandleId").is(consentHandleId);
 
             Query query = new Query(criteria);
             return tenantMongoTemplate.findOne(query, Consent.class);

@@ -1,15 +1,20 @@
 package com.example.scanner.service;
 
+import com.example.scanner.config.MultiTenantMongoConfig;
+import com.example.scanner.config.TenantContext;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateConsentRequest;
+import com.example.scanner.dto.request.DashboardRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.ConsentCreateResponse;
 import com.example.scanner.dto.response.ConsentTokenValidateResponse;
+import com.example.scanner.dto.response.DashboardResponse;
 import com.example.scanner.dto.response.UpdateConsentResponse;
 import com.example.scanner.entity.Consent;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
+import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.*;
 import com.example.scanner.exception.ConsentException;
 import com.example.scanner.repository.ConsentHandleRepository;
@@ -22,6 +27,10 @@ import com.google.gson.GsonBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ObjectUtils;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +49,7 @@ public class ConsentService {
     private final ConsentTemplateService templateService;
     private final TokenUtility tokenUtility;
     private final ConsentRepositoryImpl consentRepositoryImpl;
+    private final MultiTenantMongoConfig mongoConfig;
 
     // ============================================
     // PUBLIC API METHODS
@@ -61,7 +71,7 @@ public class ConsentService {
         // Check for existing consent
         Consent existingConsent = consentRepositoryImpl.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
                 consentHandle.getTemplateId(), consentHandle.getTemplateVersion(),
-                consentHandle.getCustomerIdentifiers(), tenantId);
+                consentHandle.getCustomerIdentifiers(), tenantId, request.getConsentHandleId());
 
         if (existingConsent != null) {
             log.info("Consent already exists for template: {}", consentHandle.getTemplateId());
@@ -444,6 +454,165 @@ public class ConsentService {
                 newVersion.getConsentId(), newVersion.getId(), newVersion.getVersion(),
                 active.getVersion(), token, newVersion.getEndDate()
         );
+    }
+
+    /**
+     * Dashboard API: Fetch consents with filters
+     * Validates all inputs and enriches response with scan and template data
+     */
+    public List<DashboardResponse> getDashboardData(String tenantId, DashboardRequest request)
+            throws ConsentException {
+
+        log.info("Processing dashboard request for tenant: {}, templateID: {}", tenantId, request.getTemplateID());
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            // Build query with filters
+            Criteria criteria = Criteria.where("templateId").is(request.getTemplateID())
+                    .and("consentStatus").is(VersionStatus.ACTIVE); // Only fetch active versions
+
+            // Optional: Filter by template version
+            if (request.getVersion() != null) {
+                criteria.and("templateVersion").is(request.getVersion());
+            }
+
+            // Optional: Filter by start date
+            if (request.getStartDate() != null) {
+                criteria.and("startDate").gte(request.getStartDate());
+            }
+
+            // Optional: Filter by end date
+            if (request.getEndDate() != null) {
+                criteria.and("endDate").lte(request.getEndDate());
+            }
+
+            // Optional: Filter by status
+            if (request.getStatus() != null) {
+                criteria.and("status").is(request.getStatus());
+            }
+
+            Query query = new Query(criteria);
+            query.with(Sort.by(Sort.Direction.DESC, "createdAt")); // Latest first
+
+            List<Consent> consents = mongoTemplate.find(query, Consent.class);
+
+            if (consents.isEmpty()) {
+                log.info("No consents found for templateID: {} with given filters", request.getTemplateID());
+                return List.of();
+            }
+
+            log.info("Found {} consents for templateID: {}", consents.size(), request.getTemplateID());
+
+            // Map to response DTOs with enriched data
+            List<DashboardResponse> responses = consents.stream()
+                    .map(consent -> {
+                        try {
+                            return mapToResponse(consent, tenantId, request.getScanID(), mongoTemplate);
+                        } catch (Exception e) {
+                            log.error("Error mapping consent {} to response: {}", consent.getConsentId(), e.getMessage());
+                            return null;
+                        }
+                    })
+                    .filter(response -> response != null) // Remove null responses
+                    .toList();
+
+            log.info("Successfully mapped {} consent records for dashboard", responses.size());
+            return responses;
+
+        } catch (Exception e) {
+            log.error("Unexpected error fetching dashboard data for tenant: {}, templateID: {}",
+                    tenantId, request.getTemplateID(), e);
+            throw new ConsentException(
+                    ErrorCodes.INTERNAL_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
+                    "Failed to fetch dashboard data: " + e.getMessage()
+            );
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Map Consent to DashboardResponse with enriched data from Template, Handle, and Scan
+     */
+    private DashboardResponse mapToResponse(Consent consent, String tenantId, String scanIDFilter,
+                                            MongoTemplate mongoTemplate) {
+
+        try {
+            // Get ConsentHandle
+            Query handleQuery = new Query(Criteria.where("consentHandleId").is(consent.getConsentHandleId()));
+            ConsentHandle handle = mongoTemplate.findOne(handleQuery, ConsentHandle.class);
+
+            if (handle == null) {
+                log.warn("ConsentHandle not found for consentHandleId: {}", consent.getConsentHandleId());
+            }
+
+            // Get Template to fetch scanId
+            Query templateQuery = new Query(Criteria.where("templateId").is(consent.getTemplateId())
+                    .and("version").is(consent.getTemplateVersion()));
+            ConsentTemplate template = mongoTemplate.findOne(templateQuery, ConsentTemplate.class);
+
+            String scanId = template != null ? template.getScanId() : null;
+
+            // Apply scanID filter if provided
+            if (scanIDFilter != null && !scanIDFilter.trim().isEmpty()) {
+                if (scanId == null || !scanId.equals(scanIDFilter)) {
+                    return null; // Skip this consent
+                }
+            }
+
+            // Get Scan Result for URL and subdomains
+            String scannedSite = null;
+            List<String> subDomains = null;
+
+            if (scanId != null) {
+                Query scanQuery = new Query(Criteria.where("transactionId").is(scanId));
+                ScanResultEntity scanResult = mongoTemplate.findOne(scanQuery, ScanResultEntity.class);
+
+                if (scanResult != null) {
+                    scannedSite = scanResult.getUrl();
+
+                    // Extract subdomains (exclude 'main')
+                    if (scanResult.getCookiesBySubdomain() != null && !scanResult.getCookiesBySubdomain().isEmpty()) {
+                        subDomains = scanResult.getCookiesBySubdomain().keySet().stream()
+                                .filter(subdomain -> !"main".equalsIgnoreCase(subdomain))
+                                .sorted()
+                                .toList();
+                    }
+                } else {
+                    log.warn("ScanResult not found for scanId: {}", scanId);
+                }
+            }
+
+            // Extract cookie categories from preferences
+            List<String> categories = List.of();
+            if (consent.getPreferences() != null && !consent.getPreferences().isEmpty()) {
+                categories = consent.getPreferences().stream()
+                        .filter(pref -> pref.getPurpose() != null)
+                        .map(pref -> pref.getPurpose().toString())
+                        .distinct()
+                        .sorted()
+                        .toList();
+            }
+
+            return DashboardResponse.builder()
+                    .consentID(consent.getConsentId())
+                    .consentHandle(consent.getConsentHandleId())
+                    .startDate(consent.getStartDate())
+                    .endDate(consent.getEndDate())
+                    .cookieCategory(categories)
+                    .scannedSite(scannedSite)
+                    .subDomain(subDomains != null ? subDomains : List.of())
+                    .status(consent.getStatus())
+                    .version(consent.getTemplateVersion())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error enriching consent data for consentId: {}", consent.getConsentId(), e);
+            throw new RuntimeException("Failed to enrich consent data: " + e.getMessage());
+        }
     }
 
     private LocalDateTime calculatePreferenceEndDate(LocalDateTime start,
