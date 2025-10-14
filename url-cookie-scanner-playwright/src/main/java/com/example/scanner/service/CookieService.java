@@ -15,6 +15,7 @@ import com.example.scanner.exception.ScanExecutionException;
 import com.example.scanner.exception.TransactionNotFoundException;
 import com.example.scanner.exception.UrlValidationException;
 import com.example.scanner.util.UrlAndCookieUtil;
+import com.example.scanner.util.SubdomainValidationUtil;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -184,7 +185,14 @@ public class CookieService {
         }
         if (updateRequest.getDomain() != null && !updateRequest.getDomain().equals(oldDomain)) {
             validateCookieDomainAgainstScanUrl(scanResult.getUrl(), updateRequest.getDomain());
+
+            // Extract subdomain from new domain and validate
+            String rootDomain = UrlAndCookieUtil.extractRootDomain(scanResult.getUrl());
+            String newSubdomainName = SubdomainValidationUtil.extractSubdomainName(updateRequest.getDomain(), rootDomain);
+            validateSubdomainExistsInScan(scanResult, newSubdomainName, updateRequest.getDomain());
+
             cookie.setDomain(updateRequest.getDomain());
+            cookie.setSubdomainName(newSubdomainName);
         }
         if (updateRequest.getPrivacyPolicyUrl() != null && !updateRequest.getPrivacyPolicyUrl().equals(oldPrivacyPolicyUrl)) {
             cookie.setPrivacyPolicyUrl(updateRequest.getPrivacyPolicyUrl());
@@ -217,7 +225,6 @@ public class CookieService {
 
     /**
      * Add a new cookie to a transaction
-     * Note: Cookies are always added to the "main" subdomain
      */
     @Transactional
     public AddCookieResponse addCookie(String tenantId, String transactionId, AddCookieRequest addRequest)
@@ -257,19 +264,26 @@ public class CookieService {
             // Validate cookie domain against scan URL
             validateCookieDomainAgainstScanUrl(scanResult.getUrl(), addRequest.getDomain());
 
-            // Check for duplicate cookie in the default subdomain
-            if (cookieExistsInSubdomain(scanResult, addRequest, DEFAULT_SUBDOMAIN)) {
+            // Extract subdomain from cookie domain
+            String rootDomain = UrlAndCookieUtil.extractRootDomain(scanResult.getUrl());
+            String subdomainName = SubdomainValidationUtil.extractSubdomainName(addRequest.getDomain(), rootDomain);
+
+            // Validate subdomain exists in scan result
+            validateSubdomainExistsInScan(scanResult, subdomainName, addRequest.getDomain());
+
+            // Check for duplicate cookie in the extracted subdomain
+            if (cookieExistsInSubdomain(scanResult, addRequest, subdomainName)) {
                 throw new UrlValidationException(ErrorCodes.DUPLICATE_ERROR,
                         "Cookie already exists",
-                        "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + DEFAULT_SUBDOMAIN
+                        "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + subdomainName
                 );
             }
 
             // Create the new cookie entity
-            CookieEntity newCookie = createCookieEntityFromRequest(addRequest, scanResult.getUrl());
+            CookieEntity newCookie = createCookieEntityFromRequest(addRequest, scanResult.getUrl(), subdomainName);
 
-            // Add cookie to the default subdomain
-            addCookieToSubdomain(scanResult, newCookie, DEFAULT_SUBDOMAIN);
+            // Add cookie to the extracted subdomain
+            addCookieToSubdomain(scanResult, newCookie, subdomainName);
 
             // Save the updated scan result
             saveScanResult(tenantId, scanResult, transactionId);
@@ -277,7 +291,7 @@ public class CookieService {
             log.info("Successfully added cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);
 
             return AddCookieResponse.success(transactionId, addRequest.getName(),
-                    addRequest.getDomain(), DEFAULT_SUBDOMAIN, addRequest.getProvider());
+                    addRequest.getDomain(), subdomainName, addRequest.getProvider());
 
         } catch (TransactionNotFoundException | UrlValidationException e) {
             log.warn("Validation failed for adding cookie '{}' to transactionId: {}: {}",
@@ -324,6 +338,27 @@ public class CookieService {
         }
     }
 
+    /**
+     * Validates that the extracted subdomain exists in the scan result
+     */
+    private void validateSubdomainExistsInScan(ScanResultEntity scanResult, String subdomainName, String cookieDomain)
+            throws UrlValidationException {
+
+        if (scanResult.getCookiesBySubdomain() == null ||
+                !scanResult.getCookiesBySubdomain().containsKey(subdomainName)) {
+
+            throw new UrlValidationException(
+                    ErrorCodes.INVALID_FORMAT_ERROR,
+                    "Subdomain was not part of the original scan",
+                    String.format("Cookie domain '%s' (subdomain: '%s') was not scanned. " +
+                                    "Only cookies for scanned domains can be added/updated.",
+                            cookieDomain, subdomainName)
+            );
+        }
+
+        log.debug("Subdomain validation passed: {} exists in scan", subdomainName);
+    }
+
     private boolean cookieExistsInSubdomain(ScanResultEntity scanResult, AddCookieRequest addRequest, String subdomainName) {
         if (scanResult.getCookiesBySubdomain() == null) {
             return false;
@@ -342,7 +377,7 @@ public class CookieService {
                 );
     }
 
-    private CookieEntity createCookieEntityFromRequest(AddCookieRequest request, String scanUrl) {
+    private CookieEntity createCookieEntityFromRequest(AddCookieRequest request, String scanUrl, String subdomainName) {
         // Parse enums
         SameSite sameSite = null;
         if (request.getSameSite() != null) {
@@ -375,7 +410,7 @@ public class CookieService {
                 request.getCategory(),
                 request.getDescription(),
                 request.getDescription_gpt(),
-                DEFAULT_SUBDOMAIN,  // Always use default subdomain
+                subdomainName,
                 request.getPrivacyPolicyUrl(),
                 request.getProvider()
         );

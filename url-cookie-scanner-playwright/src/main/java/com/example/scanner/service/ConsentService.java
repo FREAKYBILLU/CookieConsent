@@ -456,10 +456,6 @@ public class ConsentService {
         );
     }
 
-    /**
-     * Dashboard API: Fetch consents with filters
-     * Validates all inputs and enriches response with scan and template data
-     */
     public List<DashboardResponse> getDashboardData(String tenantId, DashboardRequest request)
             throws ConsentException {
 

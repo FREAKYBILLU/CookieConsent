@@ -398,9 +398,10 @@ public class ScanService {
                     }
 
                     // PHASE 9: IFRAME PROCESSING
+                    // PHASE 9: IFRAME PROCESSING
                     scanMetrics.setScanPhase("IFRAME_DETECTION_" + targetSubdomainName.toUpperCase());
                     log.info("=== PHASE 7: Enhanced iframe/embed detection for {} ===", targetSubdomainName);
-                    handleIframes(context, targetUrl, discoveredCookies, transactionId, tenantId);
+                    handleIframes(context, targetUrl, discoveredCookies, transactionId, tenantId, targetSubdomainName);
                     log.info("Completed COMPREHENSIVE scanning of {}: {} (Total cookies: {})",
                             targetSubdomainName, targetUrl, discoveredCookies.size());
 
@@ -415,6 +416,23 @@ public class ScanService {
             log.info("=== SINGLE FINAL CAPTURE ===");
             page.waitForTimeout(1000);
             captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics, tenantId);
+
+            log.info("=== ENSURING ALL SCANNED SUBDOMAINS ARE SAVED IN DB ===");
+            ScanResultEntity finalResult = findScanResultFromTenant(tenantId, transactionId);
+            if (finalResult.getCookiesBySubdomain() == null) {
+                finalResult.setCookiesBySubdomain(new HashMap<>());
+            }
+
+            for (ScanTarget target : allTargetsToScan) {
+                String subdomainName = target.subdomainName;
+                // Add entry for subdomain if it doesn't exist (even with empty list)
+                finalResult.getCookiesBySubdomain().computeIfAbsent(subdomainName, k -> new ArrayList<>());
+                log.debug("Ensured subdomain '{}' exists in DB", subdomainName);
+            }
+
+            saveScanResultToTenant(tenantId, finalResult);
+            log.info("Successfully saved all {} scanned subdomains to DB", allTargetsToScan.size());
+
             log.info("MAXIMUM DETECTION scan completed. Total unique cookies: {}, Network requests: {}, Targets scanned: {}",
                     discoveredCookies.size(), processedUrls.size(), allTargetsToScan.size());
 
@@ -439,26 +457,27 @@ public class ScanService {
     }
 
     private void handleIframes(BrowserContext context, String url, Map<String, CookieDto> discoveredCookies,
-                                    String transactionId, String tenantId) {
+                               String transactionId, String tenantId, String subdomainName) {
         try {
-            // Simple: Just capture cookies from any existing frames
             List<Cookie> allContextCookies = context.cookies();
 
             for (Cookie cookie : allContextCookies) {
-                // Process only if not already captured
-                String cookieKey = generateCookieKey(cookie.name, cookie.domain, "main");
+                // FIX: Use proper subdomain name
+                String cookieKey = generateCookieKey(cookie.name, cookie.domain, subdomainName);
+
                 if (!discoveredCookies.containsKey(cookieKey)) {
                     CookieDto cookieDto = mapPlaywrightCookie(cookie, url, UrlAndCookieUtil.extractRootDomain(url));
+                    cookieDto.setSubdomainName(subdomainName);
+
                     discoveredCookies.put(cookieKey, cookieDto);
-                    // Save cookie
                     saveIncrementalCookieWithFlush(tenantId, transactionId, cookieDto);
                 }
             }
 
-            log.debug("Captured {} iframe cookies", allContextCookies.size());
+            log.debug("Captured {} iframe cookies for subdomain: {}", allContextCookies.size(), subdomainName);
 
         } catch (Exception e) {
-            log.warn("Error capturing iframe cookies: {}", e.getMessage());
+            log.warn("Error capturing iframe cookies for subdomain {}: {}", subdomainName, e.getMessage());
         }
     }
 
