@@ -498,4 +498,57 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.GONE).body(error);
     }
+
+    @ExceptionHandler(ConsentException.class)
+    public ResponseEntity<ErrorResponse> handleConsentException(
+            ConsentException ex,
+            WebRequest request) {
+
+        log.warn("Consent operation failed: {} - {}", ex.getErrorCode(), ex.getUserMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                ex.getErrorCode(),
+                ex.getUserMessage(),
+                ex.getDeveloperDetails(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        // Map error code to appropriate HTTP status
+        HttpStatus status = mapErrorCodeToHttpStatus(ex.getErrorCode());
+
+        return ResponseEntity.status(status).body(error);
+    }
+
+    /**
+     * Map consent error codes to appropriate HTTP status codes
+     */
+    private HttpStatus mapErrorCodeToHttpStatus(String errorCode) {
+        return switch (errorCode) {
+            // 400 Bad Request - Validation errors
+            case ErrorCodes.VALIDATION_ERROR,
+                 ErrorCodes.MANDATORY_PREFERENCE_REJECTED,
+                 ErrorCodes.MISSING_MANDATORY_PREFERENCE -> HttpStatus.BAD_REQUEST;
+
+            // 404 Not Found
+            case ErrorCodes.CONSENT_HANDLE_NOT_FOUND,
+                 ErrorCodes.CONSENT_NOT_FOUND,
+                 ErrorCodes.TEMPLATE_NOT_FOUND -> HttpStatus.NOT_FOUND;
+
+            // 409 Conflict
+            case ErrorCodes.CONSENT_HANDLE_ALREADY_USED -> HttpStatus.CONFLICT;
+
+            // 410 Gone
+            case ErrorCodes.CONSENT_HANDLE_EXPIRED -> HttpStatus.GONE;
+
+            // 422 Unprocessable Entity - Business rule violations
+            case ErrorCodes.BUSINESS_RULE_VIOLATION,
+                 ErrorCodes.CONSENT_CANNOT_UPDATE_EXPIRED,
+                 ErrorCodes.CONSENT_HANDLE_CUSTOMER_MISMATCH,
+                 ErrorCodes.CONSENT_HANDLE_BUSINESS_MISMATCH -> HttpStatus.UNPROCESSABLE_ENTITY;
+
+            // 500 Internal Server Error - Default fallback
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
+        };
+    }
 }

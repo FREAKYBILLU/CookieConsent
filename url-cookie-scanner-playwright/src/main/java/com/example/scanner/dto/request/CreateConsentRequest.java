@@ -5,6 +5,7 @@ import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
@@ -36,8 +37,11 @@ public class CreateConsentRequest {
                     "PUNJABI", "SANSKRIT", "SANTALI", "SINDHI", "TAMIL", "TELUGU", "URDU", "ENGLISH"})
     private String languagePreference;
 
-    @Schema(description = "Map of purpose IDs to their acceptance status. Key is purpose ID (string), value is status (ACCEPTED/NOTACCEPTED/EXPIRED)",
-            example = "{\"essential-cookies\": \"ACCEPTED\", \"analytics-cookies\": \"ACCEPTED\", \"marketing-cookies\": \"NOTACCEPTED\"}",
-            implementation = Map.class)
+    @Schema(
+            description = "Map of purpose IDs to their acceptance status",
+            example = "{\"NECESSARY\": \"ACCEPTED\", \"ANALYTICS\": \"ACCEPTED\", \"ADVERTISEMENT\": \"NOTACCEPTED\"" +
+                    ", \"FUNCTIONAL\": \"NOTACCEPTED\", \"OTHERS\": \"NOTACCEPTED\"}",
+            required = true
+    )
     Map<Purpose, PreferenceStatus> preferencesStatus;
 }

@@ -35,8 +35,9 @@ public class UpdateConsentRequest {
     private String languagePreference;
 
     @Schema(
-            description = "Updated preferences map with new status values",
-            example = "{\"analytics-cookies,marketing-cookies\": \"ACCEPTED\", \"tracking-cookies\": \"NOTACCEPTED\"}"
+            description = "Updated preferences map with new status values. Keys are Purpose enum values, values are PreferenceStatus enum values.",
+            example = "{\"NECESSARY\": \"ACCEPTED\", \"ANALYTICS\": \"ACCEPTED\", \"ADVERTISEMENT\": \"NOTACCEPTED\", \"FUNCTIONAL\": \"ACCEPTED\"" +
+                    ", \"OTHERS\": \"ACCEPTED\"}"
     )
     private Map<Purpose, PreferenceStatus> preferencesStatus;
 

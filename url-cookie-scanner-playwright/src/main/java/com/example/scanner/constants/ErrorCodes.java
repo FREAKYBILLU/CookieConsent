@@ -46,6 +46,9 @@ public final class ErrorCodes {
     public static final String CONSENT_NOT_FOUND = "R4047";
     public static final String CONSENT_VERSION_NOT_FOUND = "R4048";
     public static final String CONSENT_NO_ACTIVE_VERSION = "R4049";
+    public static final String MANDATORY_PREFERENCE_REJECTED = "R4230";
+    public static final String INCOMPLETE_PREFERENCES = "INCOMPLETE_PREFERENCES";
+
 
     // ==== HTTP METHOD ERRORS (R4051-R4059) ====
     public static final String METHOD_NOT_ALLOWED = "R4051";
@@ -120,6 +123,7 @@ public final class ErrorCodes {
             case PURPOSE_IDS_REQUIRED -> "Purpose IDs are required for each preference";
             case PREFERENCE_VALIDITY_REQUIRED -> "Preference validity is required";
             case PROCESSOR_ACTIVITY_IDS_REQUIRED -> "Processor activity IDs are required for each preference";
+            case INCOMPLETE_PREFERENCES -> "Request must contain all template preferences";
 
             // Permission errors
             case INSUFFICIENT_PERMISSIONS -> "Insufficient permissions for operation";
@@ -164,6 +168,7 @@ public final class ErrorCodes {
             case VERSION_INTEGRITY_CHECK_FAILED -> "Version integrity check failed";
             case REFERENCE_INTEGRITY_VIOLATION -> "Reference integrity violation";
             case TENANT_ISOLATION_VIOLATION -> "Tenant isolation violation";
+            case MANDATORY_PREFERENCE_REJECTED -> "Mandatory preferences cannot be rejected";
 
             // Business rule violations
             case TEMPLATE_NOT_UPDATABLE -> "Template not in valid state for update";

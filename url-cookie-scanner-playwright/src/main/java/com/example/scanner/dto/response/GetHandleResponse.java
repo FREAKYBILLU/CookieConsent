@@ -2,7 +2,6 @@ package com.example.scanner.dto.response;
 
 import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.dto.Multilingual;
-import com.example.scanner.dto.Preference;
 import com.example.scanner.enums.ConsentHandleStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -43,26 +42,31 @@ public class GetHandleResponse {
             example = "1"
     )
     private int templateVersion;
+
     @Schema(
             description = "Business ID",
             example = "0c092ed7-e99d-4ef7-8b1f-a3898e788832"
     )
     private String businessId;
+
     @Schema(
             description = "Multilingual content configuration",
             implementation = Multilingual.class
     )
     private Multilingual multilingual;
+
     @Schema(
-            description = "List of preference configurations",
-            implementation = Preference.class
+            description = "List of preference configurations with associated cookies",
+            implementation = PreferenceWithCookies.class
     )
-    private List<Preference> preferences;
+    private List<PreferenceWithCookies> preferences;
+
     @Schema(
             description = "Customer identification details",
             implementation = CustomerIdentifiers.class
     )
     private CustomerIdentifiers customerIdentifiers;
+
     @Schema(
             description = "Current status of the handle",
             example = "ACTIVE"

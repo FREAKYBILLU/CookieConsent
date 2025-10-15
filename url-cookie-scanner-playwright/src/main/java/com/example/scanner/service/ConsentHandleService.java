@@ -1,12 +1,17 @@
 package com.example.scanner.service;
 
+import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
 import com.example.scanner.constants.Constants;
 import com.example.scanner.constants.ErrorCodes;
+import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateHandleRequest;
 import com.example.scanner.dto.response.GetHandleResponse;
+import com.example.scanner.dto.response.PreferenceWithCookies;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
+import com.example.scanner.entity.CookieEntity;
+import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.ConsentHandleStatus;
 import com.example.scanner.exception.ConsentHandleExpiredException;
 import com.example.scanner.exception.ScannerException;
@@ -15,12 +20,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
 
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +36,7 @@ public class ConsentHandleService {
 
     private final ConsentHandleRepository consentHandleRepository;
     private final ConsentTemplateService consentTemplateService;
+    private final MultiTenantMongoConfig mongoConfig;
 
     @Value("${consent.handle.expiry.minutes:15}")
     private int handleExpiryMinutes;
@@ -101,7 +109,11 @@ public class ConsentHandleService {
                     "Missing tenant ID for consent handle retrieval");
         }
 
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
         try {
+            // Fetch consent handle
             ConsentHandle consentHandle = this.consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
             if (ObjectUtils.isEmpty(consentHandle)) {
                 log.warn("Consent handle not found: {}", consentHandleId);
@@ -125,6 +137,19 @@ public class ConsentHandleService {
 
             ConsentTemplate template = templateOpt.get();
 
+            // STEP 1: Fetch cookies from scan results
+            Map<String, List<CookieEntity>> cookiesByCategory = fetchAndCategorizeCookies(
+                    template.getScanId(),
+                    mongoTemplate
+            );
+
+            // STEP 2: Create PreferenceWithCookies by matching purpose with cookie category
+            List<PreferenceWithCookies> preferencesWithCookies = mapCookiesToPreferences(
+                    template.getPreferences(),
+                    cookiesByCategory
+            );
+
+            // STEP 3: Build response
             GetHandleResponse response = GetHandleResponse.builder()
                     .consentHandleId(consentHandle.getConsentHandleId())
                     .templateId(template.getTemplateId())
@@ -132,18 +157,93 @@ public class ConsentHandleService {
                     .templateVersion(consentHandle.getTemplateVersion())
                     .businessId(consentHandle.getBusinessId())
                     .multilingual(template.getMultilingual())
-                    .preferences(template.getPreferences())
+                    .preferences(preferencesWithCookies)  // Use the new wrapper
                     .customerIdentifiers(consentHandle.getCustomerIdentifiers())
                     .status(consentHandle.getStatus())
                     .build();
 
-            log.info("Retrieved consent handle: {} for tenant: {}", consentHandleId, tenantId);
+            log.info("Retrieved consent handle: {} with {} preferences and cookies for tenant: {}",
+                    consentHandleId, preferencesWithCookies.size(), tenantId);
 
             return response;
 
         } finally {
             TenantContext.clear();
         }
+    }
+
+    /**
+     * Fetch all cookies from scan result and group them by category
+     */
+    private Map<String, List<CookieEntity>> fetchAndCategorizeCookies(
+            String scanId,
+            MongoTemplate mongoTemplate) {
+
+        if (scanId == null || scanId.trim().isEmpty()) {
+            log.warn("No scanId provided, returning empty cookie map");
+            return Collections.emptyMap();
+        }
+
+        try {
+            // Fetch scan result
+            Query query = new Query(Criteria.where("transactionId").is(scanId));
+            ScanResultEntity scanResult = mongoTemplate.findOne(query, ScanResultEntity.class);
+
+            if (scanResult == null || scanResult.getCookiesBySubdomain() == null) {
+                log.warn("No scan result or cookies found for scanId: {}", scanId);
+                return Collections.emptyMap();
+            }
+
+            // Flatten all cookies from all subdomains
+            List<CookieEntity> allCookies = scanResult.getCookiesBySubdomain().values()
+                    .stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+
+            log.info("Found {} total cookies across all subdomains for scanId: {}",
+                    allCookies.size(), scanId);
+
+            // Group cookies by category
+            Map<String, List<CookieEntity>> cookiesByCategory = allCookies.stream()
+                    .filter(cookie -> cookie.getCategory() != null && !cookie.getCategory().trim().isEmpty())
+                    .collect(Collectors.groupingBy(CookieEntity::getCategory));
+
+            log.info("Categorized cookies into {} categories", cookiesByCategory.size());
+
+            return cookiesByCategory;
+
+        } catch (Exception e) {
+            log.error("Error fetching cookies for scanId: {}", scanId, e);
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * Map cookies to preferences based on matching purpose with cookie category
+     */
+    private List<PreferenceWithCookies> mapCookiesToPreferences(
+            List<Preference> preferences,
+            Map<String, List<CookieEntity>> cookiesByCategory) {
+
+        if (preferences == null || preferences.isEmpty()) {
+            log.warn("No preferences to map cookies to");
+            return Collections.emptyList();
+        }
+
+        return preferences.stream()
+                .map(preference -> {
+                    String purposeKey = preference.getPurpose().name(); // Convert Purpose enum to String
+                    List<CookieEntity> matchingCookies = cookiesByCategory.getOrDefault(
+                            purposeKey,
+                            Collections.emptyList()
+                    );
+
+                    log.debug("Mapped {} cookies to preference purpose: {}",
+                            matchingCookies.size(), purposeKey);
+
+                    return PreferenceWithCookies.from(preference, matchingCookies);
+                })
+                .collect(Collectors.toList());
     }
 
     private void validateTemplate(String tenantId, String templateId, String businessid, int templateVersion) throws ScannerException {

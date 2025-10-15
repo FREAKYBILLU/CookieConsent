@@ -1,6 +1,5 @@
 package com.example.scanner.controller;
 
-import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.ConsentCreateResponse;
@@ -8,7 +7,6 @@ import com.example.scanner.dto.response.ConsentTokenValidateResponse;
 import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.UpdateConsentResponse;
 import com.example.scanner.entity.Consent;
-import com.example.scanner.exception.ConsentException;
 import com.example.scanner.service.ConsentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -26,6 +24,7 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @CrossOrigin(origins = "*")
 @RestController
@@ -38,7 +37,8 @@ public class ConsentController {
     private final ConsentService consentService;
 
     @PostMapping("/create")
-    @Operation(summary = "Create a consent by consent handle ID",
+    @Operation(
+            summary = "Create a consent by consent handle ID",
             description = "Creates a consent record based on user's preference choices (Accept All, Accept Necessary, Manage Preferences). " +
                     "This is the third step in the consent flow - CreateConsent API equivalent.",
             requestBody = @RequestBody(description = "Request body for creating consent", required = true,
@@ -72,33 +72,19 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<?> createConsentByConsentHandleId(
+    public ResponseEntity<ConsentCreateResponse> createConsentByConsentHandleId(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @org.springframework.web.bind.annotation.RequestBody @Valid CreateConsentRequest request,
-            @RequestHeader Map<String, String> headers) {
+            @RequestHeader Map<String, String> headers) throws Exception {
 
-        try {
-            log.info("Creating consent for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
+        log.info("Creating consent for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
 
-            ConsentCreateResponse response = consentService.createConsentByConsentHandleId(request, tenantId);
+        ConsentCreateResponse response = consentService.createConsentByConsentHandleId(request, tenantId);
 
-            log.info("Successfully created consent: {} for handle: {}", response.getConsentId(), request.getConsentHandleId());
-            return new ResponseEntity<>(response, HttpStatus.CREATED);
+        log.info("Successfully created consent: {} for handle: {}", response.getConsentId(), request.getConsentHandleId());
 
-        } catch (ConsentException e) {
-            log.warn("Consent creation failed: {}", e.getMessage());
-            HttpStatus status = mapConsentExceptionToHttpStatus(e);
-            return buildErrorResponse(status, e.getErrorCode(), "Consent creation failed", e.getMessage(),
-                    "/consent/create");
-
-        } catch (Exception e) {
-            log.error("Unexpected error creating consent in tenant: {}", tenantId, e);
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
-                    "Failed to create consent", "Consent creation failed: " + e.getMessage(),
-                    "/consent/create");
-        }
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
-
 
     @PutMapping("/{consentId}/update")
     @Operation(
@@ -140,44 +126,19 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<?> updateConsent(
+    public ResponseEntity<UpdateConsentResponse> updateConsent(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId,
-            @org.springframework.web.bind.annotation.RequestBody @Valid UpdateConsentRequest updateRequest) {
+            @org.springframework.web.bind.annotation.RequestBody @Valid UpdateConsentRequest updateRequest) throws Exception {
 
-        try {
-            log.info("Received consent update request for consentId: {} in tenant: {}", consentId, tenantId);
+        log.info("Received consent update request for consentId: {} in tenant: {}", consentId, tenantId);
 
-            UpdateConsentResponse response = consentService.updateConsent(consentId, updateRequest, tenantId);
+        UpdateConsentResponse response = consentService.updateConsent(consentId, updateRequest, tenantId);
 
-            log.info("Successfully updated consent: {} to version: {}", consentId, response.getNewVersion());
-            return ResponseEntity.ok(response);
+        log.info("Successfully updated consent: {} to version: {}", consentId, response.getNewVersion());
 
-        } catch (ConsentException e) {
-            log.warn("Consent update failed for consentId: {} - Error: {}", consentId, e.getMessage());
-            HttpStatus status = mapConsentExceptionToHttpStatus(e);
-            return buildErrorResponse(status, e.getErrorCode(), "Consent update failed", e.getMessage(),
-                    "/consent/" + consentId + "/update");
-
-        } catch (IllegalArgumentException e) {
-            log.warn("Validation error for consent update: {}", e.getMessage());
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR,
-                    "Validation failed", e.getMessage(), "/consent/" + consentId + "/update");
-
-        } catch (IllegalStateException e) {
-            log.warn("Business rule violation for consent update: {}", e.getMessage());
-            return buildErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY, ErrorCodes.BUSINESS_RULE_VIOLATION,
-                    "Consent cannot be updated", e.getMessage(), "/consent/" + consentId + "/update");
-
-        } catch (Exception e) {
-            log.error("Unexpected error updating consent: {} in tenant: {}", consentId, tenantId, e);
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
-                    "Failed to update consent", "Consent update failed: " + e.getMessage(),
-                    "/consent/" + consentId + "/update");
-        }
+        return ResponseEntity.ok(response);
     }
-
-    // ==== CONSENT HISTORY (NEW VERSIONING FUNCTIONALITY) ====
 
     @GetMapping("/{consentId}/history")
     @Operation(
@@ -211,32 +172,17 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<?> getConsentHistory(
+    public ResponseEntity<List<Consent>> getConsentHistory(
             @RequestHeader("X-Tenant-ID") String tenantId,
-            @PathVariable String consentId) {
+            @PathVariable String consentId) throws Exception {
 
-        try {
-            log.info("Retrieving consent history for consentId: {} in tenant: {}", consentId, tenantId);
+        log.info("Retrieving consent history for consentId: {} in tenant: {}", consentId, tenantId);
 
-            List<Consent> history = consentService.getConsentHistory(consentId, tenantId);
+        List<Consent> history = consentService.getConsentHistory(consentId, tenantId);
 
-            log.info("Retrieved {} versions for consent: {}", history.size(), consentId);
-            return ResponseEntity.ok(history);
+        log.info("Retrieved {} versions for consent: {}", history.size(), consentId);
 
-        } catch (ConsentException e) {
-            log.warn("Consent history request failed: {}", e.getMessage());
-            HttpStatus status = e.getErrorCode().equals(ErrorCodes.CONSENT_NOT_FOUND) ?
-                    HttpStatus.NOT_FOUND : HttpStatus.BAD_REQUEST;
-
-            return buildErrorResponse(status, e.getErrorCode(), "Consent not found", e.getMessage(),
-                    "/consent/" + consentId + "/history");
-
-        } catch (Exception e) {
-            log.error("Error retrieving consent history for consentId: {} in tenant: {}", consentId, tenantId, e);
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
-                    "Failed to retrieve consent history", "Could not retrieve consent history: " + e.getMessage(),
-                    "/consent/" + consentId + "/history");
-        }
+        return ResponseEntity.ok(history);
     }
 
     @GetMapping("/{consentId}/versions/{version}")
@@ -272,78 +218,29 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<?> getConsentVersion(
+    public ResponseEntity<Consent> getConsentVersion(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId,
-            @PathVariable Integer version) {
+            @PathVariable Integer version) throws Exception {
 
-        try {
-            log.info("Retrieving consent version {} for consentId: {} in tenant: {}", version, consentId, tenantId);
+        log.info("Retrieving consent version {} for consentId: {} in tenant: {}", version, consentId, tenantId);
 
-            // Call service method to get specific version
-            java.util.Optional<Consent> consentOpt = consentService.getConsentByIdAndVersion(tenantId, consentId, version);
+        Optional<Consent> consentOpt = consentService.getConsentByIdAndVersion(tenantId, consentId, version);
 
-            if (consentOpt.isEmpty()) {
-                log.warn("Consent version not found: consentId={}, version={}, tenant={}", consentId, version, tenantId);
-                return buildErrorResponse(HttpStatus.NOT_FOUND, ErrorCodes.CONSENT_VERSION_NOT_FOUND,
-                        "Consent version not found",
-                        "No consent found with ID '" + consentId + "' and version " + version,
-                        "/consent/" + consentId + "/versions/" + version);
-            }
-
-            log.info("Retrieved consent version {} for consentId: {}", version, consentId);
-            return ResponseEntity.ok(consentOpt.get());
-
-        } catch (IllegalArgumentException e) {
-            log.warn("Validation error for consent version request: {}", e.getMessage());
-            return buildErrorResponse(HttpStatus.BAD_REQUEST, ErrorCodes.VALIDATION_ERROR,
-                    "Invalid request parameters", e.getMessage(),
-                    "/consent/" + consentId + "/versions/" + version);
-
-        } catch (Exception e) {
-            log.error("Error retrieving consent version for consentId: {}, version: {}, tenant: {}",
-                    consentId, version, tenantId, e);
-            return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR, ErrorCodes.INTERNAL_ERROR,
-                    "Failed to retrieve consent version", "Could not retrieve consent version: " + e.getMessage(),
-                    "/consent/" + consentId + "/versions/" + version);
+        if (consentOpt.isEmpty()) {
+            log.warn("Consent version not found: consentId={}, version={}, tenant={}", consentId, version, tenantId);
+            // This will be handled by GlobalExceptionHandler
+            throw new IllegalArgumentException("No consent found with ID '" + consentId + "' and version " + version);
         }
-    }
 
-    // ==== HELPER METHODS ====
+        log.info("Retrieved consent version {} for consentId: {}", version, consentId);
 
-    /**
-     * Map ConsentException to appropriate HTTP status code
-     */
-    private HttpStatus mapConsentExceptionToHttpStatus(ConsentException e) {
-        return switch (e.getErrorCode()) {
-            case ErrorCodes.CONSENT_HANDLE_NOT_FOUND, ErrorCodes.CONSENT_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case ErrorCodes.CONSENT_HANDLE_ALREADY_USED, ErrorCodes.CONSENT_HANDLE_EXPIRED -> HttpStatus.CONFLICT;
-            case ErrorCodes.VALIDATION_ERROR -> HttpStatus.BAD_REQUEST;
-            case ErrorCodes.BUSINESS_RULE_VIOLATION -> HttpStatus.UNPROCESSABLE_ENTITY;
-            case ErrorCodes.TEMPLATE_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            default -> HttpStatus.INTERNAL_SERVER_ERROR;
-        };
-    }
-
-    /**
-     * Build standardized error response
-     */
-    private ResponseEntity<Map<String, Object>> buildErrorResponse(HttpStatus status, String errorCode,
-                                                                   String message, String details, String path) {
-        Map<String, Object> errorResponse = Map.of(
-                "timestamp", java.time.Instant.now().toString(),
-                "status", status.value(),
-                "error", status.getReasonPhrase(),
-                "message", message,
-                "details", details,
-                "path", path,
-                "errorCode", errorCode
-        );
-        return new ResponseEntity<>(errorResponse, status);
+        return ResponseEntity.ok(consentOpt.get());
     }
 
     @GetMapping("/validate-token")
-    @Operation(summary = "Validate a consent token",
+    @Operation(
+            summary = "Validate a consent token",
             parameters = {
                     @Parameter(name = "consent-token", description = "Consent Token", required = true, example = "eyJhbGciOiJIUzI1NiJ9..."),
                     @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true, example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
@@ -367,7 +264,9 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<ConsentTokenValidateResponse> validateConsent(@RequestHeader("consent-token") String consentToken) throws Exception {
-        return new ResponseEntity<>(this.consentService.validateConsentToken(consentToken), HttpStatus.OK);
+    public ResponseEntity<ConsentTokenValidateResponse> validateConsent(
+            @RequestHeader("consent-token") String consentToken) throws Exception {
+
+        return new ResponseEntity<>(consentService.validateConsentToken(consentToken), HttpStatus.OK);
     }
 }

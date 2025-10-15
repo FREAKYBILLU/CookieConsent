@@ -14,5 +14,8 @@ public enum ConsentHandleStatus {
     EXPIRED,
 
     @Schema(description = "Handle has been used and consumed")
-    USED
+    USED,
+
+    @Schema(description = "Handle was rejected - all preferences were NOTACCEPTED")
+    REJECTED
 }

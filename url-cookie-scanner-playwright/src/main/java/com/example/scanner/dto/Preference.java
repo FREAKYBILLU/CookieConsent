@@ -30,8 +30,8 @@ public class Preference {
     private String preferenceId;
 
     @Schema(
-            description = "Comma-separated string of purpose IDs (e.g., 'essential-cookies,functionality-cookies'). This is a single string, not an array.",
-            example = "essential-cookies,functionality-cookies,analytics-cookies",
+            description = "Purpose category for this preference. Must be one of the Purpose enum values: NECESSARY, FUNCTIONAL, ANALYTICS, ADVERTISEMENT, OTHERS",
+            example = "ANALYTICS",
             required = true
     )
     @NotNull(message = "Purpose cannot be null")
