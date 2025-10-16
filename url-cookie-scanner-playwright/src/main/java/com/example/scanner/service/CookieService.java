@@ -8,6 +8,7 @@ import com.example.scanner.dto.request.CookieUpdateRequest;
 import com.example.scanner.dto.response.CookieUpdateResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
+import com.example.scanner.enums.Purpose;
 import com.example.scanner.enums.SameSite;
 import com.example.scanner.enums.Source;
 import com.example.scanner.exception.CookieNotFoundException;
@@ -65,6 +66,16 @@ public class CookieService {
             throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
                     "At least one field (category, description, domain, privacyPolicyUrl, or expires) is required for update",
                     "CookieUpdateRequest validation failed: All update fields are null"
+            );
+        }
+
+        boolean isValidCategory = Arrays.stream(Purpose.values())
+                .anyMatch(purpose -> updateRequest.getCategory().equals(purpose.toString()));
+
+        if (!isValidCategory) {
+            throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
+                    "Category is not valid",
+                    "Category '"+ updateRequest.getCategory()+ "' is not a valid category: "
             );
         }
 
@@ -276,6 +287,16 @@ public class CookieService {
                 throw new UrlValidationException(ErrorCodes.DUPLICATE_ERROR,
                         "Cookie already exists",
                         "Duplicate cookie: " + addRequest.getName() + " in subdomain: " + subdomainName
+                );
+            }
+
+            boolean isValidCategory = Arrays.stream(Purpose.values())
+                    .anyMatch(purpose -> addRequest.getCategory().equals(purpose.toString()));
+
+            if (!isValidCategory) {
+                throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
+                        "Category is not valid",
+                        "Category '"+ addRequest.getCategory()+ "' is not a valid category: "
                 );
             }
 

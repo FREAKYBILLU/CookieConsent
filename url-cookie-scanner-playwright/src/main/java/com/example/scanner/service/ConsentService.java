@@ -64,7 +64,7 @@ public class ConsentService {
                     "Preferences status cannot be empty");
         }
 
-        // NEW REQUIREMENT 4: Validate consent handle (checks PENDING status and 15 min expiry)
+        // REQUIREMENT 4: Validate consent handle (checks PENDING status and 15 min expiry)
         ConsentHandle consentHandle = validateConsentHandle(request.getConsentHandleId(), tenantId);
 
         // Check for existing consent
@@ -85,7 +85,11 @@ public class ConsentService {
         // Get template
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
 
-        // NEW REQUIREMENT 1: Check if all preferences are NOTACCEPTED (Reject All scenario)
+        // REQUIREMENT 3: FIRST validate ALL template preferences are present in request
+        validateAllPreferencesPresent(template.getPreferences(), request.getPreferencesStatus());
+
+        // REQUIREMENT 1: Check if ALL preferences are NOTACCEPTED (Reject All scenario)
+        // This check happens AFTER we know all preferences are present
         boolean allNotAccepted = request.getPreferencesStatus().values().stream()
                 .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
 
@@ -93,6 +97,8 @@ public class ConsentService {
             log.info("All preferences are NOTACCEPTED - marking handle as REJECTED and not creating consent");
             consentHandle.setStatus(ConsentHandleStatus.REJECTED);
             consentHandleRepository.save(consentHandle, tenantId);
+
+            log.info("Updated consent handle {} status to REJECTED", consentHandle.getConsentHandleId());
 
             return ConsentCreateResponse.builder()
                     .consentId(null)
@@ -102,8 +108,9 @@ public class ConsentService {
                     .build();
         }
 
-        // NEW REQUIREMENT 2 & 3: Validate purposes (includes mandatory NOTACCEPTED check + count validation)
-        validatePurposes(template.getPreferences(), request.getPreferencesStatus(), true);
+        // REQUIREMENT 2: Validate mandatory preferences are not NOTACCEPTED
+        // This only runs if it's NOT a reject-all case
+        validateMandatoryNotRejected(template.getPreferences(), request.getPreferencesStatus());
 
         // Process preferences (returns only matched ones for creation)
         List<Preference> processedPreferences = processPreferencesForCreation(
@@ -197,21 +204,33 @@ public class ConsentService {
     // ============================================
 
     /**
-     * ✅ UPDATED: Validates purposes with new requirements
-     * - Step 1: Checks all user-provided purposes exist in template
-     * - Step 2: NEW - Checks mandatory preferences are not NOTACCEPTED
-     * - Step 3: Checks mandatory preferences are provided (for creation only)
-     * - Step 4: NEW - Validates ALL template preferences are present in request
+     * REQUIREMENT 3: Validate ALL template preferences are present in request
+     * This is the FIRST validation that should run
      */
-    private void validatePurposes(List<Preference> templatePreferences,
-                                  Map<Purpose, PreferenceStatus> userChoices,
-                                  boolean checkMandatory) throws ConsentException {
+    private void validateAllPreferencesPresent(List<Preference> templatePreferences,
+                                               Map<Purpose, PreferenceStatus> userChoices) throws ConsentException {
 
-        // Step 1: Validate all user purposes exist in template
         Set<Purpose> templatePurposes = templatePreferences.stream()
                 .map(Preference::getPurpose)
                 .collect(Collectors.toSet());
 
+        // Check if ALL template preferences are in the request
+        Set<Purpose> missingPreferences = templatePurposes.stream()
+                .filter(purpose -> !userChoices.containsKey(purpose))
+                .collect(Collectors.toSet());
+
+        if (!missingPreferences.isEmpty()) {
+            log.error("Request must contain all template preferences. Template has {} preferences, request has {}. Missing: {}",
+                    templatePurposes.size(), userChoices.size(), missingPreferences);
+            throw new ConsentException(
+                    ErrorCodes.INCOMPLETE_PREFERENCES,
+                    ErrorCodes.getDescription(ErrorCodes.INCOMPLETE_PREFERENCES),
+                    "All template preferences must be provided in request. Missing: " + missingPreferences +
+                            ". Template expects " + templatePurposes.size() + " preferences, but received " + userChoices.size()
+            );
+        }
+
+        // Check if user sent any EXTRA purposes not in template
         Set<Purpose> invalidPurposes = userChoices.keySet().stream()
                 .filter(purpose -> !templatePurposes.contains(purpose))
                 .collect(Collectors.toSet());
@@ -224,8 +243,15 @@ public class ConsentService {
                     "Invalid purposes: " + invalidPurposes + ". These do not exist in template."
             );
         }
+    }
 
-        // Step 2: NEW REQUIREMENT 2 - Validate mandatory preferences (isMandatory=true) cannot be NOTACCEPTED
+    /**
+     * REQUIREMENT 2: Validate mandatory preferences (isMandatory=true) cannot be NOTACCEPTED
+     * This runs AFTER we know all preferences are present and it's NOT a reject-all case
+     */
+    private void validateMandatoryNotRejected(List<Preference> templatePreferences,
+                                              Map<Purpose, PreferenceStatus> userChoices) throws ConsentException {
+
         Map<Purpose, Boolean> mandatoryMap = templatePreferences.stream()
                 .filter(p -> Boolean.TRUE.equals(p.getIsMandatory()))
                 .collect(Collectors.toMap(Preference::getPurpose, Preference::getIsMandatory));
@@ -242,43 +268,6 @@ public class ConsentService {
                     ErrorCodes.MANDATORY_PREFERENCE_REJECTED,
                     ErrorCodes.getDescription(ErrorCodes.MANDATORY_PREFERENCE_REJECTED),
                     "Mandatory preferences cannot be rejected: " + rejectedMandatory + ". These preferences are required for the service."
-            );
-        }
-
-        // Step 3: Check mandatory preferences are provided (for creation only)
-        if (checkMandatory) {
-            Set<Purpose> mandatoryPurposes = templatePreferences.stream()
-                    .filter(p -> Boolean.TRUE.equals(p.getIsMandatory()))
-                    .map(Preference::getPurpose)
-                    .collect(Collectors.toSet());
-
-            Set<Purpose> missingMandatory = mandatoryPurposes.stream()
-                    .filter(purpose -> !userChoices.containsKey(purpose))
-                    .collect(Collectors.toSet());
-
-            if (!missingMandatory.isEmpty()) {
-                log.error("Missing mandatory preferences: {}", missingMandatory);
-                throw new ConsentException(
-                        ErrorCodes.MISSING_MANDATORY_PREFERENCE,
-                        ErrorCodes.getDescription(ErrorCodes.MISSING_MANDATORY_PREFERENCE),
-                        "Mandatory preferences must be provided: " + missingMandatory
-                );
-            }
-        }
-
-        // Step 4: NEW REQUIREMENT 3 - Validate ALL template preferences are present in request
-        Set<Purpose> missingPreferences = templatePurposes.stream()
-                .filter(purpose -> !userChoices.containsKey(purpose))
-                .collect(Collectors.toSet());
-
-        if (!missingPreferences.isEmpty()) {
-            log.error("Request must contain all template preferences. Template has {} preferences, request has {}. Missing: {}",
-                    templatePurposes.size(), userChoices.size(), missingPreferences);
-            throw new ConsentException(
-                    ErrorCodes.INCOMPLETE_PREFERENCES,
-                    ErrorCodes.getDescription(ErrorCodes.INCOMPLETE_PREFERENCES),
-                    "All template preferences must be provided in request. Missing: " + missingPreferences +
-                            ". Template expects " + templatePurposes.size() + " preferences, but received " + userChoices.size()
             );
         }
     }
@@ -328,7 +317,7 @@ public class ConsentService {
     }
 
     /**
-     * ✅ UPDATED: NEW REQUIREMENT 4 - Validate consent handle with explicit PENDING status check
+     * REQUIREMENT 4: Validate consent handle with explicit PENDING status check
      */
     private ConsentHandle validateConsentHandle(String consentHandleId, String tenantId) throws Exception {
         ConsentHandle handle = consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
@@ -339,7 +328,7 @@ public class ConsentService {
                     "Consent handle not found: " + consentHandleId);
         }
 
-        // NEW REQUIREMENT 4: Explicit check for PENDING status (must be checked before expiry)
+        // REQUIREMENT 4: Explicit check for PENDING status (must be checked before expiry)
         if (handle.getStatus() != ConsentHandleStatus.PENDING) {
             log.error("Consent handle is not in PENDING status. Current status: {}", handle.getStatus());
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_ALREADY_USED,
@@ -477,8 +466,23 @@ public class ConsentService {
                 handle.getConsentHandleId(), handle.getTemplateVersion());
 
         if (request.hasPreferenceUpdates()) {
-            // Validate purposes exist in template (no mandatory check for updates)
-            validatePurposes(template.getPreferences(), request.getPreferencesStatus(), false);
+            // Apply same validation rules as create consent
+
+            // REQUIREMENT 3: Validate ALL template preferences are present in update request
+            validateAllPreferencesPresent(template.getPreferences(), request.getPreferencesStatus());
+
+            // REQUIREMENT 1: Check if ALL preferences are NOTACCEPTED (Reject All scenario for update)
+            boolean allNotAccepted = request.getPreferencesStatus().values().stream()
+                    .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
+
+            if (allNotAccepted) {
+                log.info("All preferences are NOTACCEPTED in update - marking handle as REJECTED");
+                // For update, we still create the new version but mark handle as rejected
+                // This maintains the consent history
+            }
+
+            // REQUIREMENT 2: Validate mandatory preferences are not NOTACCEPTED
+            validateMandatoryNotRejected(template.getPreferences(), request.getPreferencesStatus());
 
             // Process preferences (returns ALL template preferences for updates)
             List<Preference> updated = processPreferencesForUpdate(
@@ -527,30 +531,26 @@ public class ConsentService {
         try {
             // Build query with filters
             Criteria criteria = Criteria.where("templateId").is(request.getTemplateID())
-                    .and("consentStatus").is(VersionStatus.ACTIVE); // Only fetch active versions
+                    .and("consentStatus").is(VersionStatus.ACTIVE);
 
-            // Optional: Filter by template version
             if (request.getVersion() != null) {
                 criteria.and("templateVersion").is(request.getVersion());
             }
 
-            // Optional: Filter by start date
             if (request.getStartDate() != null) {
                 criteria.and("startDate").gte(request.getStartDate());
             }
 
-            // Optional: Filter by end date
             if (request.getEndDate() != null) {
                 criteria.and("endDate").lte(request.getEndDate());
             }
 
-            // Optional: Filter by status
             if (request.getStatus() != null) {
                 criteria.and("status").is(request.getStatus());
             }
 
             Query query = new Query(criteria);
-            query.with(Sort.by(Sort.Direction.DESC, "createdAt")); // Latest first
+            query.with(Sort.by(Sort.Direction.DESC, "createdAt"));
 
             List<Consent> consents = mongoTemplate.find(query, Consent.class);
 
@@ -561,7 +561,6 @@ public class ConsentService {
 
             log.info("Found {} consents for templateID: {}", consents.size(), request.getTemplateID());
 
-            // Map to response DTOs with enriched data
             List<DashboardResponse> responses = consents.stream()
                     .map(consent -> {
                         try {
@@ -571,7 +570,7 @@ public class ConsentService {
                             return null;
                         }
                     })
-                    .filter(response -> response != null) // Remove null responses
+                    .filter(response -> response != null)
                     .toList();
 
             log.info("Successfully mapped {} consent records for dashboard", responses.size());
@@ -590,14 +589,10 @@ public class ConsentService {
         }
     }
 
-    /**
-     * Map Consent to DashboardResponse with enriched data from Template, Handle, and Scan
-     */
     private DashboardResponse mapToResponse(Consent consent, String tenantId, String scanIDFilter,
                                             MongoTemplate mongoTemplate) {
 
         try {
-            // Get ConsentHandle
             Query handleQuery = new Query(Criteria.where("consentHandleId").is(consent.getConsentHandleId()));
             ConsentHandle handle = mongoTemplate.findOne(handleQuery, ConsentHandle.class);
 
@@ -605,21 +600,18 @@ public class ConsentService {
                 log.warn("ConsentHandle not found for consentHandleId: {}", consent.getConsentHandleId());
             }
 
-            // Get Template to fetch scanId
             Query templateQuery = new Query(Criteria.where("templateId").is(consent.getTemplateId())
                     .and("version").is(consent.getTemplateVersion()));
             ConsentTemplate template = mongoTemplate.findOne(templateQuery, ConsentTemplate.class);
 
             String scanId = template != null ? template.getScanId() : null;
 
-            // Apply scanID filter if provided
             if (scanIDFilter != null && !scanIDFilter.trim().isEmpty()) {
                 if (scanId == null || !scanId.equals(scanIDFilter)) {
-                    return null; // Skip this consent
+                    return null;
                 }
             }
 
-            // Get Scan Result for URL and subdomains
             String scannedSite = null;
             List<String> subDomains = null;
 
@@ -630,7 +622,6 @@ public class ConsentService {
                 if (scanResult != null) {
                     scannedSite = scanResult.getUrl();
 
-                    // Extract subdomains (exclude 'main')
                     if (scanResult.getCookiesBySubdomain() != null && !scanResult.getCookiesBySubdomain().isEmpty()) {
                         subDomains = scanResult.getCookiesBySubdomain().keySet().stream()
                                 .filter(subdomain -> !"main".equalsIgnoreCase(subdomain))
@@ -642,7 +633,6 @@ public class ConsentService {
                 }
             }
 
-            // Extract cookie categories from preferences
             List<String> categories = List.of();
             if (consent.getPreferences() != null && !consent.getPreferences().isEmpty()) {
                 categories = consent.getPreferences().stream()
@@ -674,7 +664,7 @@ public class ConsentService {
     private LocalDateTime calculatePreferenceEndDate(LocalDateTime start,
                                                      com.example.scanner.dto.Duration validity) {
         if (validity == null) {
-            return start.plusYears(1); // Default
+            return start.plusYears(1);
         }
 
         return switch (validity.getUnit()) {

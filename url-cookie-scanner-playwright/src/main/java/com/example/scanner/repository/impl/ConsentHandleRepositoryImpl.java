@@ -46,7 +46,6 @@ public class ConsentHandleRepositoryImpl implements ConsentHandleRepository {
             criteria.and("consentHandleId").is(consentHandleId);
             Query query = new Query();
             query.addCriteria(criteria);
-            query.fields().exclude("_id");
             return tenantMongoTemplate.findOne(query, ConsentHandle.class);
         } finally {
             TenantContext.clear();

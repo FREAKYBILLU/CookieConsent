@@ -1,11 +1,11 @@
 package com.example.scanner.enums;
 
 public enum Purpose {
-    NECESSARY("Necessary", "Essential cookies required for website functionality"),
-    FUNCTIONAL("Functional", "Cookies for enhanced functionality and personalization"),
-    ANALYTICS("Analytics", "Cookies to understand how visitors use the website"),
-    ADVERTISEMENT("Advertisement", "Cookies for targeted advertising and marketing"),
-    OTHERS("Others", "Other types of cookies");
+    Necessary("Necessary", "Essential cookies required for website functionality"),
+    Functional("Functional", "Cookies for enhanced functionality and personalization"),
+    Analytics("Analytics", "Cookies to understand how visitors use the website"),
+    Advertisement("Advertisement", "Cookies for targeted advertising and marketing"),
+    Others("Others", "Other types of cookies");
 
     private final String displayName;
     private final String description;

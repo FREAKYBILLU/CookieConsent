@@ -47,7 +47,7 @@ public final class ErrorCodes {
     public static final String CONSENT_VERSION_NOT_FOUND = "R4048";
     public static final String CONSENT_NO_ACTIVE_VERSION = "R4049";
     public static final String MANDATORY_PREFERENCE_REJECTED = "R4230";
-    public static final String INCOMPLETE_PREFERENCES = "INCOMPLETE_PREFERENCES";
+    public static final String INCOMPLETE_PREFERENCES = "R4231";
 
 
     // ==== HTTP METHOD ERRORS (R4051-R4059) ====
@@ -89,7 +89,7 @@ public final class ErrorCodes {
     public static final String UPDATE_FREQUENCY_LIMIT_EXCEEDED = "R4227";
     public static final String UPDATE_NOT_ALLOWED_BUSINESS_HOURS = "R4228";
     public static final String INVALID_TEMPLATE = "R4229";
-    public static final String MISSING_MANDATORY_PREFERENCE = "MISSING_MANDATORY_PREFERENCE";
+    public static final String MISSING_MANDATORY_PREFERENCE = "R4232";
 
     // Private constructor to prevent instantiation
     private ErrorCodes() {
