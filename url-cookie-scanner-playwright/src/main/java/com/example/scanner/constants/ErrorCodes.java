@@ -91,6 +91,9 @@ public final class ErrorCodes {
     public static final String INVALID_TEMPLATE = "R4229";
     public static final String MISSING_MANDATORY_PREFERENCE = "R4232";
 
+    public static final String CATEGORY_NOT_FOUND = "CAT4041";
+    public static final String CATEGORY_UPDATE_FAILED = "CAT5001";
+
     // Private constructor to prevent instantiation
     private ErrorCodes() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");

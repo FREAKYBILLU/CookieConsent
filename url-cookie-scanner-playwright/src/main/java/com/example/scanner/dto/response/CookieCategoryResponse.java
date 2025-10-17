@@ -29,11 +29,11 @@ public class CookieCategoryResponse {
     @Schema(description = "Indicates if this is a default category", example = "false")
     private boolean isDefault;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     @Schema(description = "Timestamp when the category was created", example = "2024-01-15T10:30:00.000Z")
     private Date createdAt;
 
-    @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     @Schema(description = "Timestamp when the category was last updated", example = "2024-01-15T10:30:00.000Z")
     private Date updatedAt;
 

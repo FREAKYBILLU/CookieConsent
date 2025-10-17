@@ -1,18 +1,18 @@
 package com.example.scanner.service;
 import com.example.scanner.config.TenantContext;
+import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.request.AddCookieCategoryRequest;
 import com.example.scanner.dto.request.UpdateCookieCategoryRequest;
 import com.example.scanner.dto.response.CookieCategoryResponse;
 import com.example.scanner.entity.CookieCategory;
+import com.example.scanner.exception.CategoryUpdateException;
 import com.example.scanner.repository.impl.CategoryRepositoryImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Date;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -95,24 +95,17 @@ public class CategoryService {
             // Validate request
             if (request == null) {
                 log.error("Request is null for tenant: {}", tenantId);
-                return CookieCategoryResponse.builder()
-                        .success(false)
-                        .message("Invalid request")
-                        .build();
+                throw new IllegalArgumentException("Update request cannot be null");
             }
 
-            Optional<CookieCategory> category = categoryRepository.findByCategory(request.getCategory());
+            CookieCategory category = categoryRepository.findByCategory(request.getCategory())
+                    .orElseThrow(() -> new CategoryUpdateException(ErrorCodes.CATEGORY_NOT_FOUND,
+                            "No category found with name '" + request.getCategory() + "'",
+                            "Category '" + request.getCategory() + "' does not exist in tenant: " + tenantId));
 
-            if (category.isEmpty()) {
-                log.error("Error updating category for tenant: {}. Error: no Category found with name {}", tenantId, request.getCategory());
-                return CookieCategoryResponse.builder()
-                        .success(false)
-                        .message("Error updating category for tenant:" + tenantId + " Error: no Category found with name " + request.getCategory())
-                        .build();
-            }
-
-            category.get().setDescription(request.getDescription());
-            CookieCategory upDatedCookieCategory = categoryRepository.save(category.get());
+            category.setDescription(request.getDescription());
+            category.setUpdatedAt(new Date());
+            CookieCategory upDatedCookieCategory = categoryRepository.save(category);
 
             log.info("Successfully added category '{}' with ID: {} for tenant: {}",
                     upDatedCookieCategory.getCategory(), upDatedCookieCategory.getCategoryId(), tenantId);
@@ -127,15 +120,46 @@ public class CategoryService {
                     .success(true)
                     .message("Category updated successfully")
                     .build();
+        } catch (CategoryUpdateException e) {
+            throw e;
         } catch (Exception e) {
-            log.error("Error updating category for tenant: {}. Error: {}", tenantId, e.getMessage(), e);
-            return CookieCategoryResponse.builder()
-                    .success(false)
-                    .message("Failed to update category: " + e.getMessage())
-                    .build();
+            log.error("Error updating category for tenant: {}", tenantId, e);
+            throw new CategoryUpdateException(
+                    ErrorCodes.CATEGORY_UPDATE_FAILED,
+                    "Failed to update category. Please try again later.",
+                    e.getMessage()
+            );
         } finally {
             TenantContext.clear();
         }
+    }
+
+    public List<CookieCategoryResponse> findAll(String tenantId){
+        try {
+            TenantContext.setCurrentTenant(tenantId);
+            log.info("Processing add category request for tenant: {}", tenantId);
+
+            List<CookieCategory> categories = categoryRepository.findAll();
+            
+            return categories.stream()
+                    .map(cat -> CookieCategoryResponse.builder()
+                            .categoryId(cat.getCategoryId())
+                            .category(cat.getCategory())
+                            .description(cat.getDescription())
+                            .isDefault(cat.isDefault())
+                            .createdAt(cat.getCreatedAt())
+                            .updatedAt(cat.getUpdatedAt())
+                            .success(true)
+                            .message("Category fetched successfully")
+                            .build())
+                    .toList();
+        }catch (Exception e){
+            CookieCategoryResponse.builder()
+                    .success(false)
+                    .message("Failed to fetch all categories: " + e.getMessage())
+                    .build();
+        }
+        return List.of();
     }
 
 }

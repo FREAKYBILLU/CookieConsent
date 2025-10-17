@@ -551,4 +551,25 @@ public class GlobalExceptionHandler {
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
     }
+
+    @ExceptionHandler(CategoryUpdateException.class)
+    public ResponseEntity<ErrorResponse> handleCategoryUpdate(CategoryUpdateException ex, WebRequest request) {
+        log.error("Category update failed: {}", ex.getMessage());
+
+        HttpStatus status = switch (ex.getErrorCode()) {
+            case ErrorCodes.CATEGORY_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case ErrorCodes.CATEGORY_UPDATE_FAILED -> HttpStatus.INTERNAL_SERVER_ERROR;
+            default -> HttpStatus.BAD_REQUEST;
+        };
+
+        ErrorResponse error = new ErrorResponse(
+                ex.getErrorCode(),
+                ex.getUserMessage(),
+                ex.getDeveloperDetails(),
+                Instant.now(),
+                request.getDescription(false)
+        );
+
+        return ResponseEntity.status(status).body(error);
+    }
 }

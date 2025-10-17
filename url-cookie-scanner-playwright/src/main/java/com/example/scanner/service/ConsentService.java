@@ -150,14 +150,14 @@ public class ConsentService {
         // Validate inputs
         validateUpdateInputs(consentId, updateRequest, tenantId);
 
-        // Validate consent handle
-        ConsentHandle consentHandle = validateConsentHandle(updateRequest.getConsentHandleId(), tenantId);
+        ConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(updateRequest.getConsentHandleId(), tenantId);
+        if (consentHandle == null) {
+            throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND,
+                    ErrorCodes.getDescription(ErrorCodes.CONSENT_HANDLE_NOT_FOUND),
+                    "Consent handle not found" );
+        }
 
-        // Find active consent
         Consent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
-
-        // Validate update is allowed
-        validateConsentCanBeUpdated(activeConsent, consentHandle);
 
         // Get template
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
@@ -512,9 +512,6 @@ public class ConsentService {
         active.setConsentStatus(VersionStatus.UPDATED);
         active.setUpdatedAt(Instant.now());
         consentRepositoryImpl.save(active, tenantId);
-
-        handle.setStatus(ConsentHandleStatus.USED);
-        consentHandleRepository.save(handle, tenantId);
 
         return UpdateConsentResponse.success(
                 newVersion.getConsentId(), newVersion.getId(), newVersion.getVersion(),

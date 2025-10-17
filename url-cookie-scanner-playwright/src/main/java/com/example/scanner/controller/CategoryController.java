@@ -3,9 +3,11 @@ package com.example.scanner.controller;
 import com.example.scanner.dto.request.AddCookieCategoryRequest;
 import com.example.scanner.dto.request.UpdateCookieCategoryRequest;
 import com.example.scanner.dto.response.CookieCategoryResponse;
+import com.example.scanner.entity.CookieCategory;
 import com.example.scanner.service.CategoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -21,18 +23,21 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @RestController
 @RequestMapping("/category")
 @RequiredArgsConstructor
 @Slf4j
 @Validated
-@CrossOrigin
+@CrossOrigin(origins = "*")
 @Tag(name = "Cookie Category Management", description = "APIs for managing cookie categories")
 public class CategoryController {
 
     private final CategoryService categoryService;
 
-    @PostMapping(value = "/add",
+    @PostMapping(
             produces = MediaType.APPLICATION_JSON_VALUE,
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
@@ -93,7 +98,7 @@ public class CategoryController {
         }
     }
 
-    @PutMapping(value = "/update",
+    @PutMapping(
             produces = MediaType.APPLICATION_JSON_VALUE,
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
@@ -150,14 +155,43 @@ public class CategoryController {
 
         // Process the request
         CookieCategoryResponse response = categoryService.updateCookieCategory(request, tenantId);
-
-        // Return appropriate response based on success
-        if (response.isSuccess()) {
-            return ResponseEntity.status(HttpStatus.OK).body(response);
-        } else if (response.getMessage().contains("no Category found")) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
-        } else {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
-        }
+        return ResponseEntity.ok(response);
     }
+
+    @GetMapping()
+    @Operation(
+            summary = "Fetch all cookie categories",
+            description = "Retrieves all cookie categories for the specified tenant"
+    )
+    @ApiResponses(value = {
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "Categories fetched successfully",
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = CookieCategory.class)))
+            ),
+            @ApiResponse(
+                    responseCode = "404",
+                    description = "No categories found for the given tenant",
+                    content = @Content
+            ),
+            @ApiResponse(
+                    responseCode = "500",
+                    description = "Internal server error",
+                    content = @Content
+            )
+    })
+    public ResponseEntity<List<CookieCategoryResponse>> getAllCategory(
+            @Parameter(
+                    description = "Tenant ID for multi-tenant support",
+                    required = true,
+                    example = "tenant-123"
+            )
+            @RequestHeader(value = "X-Tenant-ID", required = true) String tenantId){
+        List<CookieCategoryResponse> categoryList = categoryService.findAll(tenantId);
+        if(categoryList.isEmpty()){
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(categoryList);
+        }
+        return ResponseEntity.status(HttpStatus.OK).body(categoryList);
+    }
+
 }
