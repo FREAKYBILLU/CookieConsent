@@ -48,4 +48,12 @@ public class LanguageSpecificContent {
     )
     @NotBlank(message = "Permission text is required and cannot be empty")
     private String permissionText;
+
+    @Schema(
+            description = "Title",
+            example = "This site uses cookies to make your experience better.",
+            required = true
+    )
+    @NotBlank(message = "Rights text is required and cannot be empty")
+    private String title;
 }
