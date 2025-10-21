@@ -5,6 +5,7 @@ import com.example.scanner.dto.response.CookieCategorizationResponse;
 import com.example.scanner.exception.CookieCategorizationException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
+@RequiredArgsConstructor
 public class CookieCategorizationService {
 
     private static final Logger log = LoggerFactory.getLogger(CookieCategorizationService.class);
@@ -44,16 +46,9 @@ public class CookieCategorizationService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
-
-    // Simple in-memory cache
+    private final CategoryService categoryService;
     private final Map<String, CacheEntry> categorizationCache = new ConcurrentHashMap<>();
 
-    public CookieCategorizationService(RestTemplate restTemplate, ObjectMapper objectMapper) {
-        this.restTemplate = restTemplate;
-        this.objectMapper = objectMapper;
-        log.info("CookieCategorizationService initialized with cache enabled: {}, TTL: {} minutes",
-                cacheEnabled, cacheTtlMinutes);
-    }
 
     /**
      * Categorize cookies with retry mechanism

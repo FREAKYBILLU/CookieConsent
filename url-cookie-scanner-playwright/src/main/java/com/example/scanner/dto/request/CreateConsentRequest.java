@@ -2,10 +2,8 @@ package com.example.scanner.dto.request;
 
 
 import com.example.scanner.enums.PreferenceStatus;
-import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
@@ -38,10 +36,9 @@ public class CreateConsentRequest {
     private String languagePreference;
 
     @Schema(
-            description = "Map of purpose IDs to their acceptance status",
-            example = "{\"NECESSARY\": \"ACCEPTED\", \"ANALYTICS\": \"ACCEPTED\", \"ADVERTISEMENT\": \"NOTACCEPTED\"" +
-                    ", \"FUNCTIONAL\": \"NOTACCEPTED\", \"OTHERS\": \"NOTACCEPTED\"}",
+            description = "Map of category names",
+            example = "{\"Necessary\": \"ACCEPTED\", \"Analytics\": \"ACCEPTED\"...}",
             required = true
     )
-    Map<Purpose, PreferenceStatus> preferencesStatus;
+    Map<String, PreferenceStatus> preferencesStatus;
 }

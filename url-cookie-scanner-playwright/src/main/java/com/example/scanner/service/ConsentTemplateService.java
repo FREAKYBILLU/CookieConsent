@@ -21,6 +21,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.example.scanner.service.CategoryService;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -34,6 +35,7 @@ import java.util.UUID;
 public class ConsentTemplateService {
 
     private final MultiTenantMongoConfig mongoConfig;
+    private final CategoryService categoryService;
 
     public Optional<ConsentTemplate> getTemplateByTenantAndScanId(String tenantId, String scanId) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
@@ -136,7 +138,7 @@ public class ConsentTemplateService {
             // Create template from request (using the provided scanId)
             ConsentTemplate template = ConsentTemplate.fromCreateRequest(createRequest, createRequest.getScanId());
 
-            validateTemplatePurposes(template.getPreferences(), template.getStatus());
+            validateTemplatePurposes(template.getPreferences(), template.getStatus(), tenantId);
 
             // Process preferences and set defaults
             processPreferences(template.getPreferences());
@@ -324,7 +326,7 @@ public class ConsentTemplateService {
                     updateRequest.getPreferences() : currentActiveTemplate.getPreferences());
 
             if (updateRequest.getPreferences() != null) {
-                validateTemplatePurposes(newTemplate.getPreferences(), newTemplate.getStatus());
+                validateTemplatePurposes(newTemplate.getPreferences(), newTemplate.getStatus(), tenantId);
             }
 
             // Set timestamps
@@ -485,7 +487,7 @@ public class ConsentTemplateService {
      * - PUBLISHED templates: Validate preference structure if preferences exist
      * - Does NOT validate if preferences list is empty (allowed for both DRAFT and PUBLISHED)
      */
-    private void validateTemplatePurposes(List<Preference> preferences, TemplateStatus status) throws ConsentException {
+    private void validateTemplatePurposes(List<Preference> preferences, TemplateStatus status, String tenantId) throws ConsentException {
         // Empty preferences list is allowed
         if (preferences == null || preferences.isEmpty()) {
             log.debug("PUBLISHED template has no preferences - allowed");
@@ -494,11 +496,19 @@ public class ConsentTemplateService {
 
         for (Preference preference : preferences) {
             try {
-                if (preference.getPurpose() == null ) {
+                if (preference.getPurpose() == null || preference.getPurpose().trim().isEmpty()) {
                     throw new ConsentException(
                             ErrorCodes.INVALID_TEMPLATE,
                             ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
                             "Each preference in PUBLISHED template must have at least one purpose"
+                    );
+                }
+
+                if (!categoryService.categoryExists(preference.getPurpose(), tenantId)) {
+                    throw new ConsentException(
+                            ErrorCodes.INVALID_TEMPLATE,
+                            ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
+                            "Category '" + preference.getPurpose() + "' does not exist in the Category table for this tenant"
                     );
                 }
 

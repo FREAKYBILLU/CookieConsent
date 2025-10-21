@@ -1,13 +1,11 @@
 package com.example.scanner.dto;
 
 import com.example.scanner.enums.PreferenceStatus;
-import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -15,8 +13,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Set;
 
 @Data
 @Builder
@@ -30,12 +26,12 @@ public class Preference {
     private String preferenceId;
 
     @Schema(
-            description = "Purpose category for this preference. Must be one of the Purpose enum values: NECESSARY, FUNCTIONAL, ANALYTICS, ADVERTISEMENT, OTHERS",
-            example = "ANALYTICS",
+            description = "Cookie category name. Must exist in Category table",
+            example = "Analytics",
             required = true
     )
     @NotNull(message = "Purpose cannot be null")
-    private Purpose purpose;
+    private String purpose;
 
     @Schema(
             description = "Whether this preference category is mandatory (true) or optional (false)",

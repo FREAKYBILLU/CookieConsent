@@ -20,6 +20,7 @@ import com.example.scanner.enums.*;
 import com.example.scanner.exception.ConsentException;
 import com.example.scanner.repository.ConsentHandleRepository;
 import com.example.scanner.repository.impl.ConsentRepositoryImpl;
+import com.example.scanner.util.ConsentUtil;
 import com.example.scanner.util.InstantTypeAdapter;
 import com.example.scanner.util.LocalDateTypeAdapter;
 import com.example.scanner.util.TokenUtility;
@@ -210,15 +211,14 @@ public class ConsentService {
      * This is the FIRST validation that should run
      */
     private void validateAllPreferencesPresent(List<Preference> templatePreferences,
-                                               Map<Purpose, PreferenceStatus> userChoices) throws ConsentException {
+                                               Map<String, PreferenceStatus> userChoices) throws ConsentException {
 
-        Set<Purpose> templatePurposes = templatePreferences.stream()
+        Set<String> templatePurposes = templatePreferences.stream()
                 .map(Preference::getPurpose)
                 .collect(Collectors.toSet());
 
-        // Check if ALL template preferences are in the request
-        Set<Purpose> missingPreferences = templatePurposes.stream()
-                .filter(purpose -> !userChoices.containsKey(purpose))
+        Set<String> missingPreferences = templatePurposes.stream()
+                .filter(category -> !userChoices.containsKey(category))
                 .collect(Collectors.toSet());
 
         if (!missingPreferences.isEmpty()) {
@@ -232,9 +232,8 @@ public class ConsentService {
             );
         }
 
-        // Check if user sent any EXTRA purposes not in template
-        Set<Purpose> invalidPurposes = userChoices.keySet().stream()
-                .filter(purpose -> !templatePurposes.contains(purpose))
+        Set<String> invalidPurposes = userChoices.keySet().stream()
+                .filter(category -> !templatePurposes.contains(category))
                 .collect(Collectors.toSet());
 
         if (!invalidPurposes.isEmpty()) {
@@ -252,15 +251,15 @@ public class ConsentService {
      * This runs AFTER we know all preferences are present and it's NOT a reject-all case
      */
     private void validateMandatoryNotRejected(List<Preference> templatePreferences,
-                                              Map<Purpose, PreferenceStatus> userChoices) throws ConsentException {
+                                              Map<String, PreferenceStatus> userChoices) throws ConsentException {
 
-        Map<Purpose, Boolean> mandatoryMap = templatePreferences.stream()
+        Map<String, Boolean> mandatoryMap = templatePreferences.stream()
                 .filter(p -> Boolean.TRUE.equals(p.getIsMandatory()))
                 .collect(Collectors.toMap(Preference::getPurpose, Preference::getIsMandatory));
 
-        List<Purpose> rejectedMandatory = userChoices.entrySet().stream()
-                .filter(entry -> mandatoryMap.containsKey(entry.getKey())) // Is it mandatory?
-                .filter(entry -> entry.getValue() == PreferenceStatus.NOTACCEPTED) // Is it rejected?
+        List<String> rejectedMandatory = userChoices.entrySet().stream()
+                .filter(entry -> mandatoryMap.containsKey(entry.getKey()))
+                .filter(entry -> entry.getValue() == PreferenceStatus.NOTACCEPTED)
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
 
@@ -280,7 +279,7 @@ public class ConsentService {
      */
     private List<Preference> processPreferencesForCreation(
             List<Preference> templatePreferences,
-            Map<Purpose, PreferenceStatus> userChoices) {
+            Map<String, PreferenceStatus> userChoices) {
 
         LocalDateTime now = LocalDateTime.now();
         List<Preference> processed = new ArrayList<>();
@@ -303,7 +302,7 @@ public class ConsentService {
      */
     private List<Preference> processPreferencesForUpdate(
             List<Preference> templatePreferences,
-            Map<Purpose, PreferenceStatus> userChoices) {
+            Map<String, PreferenceStatus> userChoices) {
 
         LocalDateTime now = LocalDateTime.now();
 
@@ -464,7 +463,7 @@ public class ConsentService {
     private Consent createNewConsentVersion(Consent existing, UpdateConsentRequest request,
                                             ConsentHandle handle, ConsentTemplate template) throws ConsentException {
 
-        Consent newVersion = Consent.createNewVersionFrom(existing, request,
+        Consent newVersion = ConsentUtil.createNewVersionFrom(existing, request,
                 handle.getConsentHandleId(), handle.getTemplateVersion());
 
         if (request.hasPreferenceUpdates()) {
@@ -687,14 +686,11 @@ public class ConsentService {
             // Get all template preference names
             List<String> templatePreferences = template.getPreferences().stream()
                     .map(Preference::getPurpose)
-                    .map(Purpose::toString)
                     .collect(Collectors.toList());
 
-            // Get user accepted preferences
             List<String> userAccepted = consent.getPreferences().stream()
                     .filter(pref -> pref.getPreferenceStatus() == PreferenceStatus.ACCEPTED)
                     .map(Preference::getPurpose)
-                    .map(Purpose::toString)
                     .collect(Collectors.toList());
 
             assert handle != null;

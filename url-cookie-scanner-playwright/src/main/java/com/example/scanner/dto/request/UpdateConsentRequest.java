@@ -1,7 +1,6 @@
 package com.example.scanner.dto.request;
 
 import com.example.scanner.enums.PreferenceStatus;
-import com.example.scanner.enums.Purpose;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -35,11 +34,10 @@ public class UpdateConsentRequest {
     private String languagePreference;
 
     @Schema(
-            description = "Updated preferences map with new status values. Keys are Purpose enum values, values are PreferenceStatus enum values.",
-            example = "{\"NECESSARY\": \"ACCEPTED\", \"ANALYTICS\": \"ACCEPTED\", \"ADVERTISEMENT\": \"NOTACCEPTED\", \"FUNCTIONAL\": \"ACCEPTED\"" +
-                    ", \"OTHERS\": \"ACCEPTED\"}"
+            description = "Map of category names",
+            example = "{\"Necessary\": \"ACCEPTED\", \"Analytics\": \"ACCEPTED\"...}"
     )
-    private Map<Purpose, PreferenceStatus> preferencesStatus;
+    private Map<String, PreferenceStatus> preferencesStatus;
 
     @Schema(
             description = "Template version to reference (optional - uses latest if not provided)",

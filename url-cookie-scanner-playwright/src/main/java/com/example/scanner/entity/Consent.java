@@ -5,7 +5,6 @@ import com.example.scanner.dto.Multilingual;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.enums.PreferenceStatus;
-import com.example.scanner.enums.Purpose;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -132,105 +131,5 @@ public class Consent {
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
         this.className = "com.example.scanner.entity.Consent";
-    }
-
-    /**
-     * Create new version from existing consent with updates
-     * Used for consent update operations
-     */
-    public static Consent createNewVersionFrom(Consent existingConsent, UpdateConsentRequest updateRequest,
-                                               String newConsentHandleId, Integer newTemplateVersion) {
-        Consent newVersion = new Consent();
-
-        // Copy immutable fields (these NEVER change across versions)
-        newVersion.setConsentId(existingConsent.getConsentId()); // Same logical ID
-        newVersion.setBusinessId(existingConsent.getBusinessId()); // Same business
-        newVersion.setTemplateId(existingConsent.getTemplateId()); // Same template (logical)
-        newVersion.setCustomerIdentifiers(existingConsent.getCustomerIdentifiers()); // Same customer
-
-        // Set version information
-        newVersion.setVersion(existingConsent.getVersion() + 1); // Increment version
-        newVersion.setConsentStatus(VersionStatus.ACTIVE); // New version is active
-
-        // Set new consent handle (the one used for this update)
-        newVersion.setConsentHandleId(newConsentHandleId);
-
-        // Update template version if provided (consent might reference newer template)
-        newVersion.setTemplateVersion(newTemplateVersion != null ?
-                newTemplateVersion : existingConsent.getTemplateVersion());
-
-        // Apply updates from request, keeping existing values if not provided
-        newVersion.setLanguagePreferences(updateRequest.getLanguagePreference() != null ?
-                updateRequest.getLanguagePreference() : existingConsent.getLanguagePreferences());
-
-        newVersion.setPreferences(updateRequest.getPreferencesStatus() != null ?
-                // Process new preferences with user choices
-                processUpdatedPreferences(existingConsent.getPreferences(), updateRequest.getPreferencesStatus()) :
-                existingConsent.getPreferences());
-
-        // Copy other fields that may not change
-        newVersion.setMultilingual(existingConsent.getMultilingual());
-
-        // Set timestamps and status
-        LocalDateTime now = LocalDateTime.now();
-        newVersion.setStartDate(now);
-        newVersion.setCreatedAt(Instant.now());
-        newVersion.setUpdatedAt(Instant.now());
-        newVersion.setClassName("com.example.scanner.entity.Consent");
-
-        // Calculate new end date based on preferences
-        newVersion.setEndDate(calculateConsentEndDate(newVersion.getPreferences()));
-
-        // Determine consent status based on preferences
-        newVersion.setStatus(determineConsentStatus(newVersion.getPreferences()));
-
-        return newVersion;
-    }
-
-    /**
-     * Process updated preferences with user's new choices
-     */
-    private static List<Preference> processUpdatedPreferences(List<Preference> existingPreferences,
-                                                              Map<Purpose, PreferenceStatus> userChoices) {
-        // Implementation would merge existing preferences with user's new choices
-        // This follows the same logic as in ConsentService.createConsentByConsentHandleId
-        // but applies updates instead of initial creation
-        return existingPreferences.stream()
-                .peek(preference -> {
-                    if (userChoices.containsKey(preference.getPreferenceId())) {
-                        preference.setPreferenceStatus(userChoices.get(preference.getPreferenceId()));
-                        preference.setStartDate(LocalDateTime.now());
-                        // Recalculate end date based on preference validity...
-                    }
-                })
-                .collect(java.util.stream.Collectors.toList());
-    }
-
-    /**
-     * Calculate consent end date based on preference validities
-     */
-    private static LocalDateTime calculateConsentEndDate(List<Preference> preferences) {
-        return preferences.stream()
-                .map(Preference::getEndDate)
-                .filter(java.util.Objects::nonNull)
-                .max(LocalDateTime::compareTo)
-                .orElse(LocalDateTime.now().plusYears(1)); // Default to 1 year
-    }
-
-    /**
-     * Determine consent status based on preference statuses
-     */
-    private static Status determineConsentStatus(List<Preference> preferences) {
-        boolean hasAccept = preferences.stream()
-                .anyMatch(pref -> pref.getPreferenceStatus() == com.example.scanner.enums.PreferenceStatus.ACCEPTED);
-
-        boolean allReject = preferences.stream()
-                .allMatch(pref -> pref.getPreferenceStatus() == com.example.scanner.enums.PreferenceStatus.NOTACCEPTED);
-
-        if (hasAccept || allReject) {
-            return Status.ACTIVE;
-        }
-
-        return Status.INACTIVE;
     }
 }

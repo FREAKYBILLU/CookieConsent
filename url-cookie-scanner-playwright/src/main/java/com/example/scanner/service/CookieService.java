@@ -8,7 +8,6 @@ import com.example.scanner.dto.request.CookieUpdateRequest;
 import com.example.scanner.dto.response.CookieUpdateResponse;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
-import com.example.scanner.enums.Purpose;
 import com.example.scanner.enums.SameSite;
 import com.example.scanner.enums.Source;
 import com.example.scanner.exception.CookieNotFoundException;
@@ -40,6 +39,7 @@ public class CookieService {
     private static final String DEFAULT_SUBDOMAIN = "main";
 
     private final MultiTenantMongoConfig mongoConfig;
+    private final CategoryService categoryService;
 
     /**
      * Update a specific cookie's category and description within a transaction
@@ -69,14 +69,15 @@ public class CookieService {
             );
         }
 
-        boolean isValidCategory = Arrays.stream(Purpose.values())
-                .anyMatch(purpose -> updateRequest.getCategory().equals(purpose.toString()));
+        if (updateRequest.getCategory() != null) {
+            boolean isValidCategory = categoryService.categoryExists(updateRequest.getCategory(), tenantId);
 
-        if (!isValidCategory) {
-            throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
-                    "Category is not valid",
-                    "Category '"+ updateRequest.getCategory()+ "' is not a valid category: "
-            );
+            if (!isValidCategory) {
+                throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
+                        "Category is not valid",
+                        "Category '"+ updateRequest.getCategory()+ "' does not exist in the Category table for this tenant"
+                );
+            }
         }
 
         log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getName(), transactionId);
@@ -290,14 +291,15 @@ public class CookieService {
                 );
             }
 
-            boolean isValidCategory = Arrays.stream(Purpose.values())
-                    .anyMatch(purpose -> addRequest.getCategory().equals(purpose.toString()));
+            if (addRequest.getCategory() != null) {
+                boolean isValidCategory = categoryService.categoryExists(addRequest.getCategory(), tenantId);
 
-            if (!isValidCategory) {
-                throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
-                        "Category is not valid",
-                        "Category '"+ addRequest.getCategory()+ "' is not a valid category: "
-                );
+                if (!isValidCategory) {
+                    throw new UrlValidationException(ErrorCodes.VALIDATION_ERROR,
+                            "Category is not valid",
+                            "Category '"+ addRequest.getCategory()+ "' does not exist in the Category table for this tenant"
+                    );
+                }
             }
 
             // Create the new cookie entity

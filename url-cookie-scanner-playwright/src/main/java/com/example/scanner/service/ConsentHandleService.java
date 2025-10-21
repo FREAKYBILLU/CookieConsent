@@ -230,16 +230,17 @@ public class ConsentHandleService {
             return Collections.emptyList();
         }
 
+
         return preferences.stream()
                 .map(preference -> {
-                    String purposeKey = preference.getPurpose().name(); // Convert Purpose enum to String
+                    String categoryKey = preference.getPurpose();
                     List<CookieEntity> matchingCookies = cookiesByCategory.getOrDefault(
-                            purposeKey,
+                            categoryKey,
                             Collections.emptyList()
                     );
 
-                    log.debug("Mapped {} cookies to preference purpose: {}",
-                            matchingCookies.size(), purposeKey);
+                    log.debug("Mapped {} cookies to preference category: {}",
+                            matchingCookies.size(), categoryKey);
 
                     return PreferenceWithCookies.from(preference, matchingCookies);
                 })

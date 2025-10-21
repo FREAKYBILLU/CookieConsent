@@ -1,4 +1,5 @@
 package com.example.scanner.service;
+import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.request.AddCookieCategoryRequest;
@@ -9,10 +10,14 @@ import com.example.scanner.exception.CategoryUpdateException;
 import com.example.scanner.repository.impl.CategoryRepositoryImpl;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -21,6 +26,7 @@ import java.util.*;
 public class CategoryService {
 
     private final CategoryRepositoryImpl categoryRepository;
+    private final MultiTenantMongoConfig mongoConfig;
 
     public CookieCategoryResponse addCategory(AddCookieCategoryRequest request, String tenantId) {
         try {
@@ -162,4 +168,42 @@ public class CategoryService {
         return List.of();
     }
 
+    /**
+     * Check if a category exists for a given tenant
+     * @param category Category name to check
+     * @param tenantId Tenant ID
+     * @return true if category exists, false otherwise
+     */
+    public boolean categoryExists(String category, String tenantId) {
+        if (category == null || category.trim().isEmpty()) {
+            return false;
+        }
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            Query query = new Query(Criteria.where("category").is(category));
+            return tenantMongoTemplate.exists(query, CookieCategory.class);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    /**
+     * Get all categories for a tenant (useful for validation)
+     */
+    public List<String> getAllCategoryNames(String tenantId) {
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            List<CookieCategory> categories = tenantMongoTemplate.findAll(CookieCategory.class);
+            return categories.stream()
+                    .map(CookieCategory::getCategory)
+                    .collect(Collectors.toList());
+        } finally {
+            TenantContext.clear();
+        }
+    }
 }
