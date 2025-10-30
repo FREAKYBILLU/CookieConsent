@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Configuration
-@EnableWebMvc
+//@EnableWebMvc
 @Component
 public class RateLimitingConfig implements WebMvcConfigurer {
 

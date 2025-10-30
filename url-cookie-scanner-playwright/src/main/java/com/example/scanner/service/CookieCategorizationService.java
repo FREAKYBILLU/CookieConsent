@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
@@ -53,8 +54,7 @@ public class CookieCategorizationService {
     /**
      * Categorize cookies with retry mechanism
      */
-    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames) throws CookieCategorizationException {
-        if (cookieNames == null || cookieNames.isEmpty()) {
+    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames, String tenantId) throws CookieCategorizationException {        if (cookieNames == null || cookieNames.isEmpty()) {
             log.debug("No cookie names provided for categorization");
             return Collections.emptyMap();
         }
@@ -74,9 +74,38 @@ public class CookieCategorizationService {
                 log.debug("Fetching categorization for {} uncached cookies", uncachedCookies.size());
                 apiResults = callCategorizationApiWithRetry(uncachedCookies);
 
-                // Cache the new results
-                if (cacheEnabled && !apiResults.isEmpty()) {
-                    cacheResults(apiResults);
+                // ✅ VALIDATE AND MAP CATEGORIES
+                if (!apiResults.isEmpty()) {
+                    log.info("Validating {} predicted categories against Category table for tenant: {}",
+                            apiResults.size(), tenantId);
+
+                    Map<String, CookieCategorizationResponse> validatedResults = new ConcurrentHashMap<>();
+
+                    for (Map.Entry<String, CookieCategorizationResponse> entry : apiResults.entrySet()) {
+                        String cookieName = entry.getKey();
+                        CookieCategorizationResponse response = entry.getValue();
+
+                        // Validate and map the predicted category
+                        String predictedCategory = response.getCategory();
+                        String validatedCategory = validateAndMapCategory(predictedCategory, tenantId);
+
+                        // Update response with validated category
+                        response.setCategory(validatedCategory);
+
+                        if (!predictedCategory.equals(validatedCategory)) {
+                            log.info("Cookie '{}': Mapped predicted category '{}' to '{}'",
+                                    cookieName, predictedCategory, validatedCategory);
+                        }
+
+                        validatedResults.put(cookieName, response);
+                    }
+
+                    apiResults = validatedResults;
+
+                    // Cache the validated results
+                    if (cacheEnabled) {
+                        cacheResults(apiResults);
+                    }
                 }
             }
 
@@ -263,4 +292,40 @@ public class CookieCategorizationService {
             return now.isBefore(expiryTime);
         }
     }
+
+    /**
+     * Validate predicted category against tenant's category table
+     * If not found, map to closest or use default "Others"
+     */
+    private String validateAndMapCategory(String predictedCategory, String tenantId) {
+        if (predictedCategory == null || predictedCategory.trim().isEmpty()) {
+            log.warn("Empty category predicted, using default 'Others'");
+            return "Others";
+        }
+
+        // Check if predicted category exists in database
+        if (categoryService.categoryExists(predictedCategory, tenantId)) {
+            return predictedCategory;
+        }
+
+        // Category doesn't exist - try to find closest match
+        List<String> existingCategories = categoryService.getAllCategoryNames(tenantId);
+
+        // Case-insensitive match
+        Optional<String> match = existingCategories.stream()
+                .filter(cat -> cat.equalsIgnoreCase(predictedCategory))
+                .findFirst();
+
+        if (match.isPresent()) {
+            log.info("Mapped predicted category '{}' to existing category '{}' (case difference)",
+                    predictedCategory, match.get());
+            return match.get();
+        }
+
+        // No match found - use default
+        log.warn("Predicted category '{}' not found in database for tenant {}. Using 'Others'",
+                predictedCategory, tenantId);
+        return "Others";
+    }
+
 }

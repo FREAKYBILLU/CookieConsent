@@ -15,7 +15,6 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "Response for template update operation")
 public class UpdateTemplateResponse {
 

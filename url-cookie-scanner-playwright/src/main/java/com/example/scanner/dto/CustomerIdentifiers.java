@@ -13,7 +13,6 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class CustomerIdentifiers {
     @Schema(
             description = "Type of identifier (e.g., EMAIL, PHONE, USER_ID, CUSTOMER_ID)",

@@ -18,7 +18,6 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(ignoreUnknown = true)
 @Schema(description = "Request to create a new consent based on user's cookie preferences")
 public class CreateConsentRequest {
 

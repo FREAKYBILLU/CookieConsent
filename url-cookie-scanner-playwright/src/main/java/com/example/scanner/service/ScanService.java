@@ -705,7 +705,7 @@ public class ScanService {
                     cookieNames.size(), cookiesToSave.size());
 
             Map<String, CookieCategorizationResponse> results =
-                    cookieCategorizationService.categorizeCookies(cookieNames);
+                    cookieCategorizationService.categorizeCookies(cookieNames,tenantId);
 
             for (CookieDto cookie : cookiesToSave) {
                 String cookieName = cookie.getName();

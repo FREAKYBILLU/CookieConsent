@@ -24,7 +24,6 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonIgnoreProperties(ignoreUnknown = true)
 public class CreateTemplateRequest {
 
     @Schema(description = "Scan ID from completed cookie scan", example = "550e8400-e29b-41d4-a716-446655440000", required = true)
