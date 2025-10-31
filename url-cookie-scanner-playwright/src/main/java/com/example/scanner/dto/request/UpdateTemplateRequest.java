@@ -36,7 +36,7 @@ public class UpdateTemplateRequest {
     private String privacyPolicyDocument;
 
     @Schema(description = "Updated privacy policy document metadata")
-    private DocumentMeta privacyPolicyDocumentMeta;
+    private DocumentMeta documentMeta;
 
     @Schema(description = "Updated list of preferences")
     private List<Preference> preferences;
@@ -48,7 +48,7 @@ public class UpdateTemplateRequest {
                 multilingual != null ||
                 uiConfig != null ||
                 privacyPolicyDocument != null ||
-                privacyPolicyDocumentMeta != null ||
+                documentMeta != null ||
                 preferences != null;
     }
 }

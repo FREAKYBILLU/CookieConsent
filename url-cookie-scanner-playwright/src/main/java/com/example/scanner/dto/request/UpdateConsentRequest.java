@@ -43,18 +43,12 @@ public class UpdateConsentRequest {
             example = "2"
     )
     private Integer templateVersion;
-    /**
-     * Validation method to ensure at least one field is provided for update
-     */
+
     public boolean hasUpdates() {
         return languagePreference != null ||
-                (preferencesStatus != null && !preferencesStatus.isEmpty()) ||
-                templateVersion != null;
+                (preferencesStatus != null && !preferencesStatus.isEmpty());
     }
 
-    /**
-     * Check if this update contains preference changes
-     */
     public boolean hasPreferenceUpdates() {
         return preferencesStatus != null && !preferencesStatus.isEmpty();
     }

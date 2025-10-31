@@ -25,7 +25,7 @@ public class ConsentUtil {
      * Used for consent update operations
      */
     public static Consent createNewVersionFrom(Consent existingConsent, UpdateConsentRequest updateRequest,
-                                               String newConsentHandleId, Integer newTemplateVersion) {
+                                               String newConsentHandleId, Integer templateVersionFromHandle) {
         Consent newVersion = new Consent();
 
         // Copy immutable fields
@@ -42,8 +42,7 @@ public class ConsentUtil {
         newVersion.setConsentHandleId(newConsentHandleId);
 
         // Update template version if provided
-        newVersion.setTemplateVersion(newTemplateVersion != null ?
-                newTemplateVersion : existingConsent.getTemplateVersion());
+        newVersion.setTemplateVersion(templateVersionFromHandle);
 
         // Apply updates from request
         newVersion.setLanguagePreferences(updateRequest.getLanguagePreference() != null ?

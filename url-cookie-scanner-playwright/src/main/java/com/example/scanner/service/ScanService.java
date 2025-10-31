@@ -180,7 +180,6 @@ public class ScanService {
 
         Playwright playwright = null;
         Browser browser = null;
-        BrowserContext context = null;
 
         Map<String, CookieDto> discoveredCookies = new ConcurrentHashMap<>();
         Set<String> processedUrls = new HashSet<>();
@@ -204,27 +203,6 @@ public class ScanService {
                     .setAcceptDownloads(false)
                     .setPermissions(Arrays.asList("geolocation", "notifications"));
 
-            context = browser.newContext(contextOptions);
-            context.setDefaultTimeout(15000);
-            context.setDefaultNavigationTimeout(15000);
-
-            Set<String> trackingDomains = ConcurrentHashMap.newKeySet();
-            context.onRequest(request -> {
-                String urltemp = request.url();
-                processedUrls.add(urltemp);
-
-                if (isTrackingRequest(urltemp)) {
-                    try {
-                        String domain = new java.net.URL(urltemp).getHost();
-                        trackingDomains.add(domain);
-                        log.debug("Detected tracking request: {}", urltemp);
-                    } catch (java.net.MalformedURLException e) {
-                        log.info("MalFormed URL ignored");
-                    }
-                }
-            });
-
-            Page page = context.newPage();
 
             // **CREATE LIST OF ALL URLs TO SCAN COMPREHENSIVELY**
             List<ScanTarget> allTargetsToScan = new ArrayList<>();
@@ -250,10 +228,37 @@ public class ScanService {
                 String targetUrl = target.url;
                 String targetSubdomainName = target.subdomainName;
 
-                log.info("=== TARGET {}/{}: {} (Subdomain: {}) ===",
-                        targetIndex + 1, allTargetsToScan.size(), targetUrl, targetSubdomainName);
+                BrowserContext context = null;
+                Page page = null;
 
                 try {
+                    log.info("=== TARGET {}/{}: {} (Subdomain: {}) - CREATING NEW ISOLATED CONTEXT ===",
+                            targetIndex + 1, allTargetsToScan.size(), targetUrl, targetSubdomainName);
+
+                    // NAYA CONTEXT BANAO
+                    context = browser.newContext(contextOptions);
+                    context.setDefaultTimeout(15000);
+                    context.setDefaultNavigationTimeout(15000);
+
+                    // Request listener setup (har context ke liye alag)
+                    Set<String> trackingDomains = ConcurrentHashMap.newKeySet();
+                    context.onRequest(request -> {
+                        String urltemp = request.url();
+                        processedUrls.add(urltemp);
+
+                        if (isTrackingRequest(urltemp)) {
+                            try {
+                                String domain = new java.net.URL(urltemp).getHost();
+                                trackingDomains.add(domain);
+                                log.debug("Detected tracking request: {}", urltemp);
+                            } catch (java.net.MalformedURLException e) {
+                                log.info("MalFormed URL ignored");
+                            }
+                        }
+                    });
+
+                    page = context.newPage();
+
                     // PHASE 1: LOADING PAGE WITH FULL WAIT
                     scanMetrics.setScanPhase("LOADING_PAGE_" + targetSubdomainName.toUpperCase());
                     log.info("=== PHASE 1: Loading {} with extended wait ===", targetSubdomainName);
@@ -307,39 +312,39 @@ public class ScanService {
                         log.info("Trying manual consent detection for {}...", targetSubdomainName);
                         try {
                             Boolean foundButton = (Boolean) page.evaluate(String.format("""
-                            (function() {
-                                let found = false;
-                                let selectors = [
-                                    'button', 'a', 'div[role="button"]', 'span[role="button"]',
-                                    '[onclick]', '[data-testid]', '[data-cy]'
-                                ];
-                                
-                                for (let selector of selectors) {
-                                    let elements = document.querySelectorAll(selector);
-                                    for (let elem of elements) {
-                                        let text = (elem.textContent || elem.innerText || '').toLowerCase();
-                                        let attrs = elem.outerHTML.toLowerCase();
+                        (function() {
+                            let found = false;
+                            let selectors = [
+                                'button', 'a', 'div[role="button"]', 'span[role="button"]',
+                                '[onclick]', '[data-testid]', '[data-cy]'
+                            ];
+                            
+                            for (let selector of selectors) {
+                                let elements = document.querySelectorAll(selector);
+                                for (let elem of elements) {
+                                    let text = (elem.textContent || elem.innerText || '').toLowerCase();
+                                    let attrs = elem.outerHTML.toLowerCase();
+                                    
+                                    if (text.includes('accept') || text.includes('agree') || 
+                                        text.includes('allow') || text.includes('consent') ||
+                                        text.includes('continue') || text.includes('ok') ||
+                                        attrs.includes('accept') || attrs.includes('consent')) {
                                         
-                                        if (text.includes('accept') || text.includes('agree') || 
-                                            text.includes('allow') || text.includes('consent') ||
-                                            text.includes('continue') || text.includes('ok') ||
-                                            attrs.includes('accept') || attrs.includes('consent')) {
-                                            
-                                            try {
-                                                elem.click();
-                                                console.log('Clicked consent element on %s:', text || attrs);
-                                                found = true;
-                                                break;
-                                            } catch(e) {
-                                                continue;
-                                            }
+                                        try {
+                                            elem.click();
+                                            console.log('Clicked consent element on %s:', text || attrs);
+                                            found = true;
+                                            break;
+                                        } catch(e) {
+                                            continue;
                                         }
                                     }
-                                    if (found) break;
                                 }
-                                return found;
-                            })();
-                        """, targetSubdomainName));
+                                if (found) break;
+                            }
+                            return found;
+                        })();
+                    """, targetSubdomainName));
 
                             if (foundButton) {
                                 consentHandled = true;
@@ -366,20 +371,20 @@ public class ScanService {
                     log.info("=== PHASE 4: Aggressive user interaction simulation for {} ===", targetSubdomainName);
 
                     page.evaluate("""
-                        window.scrollTo(0, document.body.scrollHeight * 0.3);
-                    """);
-                                        page.waitForTimeout(1000);
+                    window.scrollTo(0, document.body.scrollHeight * 0.3);
+                """);
+                    page.waitForTimeout(1000);
 
-                                        page.evaluate("""
-                        window.scrollTo(0, document.body.scrollHeight * 0.7);
-                    """);
-                                        page.waitForTimeout(1000);
+                    page.evaluate("""
+                    window.scrollTo(0, document.body.scrollHeight * 0.7);
+                """);
+                    page.waitForTimeout(1000);
 
                     // Natural events (not artificial analytics calls)
-                                        page.evaluate("""
-                        window.dispatchEvent(new Event('scroll'));
-                        window.dispatchEvent(new Event('resize'));
-                    """);
+                    page.evaluate("""
+                    window.dispatchEvent(new Event('scroll'));
+                    window.dispatchEvent(new Event('resize'));
+                """);
 
                     // PHASE 7: ANALYTICS EVENT TRIGGERING
                     scanMetrics.setScanPhase("TRIGGERING_ANALYTICS_" + targetSubdomainName.toUpperCase());
@@ -398,7 +403,6 @@ public class ScanService {
                     }
 
                     // PHASE 9: IFRAME PROCESSING
-                    // PHASE 9: IFRAME PROCESSING
                     scanMetrics.setScanPhase("IFRAME_DETECTION_" + targetSubdomainName.toUpperCase());
                     log.info("=== PHASE 7: Enhanced iframe/embed detection for {} ===", targetSubdomainName);
                     handleIframes(context, targetUrl, discoveredCookies, transactionId, tenantId, targetSubdomainName);
@@ -408,14 +412,26 @@ public class ScanService {
                 } catch (Exception e) {
                     log.warn("Error during comprehensive scan of {}: {}", targetUrl, e.getMessage());
                     // Continue with next target
+                } finally {
+                    try {
+                        if (page != null && !page.isClosed()) {
+                            page.close();
+                            log.debug("Closed page for {}", targetSubdomainName);
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Error closing page: {}", ex.getMessage());
+                    }
+
+                    try {
+                        if (context != null) {
+                            context.close();
+                            log.info("✅ CLOSED ISOLATED CONTEXT for {} - Cookie isolation complete!", targetSubdomainName);
+                        }
+                    } catch (Exception ex) {
+                        log.warn("Error closing context: {}", ex.getMessage());
+                    }
                 }
             }
-
-            // FINAL CAPTURE
-            scanMetrics.setScanPhase("FINAL_CAPTURE");
-            log.info("=== SINGLE FINAL CAPTURE ===");
-            page.waitForTimeout(1000);
-            captureBrowserCookiesEnhanced(context, url, discoveredCookies, transactionId, scanMetrics, tenantId);
 
             log.info("=== ENSURING ALL SCANNED SUBDOMAINS ARE SAVED IN DB ===");
             ScanResultEntity finalResult = findScanResultFromTenant(tenantId, transactionId);
@@ -441,7 +457,7 @@ public class ScanService {
         } catch (Exception e) {
             throw new ScanExecutionException("Unexpected error during scan: " + e.getMessage());
         } finally {
-            cleanupResources(context, browser, playwright);
+            cleanupResources(null, browser, playwright);
         }
     }
 

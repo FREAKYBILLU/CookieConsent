@@ -57,7 +57,7 @@ public class CreateTemplateRequest {
     private String privacyPolicyDocument;
 
     @Schema(description = "Privacy policy document metadata")
-    private DocumentMeta privacyPolicyDocumentMeta;
+    private DocumentMeta documentMeta;
 
     @Schema(description = "Status of the template", example = "PUBLISHED")
     @NotNull(message = "Status is required")

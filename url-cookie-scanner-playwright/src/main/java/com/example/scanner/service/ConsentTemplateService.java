@@ -305,8 +305,8 @@ public class ConsentTemplateService {
                     updateRequest.getUiConfig() : currentActiveTemplate.getUiConfig());
             newTemplate.setPrivacyPolicyDocument(updateRequest.getPrivacyPolicyDocument() != null ?
                     updateRequest.getPrivacyPolicyDocument() : currentActiveTemplate.getPrivacyPolicyDocument());
-            newTemplate.setDocumentMeta(updateRequest.getPrivacyPolicyDocumentMeta() != null ?
-                    updateRequest.getPrivacyPolicyDocumentMeta() : currentActiveTemplate.getDocumentMeta());
+            newTemplate.setDocumentMeta(updateRequest.getDocumentMeta() != null ?
+                    updateRequest.getDocumentMeta() : currentActiveTemplate.getDocumentMeta());
             newTemplate.setPreferences(updateRequest.getPreferences() != null ?
                     updateRequest.getPreferences() : currentActiveTemplate.getPreferences());
 

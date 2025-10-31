@@ -107,7 +107,7 @@ public class ConsentTemplate {
         template.setMultilingual(request.getMultilingual());
         template.setUiConfig(request.getUiConfig());
         template.setPrivacyPolicyDocument(request.getPrivacyPolicyDocument());
-        template.setDocumentMeta(request.getPrivacyPolicyDocumentMeta());
+        template.setDocumentMeta(request.getDocumentMeta());
         template.setPreferences(request.getPreferences());
         return template;
     }

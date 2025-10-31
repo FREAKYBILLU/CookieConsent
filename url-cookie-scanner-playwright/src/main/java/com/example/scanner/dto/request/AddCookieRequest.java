@@ -16,6 +16,10 @@ public class AddCookieRequest {
     @NotBlank(message = "Cookie domain is required and cannot be empty or whitespace")
     private String domain;
 
+    @Pattern(
+            regexp = "^/(?!.*[@]{2,})(?!.*//)[A-Za-z0-9._~!$&'()*+,;=:=@/-]*$",
+            message = "Path must start with '/', contain valid URL path characters.'"
+    )
     @NotBlank(message = "Path is required and cannot be empty or whitespace")
     private String path = "/";
 
