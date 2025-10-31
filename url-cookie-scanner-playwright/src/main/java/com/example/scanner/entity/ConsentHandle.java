@@ -19,7 +19,7 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Document(collection = "consent_handles")
+@Document(collection = "cookie_consent_handles")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConsentHandle {
 

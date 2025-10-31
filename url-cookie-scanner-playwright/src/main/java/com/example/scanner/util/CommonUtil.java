@@ -1,5 +1,6 @@
 package com.example.scanner.util;
 
+import java.util.Base64;
 import java.util.regex.Pattern;
 
 public class CommonUtil {
@@ -58,6 +59,29 @@ public class CommonUtil {
     public static void validateDateRange(java.time.LocalDateTime startDate, java.time.LocalDateTime endDate) {
         if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
             throw new IllegalArgumentException("Start date cannot be after end date");
+        }
+    }
+
+    public static boolean isValidBase64(String str) {
+        if (str == null || str.trim().isEmpty()) {
+            return false;
+        }
+
+        String trimmed = str.trim();
+
+        if (trimmed.length() % 4 != 0) {
+            return false;
+        }
+
+        if (!trimmed.matches("^[A-Za-z0-9+/]*={0,2}$")) {
+            return false;
+        }
+
+        try {
+            Base64.getDecoder().decode(trimmed);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 }

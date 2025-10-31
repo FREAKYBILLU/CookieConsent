@@ -35,12 +35,4 @@ public class AddCookieCategoryRequest {
             maxLength = 500
     )
     private String description;
-
-    @NotNull(message = "isDefault is required")
-    @Schema(
-            description = "Indicates if this is a default category",
-            example = "false",
-            required = true
-    )
-    private Boolean isDefault;
 }

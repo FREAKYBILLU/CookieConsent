@@ -270,6 +270,18 @@ public class GlobalExceptionHandler {
                 log.warn("Duplicate key attack attempt detected: {}", jsonEx.getMessage());
             }
         }
+        // ✅ NEW: Check for empty enum string (TemplateStatus)
+        else if (ex.getMessage() != null &&
+                ex.getMessage().contains("Cannot coerce empty String") &&
+                ex.getMessage().contains("TemplateStatus")) {
+            userFriendlyMessage = "Invalid status value";
+            details = "Status cannot be empty. Valid values are: DRAFT, PUBLISHED";
+        }
+        // ✅ NEW: Check for invalid enum value
+        else if (ex.getMessage() != null && ex.getMessage().contains("TemplateStatus")) {
+            userFriendlyMessage = "Invalid status value";
+            details = "Status must be one of: DRAFT, PUBLISHED";
+        }
         // Your existing specific error handling
         else if (ex.getMessage().contains("Boolean")) {
             userFriendlyMessage = "Invalid boolean value. Use true or false only.";
@@ -293,7 +305,6 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.badRequest().body(error);
     }
-
     @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> handlePathVariableValidation(
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,

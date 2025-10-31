@@ -16,7 +16,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
-@Document(collection = "consent_templates")
+@Document(collection = "cookie_consent_templates")
 @Data
 public class ConsentTemplate {
 

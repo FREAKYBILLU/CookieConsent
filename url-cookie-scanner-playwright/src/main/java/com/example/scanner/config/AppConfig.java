@@ -46,7 +46,7 @@ public class AppConfig {
 
     // Optional: Other useful security/validation configurations
     m.configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, true);
-    m.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+      m.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
 
     // IMPORTANT: Configure serialization inclusion
     m.setDefaultPropertyInclusion(

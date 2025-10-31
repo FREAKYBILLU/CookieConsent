@@ -60,5 +60,6 @@ public class CreateTemplateRequest {
     private DocumentMeta privacyPolicyDocumentMeta;
 
     @Schema(description = "Status of the template", example = "PUBLISHED")
+    @NotNull(message = "Status is required")
     private TemplateStatus status;
 }

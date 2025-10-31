@@ -59,7 +59,7 @@ public class CategoryService {
             cookieCategory.setCategoryId(UUID.randomUUID().toString());
             cookieCategory.setCategory(request.getCategory());
             cookieCategory.setDescription(request.getDescription());
-            cookieCategory.setDefault(request.getIsDefault() != null ? request.getIsDefault() : false);
+            cookieCategory.setDefault(false);
             cookieCategory.setCreatedAt(new Date());
             cookieCategory.setUpdatedAt(new Date());
 

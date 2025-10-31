@@ -7,7 +7,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import java.util.*;
 
 @Data
-@Document(collection = "scan_results")
+@Document(collection = "cookie_scan_results")
 public class ScanResultEntity {
     @Id
     private String id;

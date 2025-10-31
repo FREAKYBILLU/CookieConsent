@@ -22,7 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 
 @Component
-@Order(2) // After PathTraversal filter, before InvalidCharacter filter
+@Order(2)
 @Slf4j
 public class TenantDatabaseValidationFilter implements Filter {
 
@@ -34,7 +34,7 @@ public class TenantDatabaseValidationFilter implements Filter {
 
     // Skip validation for these paths
     private static final List<String> SKIP_PATHS = Arrays.asList(
-            "/health", "/metrics", "/error", "/swagger-ui", "/api-docs"
+            "/health", "/metrics", "/error", "/swagger-ui", "/api-docs", "/dashboard"
     );
 
     public TenantDatabaseValidationFilter(MongoClient mongoClient, ObjectMapper objectMapper) {
@@ -60,9 +60,9 @@ public class TenantDatabaseValidationFilter implements Filter {
 
             String tenantId = httpRequest.getHeader("X-Tenant-ID");
 
-            // If no tenant header, let it pass (other validation will catch it)
             if (tenantId == null || tenantId.trim().isEmpty()) {
-                chain.doFilter(request, response);
+                log.warn("TENANT VALIDATION ERROR: Missing X-Tenant-ID header for URI: {}", requestURI);
+                handleMissingTenantId(httpRequest, httpResponse);
                 return;
             }
 
@@ -80,6 +80,32 @@ public class TenantDatabaseValidationFilter implements Filter {
         }
 
         chain.doFilter(request, response);
+    }
+
+    private void handleMissingTenantId(HttpServletRequest request, HttpServletResponse response)
+            throws IOException {
+
+        ErrorResponse errorResponse = new ErrorResponse(
+                ErrorCodes.VALIDATION_ERROR,
+                "Tenant ID is required",
+                "X-Tenant-ID header is missing or empty. Please provide a valid tenant ID in the request header.",
+                Instant.now(),
+                request.getRequestURI()
+        );
+
+        // Return 400 Bad Request
+        response.setStatus(HttpStatus.BAD_REQUEST.value());
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+
+        // Security headers
+        response.setHeader("X-Content-Type-Options", "nosniff");
+        response.setHeader("X-Frame-Options", "DENY");
+        response.setHeader("X-XSS-Protection", "1; mode=block");
+
+        String jsonResponse = objectMapper.writeValueAsString(errorResponse);
+        response.getWriter().write(jsonResponse);
+        response.getWriter().flush();
     }
 
     private boolean shouldSkipValidation(String requestURI) {

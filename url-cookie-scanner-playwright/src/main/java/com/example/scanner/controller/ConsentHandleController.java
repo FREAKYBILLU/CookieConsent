@@ -15,6 +15,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -76,7 +77,7 @@ public class ConsentHandleController {
     )
     public ResponseEntity<ConsentHandleResponse> createConsentHandle(
             @RequestHeader("X-Tenant-ID") String tenantId,
-            @org.springframework.web.bind.annotation.RequestBody CreateHandleRequest request,
+            @Valid @org.springframework.web.bind.annotation.RequestBody CreateHandleRequest request,
             @RequestHeader Map<String, String> headers) throws ScannerException {
 
         log.info("Creating consent handle for templateId: {}, customer: {}, tenant: {}",
