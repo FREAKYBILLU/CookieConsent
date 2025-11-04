@@ -106,6 +106,8 @@ public class ConsentHandleController {
                             required = true, example = "550e8400-e29b-41d4-a716-446655440000"),
                     @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
                             example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
+                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,
+                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef"),
                     @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
                             example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },

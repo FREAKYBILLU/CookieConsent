@@ -34,10 +34,6 @@ public class CreateTemplateRequest {
     @NotBlank(message = "Template name is required and cannot be empty")
     private String templateName;
 
-    @Schema(description = "Business ID", example = "0c092ed7-e99d-4ef7-8b1f-a3898e788832")
-    @NotBlank(message = "Business ID is required and cannot be empty")
-    private String businessId;
-
     @Schema(description = "List of preferences")
     @NotEmpty(message = "At least one preference is required")
     @Valid

@@ -147,7 +147,9 @@ public class ConsentController {
                     "Shows complete audit trail of consent changes and user preference updates.",
             parameters = {
                     @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
-                    @Parameter(name = "consentId", description = "Logical Consent ID", required = true)
+                    @Parameter(name = "consentId", description = "Logical Consent ID", required = true),
+                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,
+                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
             },
             responses = {
                     @ApiResponse(
@@ -265,8 +267,9 @@ public class ConsentController {
             }
     )
     public ResponseEntity<ConsentTokenValidateResponse> validateConsent(
-            @RequestHeader("consent-token") String consentToken) throws Exception {
+            @RequestHeader("consent-token") String consentToken,
+            @RequestHeader("X-Tenant-ID") String tenantId) throws Exception {
 
-        return new ResponseEntity<>(consentService.validateConsentToken(consentToken), HttpStatus.OK);
+        return new ResponseEntity<>(consentService.validateConsentToken(consentToken, tenantId), HttpStatus.OK);
     }
 }

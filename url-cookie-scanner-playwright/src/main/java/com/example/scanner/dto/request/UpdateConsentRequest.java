@@ -38,12 +38,6 @@ public class UpdateConsentRequest {
     )
     private Map<String, PreferenceStatus> preferencesStatus;
 
-    @Schema(
-            description = "Template version to reference (optional - uses latest if not provided)",
-            example = "2"
-    )
-    private Integer templateVersion;
-
     public boolean hasUpdates() {
         return languagePreference != null ||
                 (preferencesStatus != null && !preferencesStatus.isEmpty());

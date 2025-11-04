@@ -37,6 +37,7 @@ public class ConsentTemplateService {
 
     private final MultiTenantMongoConfig mongoConfig;
     private final CategoryService categoryService;
+    private final AuditService auditService;
 
     public Optional<ConsentTemplate> getTemplateByTenantAndScanId(String tenantId, String scanId) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
@@ -71,7 +72,7 @@ public class ConsentTemplateService {
     }
 
     public Optional<ConsentTemplate> getTemplateByTenantAndTemplateIdAndBusinessId(String tenantId, String templateId,
-                                                                                   String businessId, int version) {
+                                                                                    int version) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateInputs(templateId, "template ID cannot be null or empty");
 
@@ -79,7 +80,7 @@ public class ConsentTemplateService {
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
         try {
-            Query query = new Query(Criteria.where("templateId").is(templateId).and("businessId").is(businessId)
+            Query query = new Query(Criteria.where("templateId").is(templateId)
                     .and("status").is("PUBLISHED").and("templateStatus").is("ACTIVE").and("version")
                     .is(version));
 
@@ -104,9 +105,11 @@ public class ConsentTemplateService {
     }
 
     @Transactional
-    public ConsentTemplate createTemplate(String tenantId, CreateTemplateRequest createRequest) throws ConsentException {
+    public ConsentTemplate createTemplate(String tenantId, CreateTemplateRequest createRequest, String businessId) throws ConsentException {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateCreateRequest(createRequest);
+        // Log template creation initiated
+        auditService.logTemplateCreationInitiated(tenantId, "pending");
 
         // CRITICAL: Validate that the scan exists and is completed
         validateScanExists(tenantId, createRequest.getScanId());
@@ -121,7 +124,7 @@ public class ConsentTemplateService {
             }
 
             // Create template from request (using the provided scanId)
-            ConsentTemplate template = ConsentTemplate.fromCreateRequest(createRequest, createRequest.getScanId());
+            ConsentTemplate template = ConsentTemplate.fromCreateRequest(createRequest, createRequest.getScanId(), businessId);
 
             validateTemplatePurposes(template.getPreferences(), template.getStatus(), tenantId);
 
@@ -130,6 +133,8 @@ public class ConsentTemplateService {
 
             // Save template
             ConsentTemplate savedTemplate = tenantMongoTemplate.save(template);
+
+            auditService.logTemplateCreated(tenantId, savedTemplate.getTemplateId());
 
             log.info("Successfully created template with ID: {} for scan: {} in tenant: {}",
                     savedTemplate.getId(), createRequest.getScanId(), tenantId);
@@ -261,11 +266,14 @@ public class ConsentTemplateService {
     }
 
     @Transactional
-    public UpdateTemplateResponse updateTemplate(String tenantId, String templateId, UpdateTemplateRequest updateRequest) throws ConsentException {
+    public UpdateTemplateResponse updateTemplate(String tenantId, String templateId, String businessId, UpdateTemplateRequest updateRequest) throws ConsentException {
 
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateInputs(templateId, "Template ID cannot be null or empty");
         validateUpdateRequest(updateRequest);
+
+        // Log template update initiated
+        auditService.logTemplateUpdateInitiated(tenantId, templateId);
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -285,7 +293,7 @@ public class ConsentTemplateService {
 
             // Keep same: templateId, businessId, scanId
             newTemplate.setTemplateId(currentActiveTemplate.getTemplateId());
-            newTemplate.setBusinessId(currentActiveTemplate.getBusinessId());
+            newTemplate.setBusinessId(businessId);
             newTemplate.setScanId(currentActiveTemplate.getScanId());
 
             // Set version: current version + 1
@@ -322,6 +330,9 @@ public class ConsentTemplateService {
 
             // Step 4: Save new template record
             ConsentTemplate savedNewTemplate = tenantMongoTemplate.save(newTemplate);
+
+            // Log new version created
+            auditService.logNewTemplateVersionCreated(tenantId, templateId);
 
             // Step 5: Update old template: templateStatus ACTIVE -> UPDATED
             currentActiveTemplate.setTemplateStatus(VersionStatus.UPDATED);

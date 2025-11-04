@@ -96,12 +96,12 @@ public class ConsentTemplate {
     }
 
     // Helper method to create from CreateTemplateRequest
-    public static ConsentTemplate fromCreateRequest(CreateTemplateRequest request, String scanId) {
+    public static ConsentTemplate fromCreateRequest(CreateTemplateRequest request, String scanId, String businessId) {
         ConsentTemplate template = new ConsentTemplate();
         template.setTemplateId(UUID.randomUUID().toString()); // Generate logical template ID
         template.setScanId(scanId);
         template.setTemplateName(request.getTemplateName());
-        template.setBusinessId(request.getBusinessId());
+        template.setBusinessId(businessId);
         template.setStatus(request.getStatus() != null ? request.getStatus() : TemplateStatus.DRAFT);
         template.setTemplateStatus(VersionStatus.ACTIVE); // First version is always active
         template.setMultilingual(request.getMultilingual());

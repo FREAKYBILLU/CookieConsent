@@ -52,6 +52,8 @@ public class ConsentService {
     private final TokenUtility tokenUtility;
     private final ConsentRepositoryImpl consentRepositoryImpl;
     private final MultiTenantMongoConfig mongoConfig;
+    private final AuditService auditService;
+
 
     // ============================================
     // PUBLIC API METHODS
@@ -59,6 +61,10 @@ public class ConsentService {
 
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
+
+        // ✅ ADD THIS - Log consent creation initiated
+        auditService.logConsentCreationInitiated(tenantId, request.getConsentHandleId());
+
 
         // Validate preferences present
         if (request.getPreferencesStatus() == null || request.getPreferencesStatus().isEmpty()) {
@@ -130,8 +136,16 @@ public class ConsentService {
 
         consentRepositoryImpl.save(consent, tenantId);
 
+        // ✅ ADD THIS - Log consent created
+        auditService.logConsentCreated(tenantId, consent.getConsentId());
+
+        // Mark handle as USED
         consentHandle.setStatus(ConsentHandleStatus.USED);
+        consentHandle.setUpdatedAt(Instant.now());
         consentHandleRepository.save(consentHandle, tenantId);
+
+        // ✅ ADD THIS - Log handle marked used
+        auditService.logConsentHandleMarkedUsed(tenantId, consentHandle.getConsentHandleId());
 
         log.info("Successfully created consent: {}", consent.getConsentId());
 
@@ -147,6 +161,9 @@ public class ConsentService {
     public UpdateConsentResponse updateConsent(String consentId, UpdateConsentRequest updateRequest, String tenantId)
             throws Exception {
         log.info("Processing consent update for consentId: {}, tenant: {}", consentId, tenantId);
+
+        // Log consent update initiated
+        auditService.logConsentUpdateInitiated(tenantId, consentId);
 
         // Validate inputs
         validateUpdateInputs(consentId, updateRequest, tenantId);
@@ -198,10 +215,30 @@ public class ConsentService {
         return consentRepositoryImpl.findByConsentIdAndVersion(consentId, version, tenantId);
     }
 
-    public ConsentTokenValidateResponse validateConsentToken(String token) throws Exception {
-        return tokenUtility.verifyConsentToken(token);
-    }
+    public ConsentTokenValidateResponse validateConsentToken(String token, String tenantId) throws Exception {
 
+        String tokenId = token.substring(0, Math.min(20, token.length()));
+
+        // ✅ Log token verification initiated
+        auditService.logTokenVerificationInitiated(tenantId, tokenId);
+
+        try {
+            ConsentTokenValidateResponse response = tokenUtility.verifyConsentToken(token);
+
+            // ✅ Log token signature verified
+            auditService.logTokenSignatureVerified(tenantId, tokenId);
+
+            // ✅ Log token validation success
+            auditService.logTokenValidationSuccess(tenantId, tokenId);
+
+            return response;
+
+        } catch (Exception e) {
+            // ✅ Log token validation failed
+            auditService.logTokenValidationFailed(tenantId, tokenId);
+            throw e;
+        }
+    }
     // ============================================
     // VALIDATION & PROCESSING METHODS
     // ============================================
@@ -508,9 +545,23 @@ public class ConsentService {
         consentRepositoryImpl.save(newVersion, tenantId);
         log.info("Created consent version {} for {}", newVersion.getVersion(), newVersion.getConsentId());
 
+        // Log new version created
+        auditService.logNewConsentVersionCreated(tenantId, newVersion.getConsentId());
+
         active.setConsentStatus(VersionStatus.UPDATED);
         active.setUpdatedAt(Instant.now());
         consentRepositoryImpl.save(active, tenantId);
+
+        // Log old version marked updated
+        auditService.logOldConsentVersionMarkedUpdated(tenantId, active.getConsentId());
+
+        // ADD THESE 3 LINES - MISSING TTHA YE!
+        handle.setStatus(ConsentHandleStatus.USED);
+        handle.setUpdatedAt(Instant.now());
+        consentHandleRepository.save(handle, tenantId);
+
+        // ADD THIS LINE - YE BHI MISSING THA!
+        auditService.logConsentHandleMarkedUsedAfterUpdate(tenantId, handle.getConsentHandleId());
 
         return UpdateConsentResponse.success(
                 newVersion.getConsentId(), newVersion.getId(), newVersion.getVersion(),

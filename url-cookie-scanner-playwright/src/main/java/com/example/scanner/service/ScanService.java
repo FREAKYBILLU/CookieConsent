@@ -52,6 +52,7 @@ public class ScanService {
     private final CookieCategorizationService cookieCategorizationService;
     private final CookieScanMetrics metrics;
     private final MultiTenantMongoConfig mongoConfig;
+    private final AuditService auditService;
 
     @Lazy
     @Autowired
@@ -90,6 +91,9 @@ public class ScanService {
             }
 
             String transactionId = UUID.randomUUID().toString();
+
+            auditService.logCookieScanInitiated(tenantId, transactionId);
+
             ScanResultEntity result = new ScanResultEntity();
             result.setId(transactionId);
             result.setTransactionId(transactionId);
@@ -132,6 +136,8 @@ public class ScanService {
             result.setStatus(ScanStatus.RUNNING.name());
             saveScanResultToTenant(tenantId, result);
 
+            auditService.logCookieScanStarted(tenantId, transactionId);
+
             scanMetrics.setScanPhase("RUNNING");
             performMaximumCookieDetection(url, transactionId, scanMetrics, subdomains, tenantId);
 
@@ -152,6 +158,8 @@ public class ScanService {
         } catch (Exception e) {
             scanMetrics.markFailed(e.getMessage());
             scanMetrics.setScanPhase("FAILED");
+
+            auditService.logCookieScanFailed(tenantId, transactionId);
 
             Duration totalDuration = Duration.ofMillis(System.currentTimeMillis() - scanStartTime);
 

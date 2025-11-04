@@ -41,6 +41,11 @@ public class ConsentTemplateController {
 
     @Operation(
             summary = "Create consent template for completed scan",
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
+                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,  // ✅ ADD THIS
+                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
+            },
             description = "Creates a consent template linked to a completed cookie scan. The scanId must exist in scan_results table with COMPLETED status.",
             responses = {
                     @ApiResponse(
@@ -69,6 +74,7 @@ public class ConsentTemplateController {
     public ResponseEntity<?> createTemplate(
             @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
             @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestHeader("business-id") String businessId,
             @Valid @RequestBody CreateTemplateRequest createRequest,
             BindingResult bindingResult) {
 
@@ -90,7 +96,7 @@ public class ConsentTemplateController {
             log.info("Creating template '{}' for tenant: {} linked to scan: {}",
                     createRequest.getTemplateName(), tenantId, createRequest.getScanId());
 
-            ConsentTemplate createdTemplate = service.createTemplate(tenantId, createRequest);
+            ConsentTemplate createdTemplate = service.createTemplate(tenantId, createRequest, businessId);
 
             TemplateResponse response = new TemplateResponse(createdTemplate.getTemplateId(),
                     "Template created successfully and linked to scan: " + createdTemplate.getScanId());
@@ -244,6 +250,8 @@ public class ConsentTemplateController {
             parameters = {
                     @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true,
                             example = "tenant_123e4567-e89b-12d3-a456-426614174000"),
+                    @Parameter(name = "business-id", description = "Business ID", required = true,
+                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
                     @Parameter(name = "templateId", description = "Logical Template ID (not document ID)", required = true,
                             example = "tpl_123e4567-e89b-12d3-a456-426614174000")
             },
@@ -272,13 +280,14 @@ public class ConsentTemplateController {
     )
     public ResponseEntity<?> updateTemplate(
             @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestHeader("business-id") String businessId,
             @PathVariable String templateId,
             @org.springframework.web.bind.annotation.RequestBody @Valid UpdateTemplateRequest updateRequest) {
 
         try {
             log.info("Received template update request for templateId: {} in tenant: {}", templateId, tenantId);
 
-            UpdateTemplateResponse response = service.updateTemplate(tenantId, templateId, updateRequest);
+            UpdateTemplateResponse response = service.updateTemplate(tenantId, templateId, businessId, updateRequest);
 
             log.info("Successfully updated template: {} to version: {}", templateId, response.getNewVersion());
             return ResponseEntity.ok(response);

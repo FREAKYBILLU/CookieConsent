@@ -37,6 +37,7 @@ public class ConsentHandleService {
     private final ConsentHandleRepository consentHandleRepository;
     private final ConsentTemplateService consentTemplateService;
     private final MultiTenantMongoConfig mongoConfig;
+    private final AuditService auditService;
 
     @Value("${consent.handle.expiry.minutes:15}")
     private int handleExpiryMinutes;
@@ -50,10 +51,12 @@ public class ConsentHandleService {
                     "Missing X-Tenant-ID header");
         }
 
+        auditService.logConsentHandleCreationInitiated(tenantId, "pending");
+
         TenantContext.setCurrentTenant(tenantId);
 
         try {
-            validateTemplate(tenantId, request.getTemplateId(), headers.get(Constants.BUSINESS_ID_HEADER), request.getTemplateVersion());
+            validateTemplate(tenantId, request.getTemplateId(), request.getTemplateVersion());
 
             String consentHandleId = UUID.randomUUID().toString();
 
@@ -69,6 +72,9 @@ public class ConsentHandleService {
             );
 
             ConsentHandle savedHandle = this.consentHandleRepository.save(consentHandle, tenantId);
+
+            // Log handle created
+            auditService.logConsentHandleCreated(tenantId, consentHandleId);
 
             log.info("Created consent handle with ID: {} for template: {} and tenant: {}",
                     consentHandleId, request.getTemplateId(), tenantId);
@@ -247,14 +253,14 @@ public class ConsentHandleService {
                 .collect(Collectors.toList());
     }
 
-    private void validateTemplate(String tenantId, String templateId, String businessid, int templateVersion) throws ScannerException {
+    private void validateTemplate(String tenantId, String templateId, int templateVersion) throws ScannerException {
         // Check if template exists using the existing ConsentTemplateService
-        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndBusinessId(tenantId, templateId, businessid, templateVersion);
+        Optional<ConsentTemplate> templateOpt = consentTemplateService.getTemplateByTenantAndTemplateIdAndBusinessId(tenantId, templateId, templateVersion);
 
         if (templateOpt.isEmpty()) {
             throw new ScannerException(ErrorCodes.NOT_FOUND,
                     "Template not found",
-                    "Template with ID " + templateId + " and business Id " + businessid + " and version "+ templateVersion +" with status PUBLISHED and Template Status ACTIVE does not exist for tenant " + tenantId);
+                    "Template with ID " + templateId + " and version "+ templateVersion +" with status PUBLISHED and Template Status ACTIVE does not exist for tenant " + tenantId);
         }
 
         ConsentTemplate template = templateOpt.get();
