@@ -22,13 +22,17 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import com.example.scanner.service.CategoryService;
+import com.example.scanner.dto.response.TemplateWithCookiesResponse;
+import com.example.scanner.dto.response.PreferenceWithCookies;
+import com.example.scanner.entity.CookieEntity;
+import com.example.scanner.entity.ScanResultEntity;
+import org.springframework.data.domain.Sort;
+
+import java.util.*;
+import java.util.stream.Collectors;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Optional;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -39,21 +43,6 @@ public class ConsentTemplateService {
     private final CategoryService categoryService;
     private final AuditService auditService;
 
-    public Optional<ConsentTemplate> getTemplateByTenantAndScanId(String tenantId, String scanId) {
-        validateInputs(tenantId, "Tenant ID cannot be null or empty");
-        validateInputs(scanId, "Scan ID cannot be null or empty");
-
-        TenantContext.setCurrentTenant(tenantId);
-        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
-
-        try {
-            Query query = new Query(Criteria.where("scanId").is(scanId).and("templateStatus").is("ACTIVE"));
-            ConsentTemplate template = tenantMongoTemplate.findOne(query, ConsentTemplate.class);
-            return Optional.ofNullable(template);
-        } finally {
-            TenantContext.clear();
-        }
-    }
 
     public Optional<ConsentTemplate> getTemplateByTenantAndTemplateIdAndTemplateVersion(String tenantId, String templateId, int templateVersion) {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
@@ -109,7 +98,7 @@ public class ConsentTemplateService {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateCreateRequest(createRequest);
         // Log template creation initiated
-        auditService.logTemplateCreationInitiated(tenantId, "pending");
+        auditService.logTemplateCreationInitiated(tenantId, businessId, "pending");
 
         // CRITICAL: Validate that the scan exists and is completed
         validateScanExists(tenantId, createRequest.getScanId());
@@ -134,7 +123,7 @@ public class ConsentTemplateService {
             // Save template
             ConsentTemplate savedTemplate = tenantMongoTemplate.save(template);
 
-            auditService.logTemplateCreated(tenantId, savedTemplate.getTemplateId());
+            auditService.logTemplateCreated(tenantId, businessId, savedTemplate.getTemplateId());
 
             log.info("Successfully created template with ID: {} for scan: {} in tenant: {}",
                     savedTemplate.getId(), createRequest.getScanId(), tenantId);
@@ -273,7 +262,7 @@ public class ConsentTemplateService {
         validateUpdateRequest(updateRequest);
 
         // Log template update initiated
-        auditService.logTemplateUpdateInitiated(tenantId, templateId);
+        auditService.logTemplateUpdateInitiated(tenantId, businessId, templateId);
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -332,7 +321,7 @@ public class ConsentTemplateService {
             ConsentTemplate savedNewTemplate = tenantMongoTemplate.save(newTemplate);
 
             // Log new version created
-            auditService.logNewTemplateVersionCreated(tenantId, templateId);
+            auditService.logNewTemplateVersionCreated(tenantId, businessId, templateId);
 
             // Step 5: Update old template: templateStatus ACTIVE -> UPDATED
             currentActiveTemplate.setTemplateStatus(VersionStatus.UPDATED);
@@ -507,5 +496,127 @@ public class ConsentTemplateService {
         }
 
         log.debug("Update template request validation passed");
+    }
+
+
+    public List<TemplateWithCookiesResponse> getTemplateWithCookies(
+            String tenantId, String scanId, String templateId) {
+
+
+        log.info("Fetching template with cookies - tenant: {}, scanId: {}, templateId: {}",
+                tenantId, scanId, templateId);
+
+        TenantContext.setCurrentTenant(tenantId);
+        MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+        try {
+            List<ConsentTemplate> templates = new ArrayList<>();
+
+            if (templateId != null && !templateId.trim().isEmpty()) {
+                Query query = new Query(Criteria.where("templateId").is(templateId)
+                        .and("templateStatus").is("ACTIVE"));
+                query.with(Sort.by(Sort.Direction.DESC, "version"));
+                ConsentTemplate template = mongoTemplate.findOne(query, ConsentTemplate.class);
+                if (template != null) templates.add(template);
+            }
+
+            // --- Case 2: Fetch by scanId ---
+            else if (scanId != null && !scanId.trim().isEmpty()) {
+                Query query = new Query(Criteria.where("scanId").is(scanId)
+                        .and("templateStatus").is("ACTIVE"));
+                query.with(Sort.by(Sort.Direction.DESC, "version"));
+                ConsentTemplate template = mongoTemplate.findOne(query, ConsentTemplate.class);
+                if (template != null) templates.add(template);
+            }
+
+            // --- Case 3: No filters, get all active templates for tenant ---
+            else {
+                Query query = new Query(Criteria.where("templateStatus").is("ACTIVE"));
+                templates = mongoTemplate.find(query, ConsentTemplate.class);
+            }
+
+            return templates.stream()
+                    .map(template -> {
+                        List<PreferenceWithCookies> preferencesWithCookies =
+                                fetchAndMapCookies(template.getScanId(), template.getPreferences(), mongoTemplate);
+
+                        return TemplateWithCookiesResponse.builder()
+                                .id(template.getId())
+                                .templateId(template.getTemplateId())
+                                .scanId(template.getScanId())
+                                .templateName(template.getTemplateName())
+                                .businessId(template.getBusinessId())
+                                .status(template.getStatus())
+                                .templateStatus(template.getTemplateStatus())
+                                .multilingual(template.getMultilingual())
+                                .uiConfig(template.getUiConfig())
+                                .documentMeta(template.getDocumentMeta())
+                                .privacyPolicyDocument(template.getPrivacyPolicyDocument())
+                                .preferencesWithCookies(preferencesWithCookies)
+                                .version(template.getVersion())
+                                .createdAt(template.getCreatedAt())
+                                .updatedAt(template.getUpdatedAt())
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+
+        } finally {
+            TenantContext.clear();
+        }
+    }
+    /**
+     * Fetch cookies from scan and map to preferences
+     */
+    private List<PreferenceWithCookies> fetchAndMapCookies(
+            String scanId, List<Preference> preferences, MongoTemplate mongoTemplate) {
+
+        if (scanId == null || preferences == null || preferences.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        try {
+            // Get scan result
+            Query scanQuery = new Query(Criteria.where("transactionId").is(scanId));
+            ScanResultEntity scanResult = mongoTemplate.findOne(scanQuery, ScanResultEntity.class);
+
+            if (scanResult == null || scanResult.getCookiesBySubdomain() == null) {
+                log.warn("No cookies found for scanId: {}", scanId);
+                // Return preferences without cookies
+                return preferences.stream()
+                        .map(pref -> PreferenceWithCookies.from(pref, Collections.emptyList()))
+                        .collect(Collectors.toList());
+            }
+
+            // Flatten all cookies from all subdomains
+            List<CookieEntity> allCookies = scanResult.getCookiesBySubdomain().values().stream()
+                    .flatMap(List::stream)
+                    .collect(Collectors.toList());
+
+            // Group cookies by category
+            Map<String, List<CookieEntity>> cookiesByCategory = allCookies.stream()
+                    .filter(cookie -> cookie.getCategory() != null)
+                    .collect(Collectors.groupingBy(CookieEntity::getCategory));
+
+            // Map cookies to preferences based on purpose
+            return preferences.stream()
+                    .map(preference -> {
+                        String categoryKey = preference.getPurpose();
+                        List<CookieEntity> matchingCookies = cookiesByCategory.getOrDefault(
+                                categoryKey, Collections.emptyList());
+
+                        log.debug("Mapped {} cookies to purpose: {}",
+                                matchingCookies.size(), categoryKey);
+
+                        return PreferenceWithCookies.from(preference, matchingCookies);
+                    })
+                    .collect(Collectors.toList());
+
+        } catch (Exception e) {
+            log.error("Error fetching cookies for scanId: {}", scanId, e);
+            // Return preferences without cookies on error
+            return preferences.stream()
+                    .map(pref -> PreferenceWithCookies.from(pref, Collections.emptyList()))
+                    .collect(Collectors.toList());
+        }
     }
 }

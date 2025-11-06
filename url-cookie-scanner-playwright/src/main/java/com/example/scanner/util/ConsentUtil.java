@@ -93,9 +93,10 @@ public class ConsentUtil {
      */
     public static LocalDateTime calculateConsentEndDate(List<Preference> preferences) {
         return preferences.stream()
+                .filter(pref -> pref.getPreferenceStatus() == PreferenceStatus.ACCEPTED)
                 .map(Preference::getEndDate)
                 .filter(java.util.Objects::nonNull)
-                .max(LocalDateTime::compareTo)
+                .min(LocalDateTime::compareTo)
                 .orElse(LocalDateTime.now().plusYears(1));
     }
 

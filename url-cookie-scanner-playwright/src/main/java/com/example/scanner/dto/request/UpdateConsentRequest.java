@@ -1,6 +1,7 @@
 package com.example.scanner.dto.request;
 
 import com.example.scanner.enums.PreferenceStatus;
+import com.example.scanner.enums.Status;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -38,12 +39,21 @@ public class UpdateConsentRequest {
     )
     private Map<String, PreferenceStatus> preferencesStatus;
 
+    @Schema(
+            description = "Optional status to revoke consent. Only REVOKED is allowed. When provided, only the status is updated without creating a new version.",
+            allowableValues = {"REVOKED"},
+            example = "REVOKED"
+    )
+    private Status status;
+
     public boolean hasUpdates() {
         return languagePreference != null ||
-                (preferencesStatus != null && !preferencesStatus.isEmpty());
+                (preferencesStatus != null && !preferencesStatus.isEmpty()) ||
+                status != null;
     }
 
     public boolean hasPreferenceUpdates() {
         return preferencesStatus != null && !preferencesStatus.isEmpty();
     }
+
 }

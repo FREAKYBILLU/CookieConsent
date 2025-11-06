@@ -10,6 +10,9 @@ public enum Status {
     @Schema(description = "Consent has been deactivated")
     INACTIVE,
 
+    @Schema(description = "Consent has been revoked by user")
+    REVOKED,
+
     @Schema(description = "Consent has expired")
     EXPIRED
 }

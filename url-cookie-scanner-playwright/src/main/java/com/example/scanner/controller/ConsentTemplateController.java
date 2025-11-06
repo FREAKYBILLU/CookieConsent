@@ -5,6 +5,7 @@ import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.dto.request.UpdateTemplateRequest;
 import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.TemplateResponse;
+import com.example.scanner.dto.response.TemplateWithCookiesResponse;
 import com.example.scanner.dto.response.UpdateTemplateResponse;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.exception.ConsentException;
@@ -141,13 +142,23 @@ public class ConsentTemplateController {
     }
 
     @Operation(
-            summary = "Get templates by tenant ID with optional scan ID filter",
-            description = "Retrieves consent templates from tenant-specific database.",
+            summary = "Get templates by tenant with optional filters",
+            description = "Retrieves consent templates for a tenant. Supports optional filtering by scanId and/or templateId. " +
+                    "When scanId or templateId is provided, returns template with scanned cookies array. " +
+                    "Without filters, returns all templates without cookies.",
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
+                    @Parameter(name = "scanId", description = "Scan ID (optional)", required = false),
+                    @Parameter(name = "templateId", description = "Template ID (optional)", required = false)
+            },
             responses = {
                     @ApiResponse(
                             responseCode = "200",
                             description = "Templates retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentTemplate.class))
+                            content = @Content(schema = @Schema(oneOf = {
+                                    ConsentTemplate.class,
+                                    TemplateWithCookiesResponse.class
+                            }))
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -158,23 +169,16 @@ public class ConsentTemplateController {
                             responseCode = "404",
                             description = "No templates found",
                             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
                     )
             }
     )
     @GetMapping("/tenant")
     public ResponseEntity<?> getTemplatesByTenantAndScanId(
-            @Parameter(description = "Tenant ID for multi-tenant database routing", required = true)
             @RequestHeader("X-Tenant-ID") String tenantId,
-            @Parameter(description = "Scan ID (optional) - if provided, filters to specific template")
-            @RequestParam(value = "scanId", required = false) String scanId) {
+            @RequestParam(value = "scanId", required = false) String scanId,
+            @RequestParam(value = "templateId", required = false) String templateId) {
 
         try {
-            // Validate tenant ID from header
             if (tenantId == null || tenantId.trim().isEmpty()) {
                 return buildErrorResponse(HttpStatus.BAD_REQUEST,
                         ErrorCodes.VALIDATION_ERROR,
@@ -183,21 +187,19 @@ public class ConsentTemplateController {
                         "/cookie-templates/tenant");
             }
 
-            if (scanId != null && !scanId.trim().isEmpty()) {
-                Optional<ConsentTemplate> template = service.getTemplateByTenantAndScanId(tenantId, scanId);
-                if (template.isPresent()) {
-                    return ResponseEntity.ok(template.get());
-                } else {
-                    return buildErrorResponse(HttpStatus.NOT_FOUND,
-                            ErrorCodes.NOT_FOUND,
-                            "Consent template not found",
-                            "No template found with scanId: " + scanId + " for tenantId: " + tenantId,
-                            "/cookie-templates/tenant");
-                }
-            } else {
-                List<ConsentTemplate> templates = service.getTemplatesByTenantId(tenantId);
-                return ResponseEntity.ok(templates);
+            List<TemplateWithCookiesResponse> templates =
+                    service.getTemplateWithCookies(tenantId, scanId, templateId);
+
+            if (templates.isEmpty()) {
+                return buildErrorResponse(HttpStatus.NOT_FOUND,
+                        ErrorCodes.NOT_FOUND,
+                        "No consent templates found",
+                        String.format("No templates found for tenantId: %s, scanId: %s, templateId: %s",
+                                tenantId, scanId, templateId),
+                        "/cookie-templates/tenant");
             }
+
+            return ResponseEntity.ok(templates);
 
         } catch (Exception e) {
             log.error("Unexpected error retrieving templates for tenant: {}", tenantId, e);
@@ -208,6 +210,7 @@ public class ConsentTemplateController {
                     "/cookie-templates/tenant");
         }
     }
+
 
     private ResponseEntity<ErrorResponse> handleValidationErrors(BindingResult bindingResult, String path) {
         List<String> errors = bindingResult.getAllErrors().stream()

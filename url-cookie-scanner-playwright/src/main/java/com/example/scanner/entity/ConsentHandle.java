@@ -38,6 +38,9 @@ public class ConsentHandle {
     @Field("templateId")
     private String templateId;
 
+    @Field("url")
+    private String url;
+
     @Field("templateVersion")
     private int templateVersion;
 
@@ -63,13 +66,14 @@ public class ConsentHandle {
     private String className;
 
     public ConsentHandle(String consentHandleId, String businessId, String txnId,
-                         String templateId, int templateVersion, CustomerIdentifiers customerIdentifiers,
+                         String templateId, int templateVersion, String url, CustomerIdentifiers customerIdentifiers,
                          ConsentHandleStatus status, int expiryMinutes) {
         this.consentHandleId = consentHandleId;
         this.businessId = businessId;
         this.txnId = txnId;
         this.templateId = templateId;
         this.templateVersion = templateVersion;
+        this.url = url;
         this.customerIdentifiers = customerIdentifiers;
         this.status = status;
         this.createdAt = Instant.now();

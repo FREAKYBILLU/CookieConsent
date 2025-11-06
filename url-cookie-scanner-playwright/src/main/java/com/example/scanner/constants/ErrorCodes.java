@@ -94,6 +94,8 @@ public final class ErrorCodes {
     public static final String CATEGORY_NOT_FOUND = "CAT4041";
     public static final String CATEGORY_UPDATE_FAILED = "CAT5001";
 
+    public static final String CONSENT_CANNOT_UPDATE_REVOKED = "R4100";
+
     // Private constructor to prevent instantiation
     private ErrorCodes() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");
@@ -183,79 +185,9 @@ public final class ErrorCodes {
             case UPDATE_FREQUENCY_LIMIT_EXCEEDED -> "Update frequency limit exceeded";
             case UPDATE_NOT_ALLOWED_BUSINESS_HOURS -> "Update not allowed during business hours";
 
+            case CONSENT_CANNOT_UPDATE_REVOKED -> "Cannot update revoked consent";
+
             default -> "Unknown error";
         };
     }
-
-    /**
-     * Get error severity level
-     * @param errorCode The error code
-     * @return Severity level (LOW, MEDIUM, HIGH, CRITICAL)
-     */
-    public static String getSeverity(String errorCode) {
-        if (errorCode == null) return "UNKNOWN";
-
-        return switch (errorCode) {
-            // Critical errors (data integrity issues)
-            case TEMPLATE_MULTIPLE_ACTIVE_VERSIONS, CONSENT_MULTIPLE_ACTIVE_VERSIONS,
-                 REFERENCE_INTEGRITY_VIOLATION, TENANT_ISOLATION_VIOLATION -> "CRITICAL";
-
-            // High severity (security and business rule violations)
-            case CONSENT_HANDLE_CUSTOMER_MISMATCH, CONSENT_HANDLE_BUSINESS_MISMATCH,
-                 INSUFFICIENT_PERMISSIONS, EXTERNAL_SERVICE_ERROR -> "HIGH";
-
-            // Medium severity (operational issues)
-            case TEMPLATE_NOT_UPDATABLE, TEMPLATE_VERSION_CONFLICT, CONSENT_VERSION_CONFLICT,
-                 CONCURRENT_VERSION_CREATION, SCAN_EXECUTION_ERROR, CATEGORIZATION_ERROR,
-                 INVALID_STATE_ERROR -> "MEDIUM";
-
-            // Low severity (user errors and not found cases)
-            case NOT_FOUND, VALIDATION_ERROR, TEMPLATE_NOT_FOUND, CONSENT_NOT_FOUND,
-                 CONSENT_HANDLE_NOT_FOUND, TRANSACTION_NOT_FOUND, COOKIE_NOT_FOUND,
-                 NO_COOKIES_FOUND, EMPTY_ERROR, INVALID_FORMAT_ERROR -> "LOW";
-
-            default -> "MEDIUM";
-        };
-    }
-
-    /**
-     * Get all template-related error codes
-     * @return Array of template error codes
-     */
-    public static String[] getTemplateErrorCodes() {
-        return new String[]{
-                TEMPLATE_NOT_FOUND, TEMPLATE_NAME_REQUIRED, BUSINESS_ID_REQUIRED, SCAN_ID_REQUIRED,
-                TEMPLATE_NAME_EXISTS, SCAN_NOT_COMPLETED, TEMPLATE_EXISTS_FOR_SCAN, INVALID_TEMPLATE_STATUS,
-                TEMPLATE_NOT_UPDATABLE, TEMPLATE_VERSION_NOT_FOUND, TEMPLATE_NO_ACTIVE_VERSION,
-                TEMPLATE_MULTIPLE_ACTIVE_VERSIONS, TEMPLATE_UPDATE_DRAFT_NOT_ALLOWED, TEMPLATE_VERSION_CONFLICT
-        };
-    }
-
-    /**
-     * Get all consent-related error codes
-     * @return Array of consent error codes
-     */
-    public static String[] getConsentErrorCodes() {
-        return new String[]{
-                CONSENT_HANDLE_NOT_FOUND, CONSENT_HANDLE_ALREADY_USED, CONSENT_HANDLE_EXPIRED,
-                CONSENT_NOT_FOUND, CONSENT_VERSION_NOT_FOUND, CONSENT_NO_ACTIVE_VERSION,
-                CONSENT_MULTIPLE_ACTIVE_VERSIONS, CONSENT_CANNOT_UPDATE_EXPIRED,
-                CONSENT_HANDLE_CUSTOMER_MISMATCH, CONSENT_HANDLE_BUSINESS_MISMATCH, CONSENT_VERSION_CONFLICT
-        };
-    }
-
-    /**
-     * Get all versioning-related error codes
-     * @return Array of versioning error codes
-     */
-    public static String[] getVersioningErrorCodes() {
-        return new String[]{
-                VERSION_NUMBER_INVALID, VERSION_STATUS_TRANSITION_INVALID, CONCURRENT_VERSION_CREATION,
-                VERSION_INTEGRITY_CHECK_FAILED, IMMUTABLE_FIELD_MODIFICATION, REFERENCE_INTEGRITY_VIOLATION,
-                TENANT_ISOLATION_VIOLATION
-        };
-    }
-
-    // REMOVED: isVersioningError() method that checked for JCMP prefixes
-    // This method was checking for JCMP4, JCMP5, etc. which no longer exist
 }

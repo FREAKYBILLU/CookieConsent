@@ -558,6 +558,8 @@ public class GlobalExceptionHandler {
                  ErrorCodes.CONSENT_HANDLE_CUSTOMER_MISMATCH,
                  ErrorCodes.CONSENT_HANDLE_BUSINESS_MISMATCH -> HttpStatus.UNPROCESSABLE_ENTITY;
 
+            case ErrorCodes.CONSENT_CANNOT_UPDATE_REVOKED -> HttpStatus.UNPROCESSABLE_ENTITY;
+
             // 500 Internal Server Error - Default fallback
             default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };

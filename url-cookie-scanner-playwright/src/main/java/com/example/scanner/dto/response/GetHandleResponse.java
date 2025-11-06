@@ -44,6 +44,12 @@ public class GetHandleResponse {
     private int templateVersion;
 
     @Schema(
+            description = "URL associated with the consent handle",
+            example = "https://example.com"
+    )
+    private String url;
+
+    @Schema(
             description = "Business ID",
             example = "0c092ed7-e99d-4ef7-8b1f-a3898e788832"
     )

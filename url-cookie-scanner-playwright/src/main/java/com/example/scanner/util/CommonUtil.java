@@ -44,24 +44,6 @@ public class CommonUtil {
         }
     }
 
-    /**
-     * Validate version number
-     */
-    public static void validateVersion(Integer version) {
-        if (version != null && version <= 0) {
-            throw new IllegalArgumentException("Version must be a positive integer");
-        }
-    }
-
-    /**
-     * Validate date range
-     */
-    public static void validateDateRange(java.time.LocalDateTime startDate, java.time.LocalDateTime endDate) {
-        if (startDate != null && endDate != null && startDate.isAfter(endDate)) {
-            throw new IllegalArgumentException("Start date cannot be after end date");
-        }
-    }
-
     public static boolean isValidBase64(String str) {
         if (str == null || str.trim().isEmpty()) {
             return false;
@@ -84,4 +66,5 @@ public class CommonUtil {
             return false;
         }
     }
+
 }

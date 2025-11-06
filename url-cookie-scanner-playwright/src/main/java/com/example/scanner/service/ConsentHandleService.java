@@ -16,6 +16,7 @@ import com.example.scanner.enums.ConsentHandleStatus;
 import com.example.scanner.exception.ConsentHandleExpiredException;
 import com.example.scanner.exception.ScannerException;
 import com.example.scanner.repository.ConsentHandleRepository;
+import com.example.scanner.util.CommonUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,7 +52,7 @@ public class ConsentHandleService {
                     "Missing X-Tenant-ID header");
         }
 
-        auditService.logConsentHandleCreationInitiated(tenantId, "pending");
+        auditService.logConsentHandleCreationInitiated(tenantId, headers.get(Constants.BUSINESS_ID_HEADER),"pending");
 
         TenantContext.setCurrentTenant(tenantId);
 
@@ -66,6 +67,7 @@ public class ConsentHandleService {
                     headers.get(Constants.TXN_ID),
                     request.getTemplateId(),
                     request.getTemplateVersion(),
+                    request.getUrl(),
                     request.getCustomerIdentifiers(),
                     ConsentHandleStatus.PENDING,
                     handleExpiryMinutes
@@ -74,7 +76,7 @@ public class ConsentHandleService {
             ConsentHandle savedHandle = this.consentHandleRepository.save(consentHandle, tenantId);
 
             // Log handle created
-            auditService.logConsentHandleCreated(tenantId, consentHandleId);
+            auditService.logConsentHandleCreated(tenantId, headers.get(Constants.BUSINESS_ID_HEADER), consentHandleId);
 
             log.info("Created consent handle with ID: {} for template: {} and tenant: {}",
                     consentHandleId, request.getTemplateId(), tenantId);
@@ -161,6 +163,7 @@ public class ConsentHandleService {
                     .templateId(template.getTemplateId())
                     .templateName(template.getTemplateName())
                     .templateVersion(consentHandle.getTemplateVersion())
+                    .url(consentHandle.getUrl())
                     .businessId(consentHandle.getBusinessId())
                     .multilingual(template.getMultilingual())
                     .preferences(preferencesWithCookies)  // Use the new wrapper

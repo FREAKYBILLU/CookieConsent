@@ -63,7 +63,7 @@ public class ConsentService {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
 
         // ✅ ADD THIS - Log consent creation initiated
-        auditService.logConsentCreationInitiated(tenantId, request.getConsentHandleId());
+        auditService.logConsentCreationInitiated(tenantId, null, request.getConsentHandleId());
 
 
         // Validate preferences present
@@ -137,7 +137,7 @@ public class ConsentService {
         consentRepositoryImpl.save(consent, tenantId);
 
         // ✅ ADD THIS - Log consent created
-        auditService.logConsentCreated(tenantId, consent.getConsentId());
+        auditService.logConsentCreated(tenantId, null, consent.getConsentId());
 
         // Mark handle as USED
         consentHandle.setStatus(ConsentHandleStatus.USED);
@@ -145,7 +145,7 @@ public class ConsentService {
         consentHandleRepository.save(consentHandle, tenantId);
 
         // ✅ ADD THIS - Log handle marked used
-        auditService.logConsentHandleMarkedUsed(tenantId, consentHandle.getConsentHandleId());
+        auditService.logConsentHandleMarkedUsed(tenantId, null,consentHandle.getConsentHandleId());
 
         log.info("Successfully created consent: {}", consent.getConsentId());
 
@@ -162,8 +162,9 @@ public class ConsentService {
             throws Exception {
         log.info("Processing consent update for consentId: {}, tenant: {}", consentId, tenantId);
 
+
         // Log consent update initiated
-        auditService.logConsentUpdateInitiated(tenantId, consentId);
+        auditService.logConsentUpdateInitiated(tenantId, null, consentId);
 
         // Validate inputs
         validateUpdateInputs(consentId, updateRequest, tenantId);
@@ -176,6 +177,29 @@ public class ConsentService {
         }
 
         Consent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
+
+        if (activeConsent.getStatus() == Status.REVOKED || activeConsent.getStatus() == Status.EXPIRED) {
+            throw new ConsentException(
+                    ErrorCodes.CONSENT_CANNOT_UPDATE_REVOKED,
+                    ErrorCodes.getDescription(ErrorCodes.CONSENT_CANNOT_UPDATE_REVOKED),
+                    "Consent is expired or revoked and cannot be updated"
+            );
+        }
+
+        if (updateRequest.getStatus() != null && updateRequest.getStatus() == Status.REVOKED) {
+            log.info("Revoking consent: {}", activeConsent.getConsentId());
+
+            activeConsent.setStatus(Status.REVOKED);
+            activeConsent.setUpdatedAt(Instant.now());
+            consentRepositoryImpl.save(activeConsent, tenantId);
+
+            log.info("Successfully revoked consent: {}", activeConsent.getConsentId());
+
+            return UpdateConsentResponse.builder()
+                    .message("Consent revoked successfully")
+                    .build();
+
+        }
 
         // Get template
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
@@ -220,22 +244,22 @@ public class ConsentService {
         String tokenId = token.substring(0, Math.min(20, token.length()));
 
         // ✅ Log token verification initiated
-        auditService.logTokenVerificationInitiated(tenantId, tokenId);
+        auditService.logTokenVerificationInitiated(tenantId, null, tokenId);
 
         try {
             ConsentTokenValidateResponse response = tokenUtility.verifyConsentToken(token);
 
             // ✅ Log token signature verified
-            auditService.logTokenSignatureVerified(tenantId, tokenId);
+            auditService.logTokenSignatureVerified(tenantId, null, tokenId);
 
             // ✅ Log token validation success
-            auditService.logTokenValidationSuccess(tenantId, tokenId);
+            auditService.logTokenValidationSuccess(tenantId, null, tokenId);
 
             return response;
 
         } catch (Exception e) {
             // ✅ Log token validation failed
-            auditService.logTokenValidationFailed(tenantId, tokenId);
+            auditService.logTokenValidationFailed(tenantId, null, tokenId);
             throw e;
         }
     }
@@ -344,12 +368,20 @@ public class ConsentService {
         LocalDateTime now = LocalDateTime.now();
 
         return templatePreferences.stream()
-                .peek(pref -> {
+                .map(templatePref -> {
+                    Preference pref = new Preference();
+                    pref.setPurpose(templatePref.getPurpose());
+                    pref.setIsMandatory(templatePref.getIsMandatory());
+                    pref.setPreferenceValidity(templatePref.getPreferenceValidity());
+
+                    // Set user's choice
                     if (userChoices.containsKey(pref.getPurpose())) {
                         pref.setPreferenceStatus(userChoices.get(pref.getPurpose()));
                         pref.setStartDate(now);
                         pref.setEndDate(calculatePreferenceEndDate(now, pref.getPreferenceValidity()));
                     }
+
+                    return pref;
                 })
                 .collect(Collectors.toList());
     }
@@ -546,14 +578,14 @@ public class ConsentService {
         log.info("Created consent version {} for {}", newVersion.getVersion(), newVersion.getConsentId());
 
         // Log new version created
-        auditService.logNewConsentVersionCreated(tenantId, newVersion.getConsentId());
+        auditService.logNewConsentVersionCreated(tenantId, null, newVersion.getConsentId());
 
         active.setConsentStatus(VersionStatus.UPDATED);
         active.setUpdatedAt(Instant.now());
         consentRepositoryImpl.save(active, tenantId);
 
         // Log old version marked updated
-        auditService.logOldConsentVersionMarkedUpdated(tenantId, active.getConsentId());
+        auditService.logOldConsentVersionMarkedUpdated(tenantId, null, active.getConsentId());
 
         // ADD THESE 3 LINES - MISSING TTHA YE!
         handle.setStatus(ConsentHandleStatus.USED);
@@ -561,7 +593,7 @@ public class ConsentService {
         consentHandleRepository.save(handle, tenantId);
 
         // ADD THIS LINE - YE BHI MISSING THA!
-        auditService.logConsentHandleMarkedUsedAfterUpdate(tenantId, handle.getConsentHandleId());
+        auditService.logConsentHandleMarkedUsedAfterUpdate(tenantId, null, handle.getConsentHandleId());
 
         return UpdateConsentResponse.success(
                 newVersion.getConsentId(), newVersion.getId(), newVersion.getVersion(),
@@ -585,9 +617,10 @@ public class ConsentService {
 
     private LocalDateTime calculateConsentExpiry(List<Preference> preferences) {
         return preferences.stream()
+                .filter(pref -> pref.getPreferenceStatus() == PreferenceStatus.ACCEPTED)
                 .map(Preference::getEndDate)
                 .filter(Objects::nonNull)
-                .max(LocalDateTime::compareTo)
+                .min(LocalDateTime::compareTo)
                 .orElse(LocalDateTime.now().plusYears(1));
     }
 
