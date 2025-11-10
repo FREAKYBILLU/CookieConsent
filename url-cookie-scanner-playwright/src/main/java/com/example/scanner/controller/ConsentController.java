@@ -2,15 +2,14 @@ package com.example.scanner.controller;
 
 import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
-import com.example.scanner.dto.response.ConsentCreateResponse;
-import com.example.scanner.dto.response.ConsentTokenValidateResponse;
-import com.example.scanner.dto.response.ErrorResponse;
-import com.example.scanner.dto.response.UpdateConsentResponse;
+import com.example.scanner.dto.response.*;
 import com.example.scanner.entity.Consent;
 import com.example.scanner.service.ConsentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -271,5 +270,79 @@ public class ConsentController {
             @RequestHeader("X-Tenant-ID") String tenantId) throws Exception {
 
         return new ResponseEntity<>(consentService.validateConsentToken(consentToken, tenantId), HttpStatus.OK);
+    }
+
+    @GetMapping("/check")
+    @Operation(
+            summary = "Check consent status by deviceId + URL or consentId",
+            description = "Returns consent status (PENDING, REQ_EXPIRED, USED, REJECTED, ACTIVE, REVOKE, EXPIRED, No_Record) and consent handle ID",
+            parameters = {
+                    @Parameter(
+                            name = "deviceId",
+                            description = "Device identifier from customer identifiers",
+                            required = true,
+                            example = "92342834928359235"
+                    ),
+                    @Parameter(
+                            name = "url",
+                            description = "Website URL",
+                            required = true,
+                            example = "http://www.example.com"
+                    ),
+                    @Parameter(
+                            name = "consentId",
+                            description = "Consent ID (if provided, deviceId and URL are ignored)",
+                            required = false,
+                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                    ),
+                    @Parameter(
+                            name = "X-Tenant-ID",
+                            description = "Tenant ID (UUID)",
+                            required = true,
+                            in = ParameterIn.HEADER,
+                            example = "550e8400-e29b-41d4-a716-446655440000"
+                    )
+            },
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Consent status retrieved successfully",
+                            content = @Content(
+                                    mediaType = "application/json",
+                                    schema = @Schema(implementation = CheckConsentResponse.class),
+                                    examples = @ExampleObject(
+                                            name = "Success Response",
+                                            value = "{\"consentStatus\": \"ACCEPTED\", \"consentHandleId\": \"9bb14c63-7ec8-47f5-86b5-4a8c848012c1\"}"
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request - Missing required parameters",
+                            content = @Content(
+                                    mediaType = "application/json",
+                                    examples = @ExampleObject(
+                                            value = "{\"errorCode\": \"R4001\", \"message\": \"Device ID is required\"}"
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error",
+                            content = @Content(
+                                    mediaType = "application/json",
+                                    examples = @ExampleObject(
+                                            value = "{\"errorCode\": \"R5001\", \"message\": \"Failed to retrieve consent status\"}"
+                                    )
+                            )
+                    )
+            }
+    )
+    public ResponseEntity<CheckConsentResponse> checkConsent(
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestParam(value = "deviceId", required = true) String deviceId,
+            @RequestParam(value = "url", required = true) String url,
+            @RequestParam(value = "consentId", required = false) String consentId) throws Exception {
+        return new ResponseEntity<>(consentService.getConsentStatus(deviceId, url, consentId, tenantId), HttpStatus.OK);
     }
 }

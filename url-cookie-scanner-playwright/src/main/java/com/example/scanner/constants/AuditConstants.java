@@ -37,6 +37,7 @@ public class AuditConstants {
     public static final String ACTION_CONSENT_UPDATE_INITIATED = "CONSENT_UPDATE_INITIATED";
     public static final String ACTION_NEW_CONSENT_VERSION_CREATED = "NEW_CONSENT_VERSION_CREATED";
     public static final String ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED = "OLD_CONSENT_VERSION_MARKED_UPDATED";
+    public static final String ACTION_CONSENT_REVOKED = "CONSENT_REVOKED";
 
     // Action Types - Token
     public static final String ACTION_TOKEN_VERIFICATION_INITIATED = "TOKEN_VERIFICATION_INITIATED";

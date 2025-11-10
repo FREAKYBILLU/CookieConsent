@@ -7,11 +7,8 @@ public enum ConsentHandleStatus {
     @Schema(description = "Handle is pending activation")
     PENDING,
 
-    @Schema(description = "Handle is active and can be used")
-    ACTIVE,
-
     @Schema(description = "Handle has expired")
-    EXPIRED,
+    REQ_EXPIRED,
 
     @Schema(description = "Handle has been used and consumed")
     USED,

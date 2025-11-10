@@ -8,10 +8,7 @@ import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.DashboardRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
-import com.example.scanner.dto.response.ConsentCreateResponse;
-import com.example.scanner.dto.response.ConsentTokenValidateResponse;
-import com.example.scanner.dto.response.DashboardTemplateResponse;
-import com.example.scanner.dto.response.UpdateConsentResponse;
+import com.example.scanner.dto.response.*;
 import com.example.scanner.entity.Consent;
 import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
@@ -192,6 +189,8 @@ public class ConsentService {
             activeConsent.setStatus(Status.REVOKED);
             activeConsent.setUpdatedAt(Instant.now());
             consentRepositoryImpl.save(activeConsent, tenantId);
+
+            auditService.logConsentRevoked(tenantId, activeConsent.getBusinessId(), activeConsent.getConsentId());
 
             log.info("Successfully revoked consent: {}", activeConsent.getConsentId());
 
@@ -625,16 +624,18 @@ public class ConsentService {
     }
 
     private Status determineConsentStatus(List<Preference> preferences) {
-        boolean hasAccept = preferences.stream()
-                .anyMatch(p -> p.getPreferenceStatus() == PreferenceStatus.ACCEPTED);
-
+        // Check if all preferences have expired
         boolean allExpired = preferences.stream()
                 .allMatch(p -> p.getPreferenceStatus() == PreferenceStatus.EXPIRED);
 
-        if (allExpired) return Status.EXPIRED;
-        if (hasAccept) return Status.ACTIVE;
+        if (allExpired) {
+            return Status.EXPIRED;
+        }
 
-        return Status.INACTIVE;
+        // If consent exists, at least one preference was accepted
+        // (All-reject scenario doesn't create consent)
+        // Therefore, default status is ACTIVE
+        return Status.ACTIVE;
     }
 
     private String generateConsentToken(Consent consent) throws Exception {
@@ -703,12 +704,12 @@ public class ConsentService {
                     if (scanResult != null) {
                         scannedSite = scanResult.getUrl();
                         if (scanResult.getCookiesBySubdomain() != null) {
-                            subDomains =  scanResult.getCookiesBySubdomain().keySet().stream().toList();
+                            subDomains = scanResult.getCookiesBySubdomain().keySet().stream().toList();
                         }
                     }
                 }
 
-                // Build consent query
+                // ========== STEP 1: Fetch Consents (Existing Logic) ==========
                 Criteria consentCriteria = Criteria.where("templateId").is(template.getTemplateId())
                         .and("templateVersion").is(template.getVersion());
 
@@ -731,6 +732,59 @@ public class ConsentService {
                         .filter(Objects::nonNull)
                         .collect(Collectors.toList());
 
+                // ========== STEP 2: NEW - Fetch Handles WITHOUT Consents ==========
+                // Get all consent handles for this template that are REJECTED, EXPIRED, or PENDING
+                Criteria handleCriteria = Criteria.where("templateId").is(template.getTemplateId())
+                        .and("templateVersion").is(template.getVersion())
+                        .and("status").in(
+                                ConsentHandleStatus.REJECTED,
+                                ConsentHandleStatus.REQ_EXPIRED,
+                                ConsentHandleStatus.PENDING
+                        );
+
+                // Apply date filters on handle creation time
+                if (request.getStartDate() != null) {
+                    handleCriteria.and("createdAt").gte(
+                            request.getStartDate().atZone(ZoneId.systemDefault()).toInstant()
+                    );
+                }
+
+                if (request.getEndDate() != null) {
+                    handleCriteria.and("createdAt").lte(
+                            request.getEndDate().atZone(ZoneId.systemDefault()).toInstant()
+                    );
+                }
+
+                Query handleQuery = new Query(handleCriteria);
+                handleQuery.with(Sort.by(Sort.Direction.DESC, "createdAt"));
+
+                List<ConsentHandle> orphanHandles = mongoTemplate.find(handleQuery, ConsentHandle.class);
+
+                log.info("Found {} orphan handles (REJECTED/EXPIRED/PENDING) for template: {}",
+                        orphanHandles.size(), template.getTemplateId());
+
+                // Map orphan handles to ConsentDetail objects
+                List<ConsentDetail> handleDetails = orphanHandles.stream()
+                        .map(handle -> mapHandleToConsentDetail(handle, template))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toList());
+
+                // ========== STEP 3: Combine Both Lists ==========
+                List<ConsentDetail> allDetails = new ArrayList<>();
+                allDetails.addAll(consentDetails);     // Consents with USED handles
+                allDetails.addAll(handleDetails);      // Orphan handles (REJECTED/EXPIRED/PENDING)
+
+                // Sort by creation time (most recent first)
+                allDetails.sort((a, b) -> {
+                    // Get creation time from consent or handle
+                    // Since we don't have createdAt in ConsentDetail, sort by consentVersion desc
+                    // Handles will have null version, so they'll come after
+                    if (a.getConsentVersion() == null && b.getConsentVersion() == null) return 0;
+                    if (a.getConsentVersion() == null) return 1;
+                    if (b.getConsentVersion() == null) return -1;
+                    return b.getConsentVersion().compareTo(a.getConsentVersion());
+                });
+
                 // Build template response
                 DashboardTemplateResponse templateResponse = DashboardTemplateResponse.builder()
                         .templateId(template.getTemplateId())
@@ -738,7 +792,7 @@ public class ConsentService {
                         .scannedSites(scannedSite)
                         .scannedSubDomains(subDomains)
                         .scanId(template.getScanId())
-                        .consents(consentDetails)
+                        .consents(allDetails)  // Contains both consents AND orphan handles
                         .build();
 
                 responses.add(templateResponse);
@@ -755,6 +809,31 @@ public class ConsentService {
             );
         } finally {
             TenantContext.clear();
+        }
+    }
+
+    private ConsentDetail mapHandleToConsentDetail(ConsentHandle handle, ConsentTemplate template) {
+        try {
+            // Get all template preference names
+            List<String> templatePreferences = template.getPreferences().stream()
+                    .map(Preference::getPurpose)
+                    .collect(Collectors.toList());
+
+            return ConsentDetail.builder()
+                    .consentID(null)  // No consent created
+                    .consentHandle(handle.getConsentHandleId())
+                    .templateVersion(handle.getTemplateVersion())
+                    .consentVersion(null)  // No consent version
+                    .templatePreferences(templatePreferences)
+                    .userSelectedPreference(Collections.emptyList())  // User didn't select anything OR rejected all
+                    .consentStatus(null)  // No consent = no consent status
+                    .consentHandleStatus(handle.getStatus().toString())  // REJECTED/EXPIRED/PENDING
+                    .customerIdentifier(handle.getCustomerIdentifiers())
+                    .build();
+
+        } catch (Exception e) {
+            log.error("Error mapping handle to detail: {}", e.getMessage());
+            return null;
         }
     }
 
@@ -793,6 +872,82 @@ public class ConsentService {
         } catch (Exception e) {
             log.error("Error mapping consent to detail: {}", e.getMessage());
             return null;
+        }
+    }
+
+    public CheckConsentResponse getConsentStatus(String deviceId, String url, String consentId, String tenantId){
+        if (deviceId == null || deviceId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Device ID is required");
+        }
+        if (url == null || url.trim().isEmpty()) {
+            throw new IllegalArgumentException("URL is required");
+        }
+        TenantContext.setCurrentTenant(tenantId);
+
+        try {
+            MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(TenantContext.getCurrentTenant());
+            if (consentId != null && !consentId.isEmpty()) {
+                Query handleQuery = new Query(
+                        Criteria.where("consentId").is(consentId)
+                ).with(Sort.by(Sort.Direction.DESC, "version")).limit(1);
+
+                Consent consent = mongoTemplate.findOne(handleQuery, Consent.class);
+
+                if (consent == null) {
+                    return CheckConsentResponse.builder()
+                            .consentStatus("No_Record")
+                            .consentHandleId("No_Record")
+                            .build();
+                }
+
+                return CheckConsentResponse.builder()
+                        .consentStatus(consent.getStatus().toString())
+                        .consentHandleId(consent.getConsentHandleId())
+                        .build();
+            }
+            // Case 2: DeviceId and URL provided - find consent handle first
+            Query handleQuery = new Query();
+            handleQuery.addCriteria(Criteria.where("customerIdentifiers.value").is(deviceId));
+            handleQuery.addCriteria(Criteria.where("url").is(url));
+            handleQuery.with(Sort.by(Sort.Direction.DESC, "createdAt")); // Latest first
+            handleQuery.limit(1);
+
+            ConsentHandle latestHandle = mongoTemplate.findOne(handleQuery, ConsentHandle.class);
+
+            if (latestHandle == null) {
+                return CheckConsentResponse.builder()
+                        .consentStatus("No_Record")
+                        .consentHandleId("No_Record")
+                        .build();
+            }
+
+            if(latestHandle.getStatus().equals(ConsentHandleStatus.USED)){
+                Query consentQuery = new Query(Criteria.where("consentHandleId").is(latestHandle.getConsentHandleId()))
+                        .with(Sort.by(Sort.Direction.DESC, "version")).limit(1);;
+                Consent consent = mongoTemplate.findOne(consentQuery, Consent.class);
+
+                if (consent != null) {
+                    return CheckConsentResponse.builder()
+                            .consentStatus(consent.getStatus().toString())
+                            .consentHandleId(latestHandle.getConsentHandleId())
+                            .build();
+                }
+            }
+
+                return CheckConsentResponse.builder()
+                        .consentStatus(latestHandle.getStatus().toString())
+                        .consentHandleId(latestHandle.getConsentHandleId())
+                        .build();
+
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid input parameters: {}", e.getMessage());
+            throw e;
+        } catch (Exception e) {
+            log.error("Error checking consent status - deviceId: {}, url: {}, consentId: {}",
+                    deviceId, url, consentId, e);
+            throw new RuntimeException("Failed to retrieve consent status", e);
+        }finally {
+            TenantContext.clear();
         }
     }
 }

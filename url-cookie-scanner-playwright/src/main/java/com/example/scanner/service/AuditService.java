@@ -179,6 +179,12 @@ public class AuditService {
                 AuditConstants.RESOURCE_CONSENT_HANDLE, handleId);
     }
 
+    public void logConsentRevoked(String tenantId, String businessId, String consentId) {
+        logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
+                AuditConstants.ACTION_CONSENT_REVOKED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT, consentId);
+    }
+
     // ========================================
     // TOKEN METHODS (4) - businessId parameter added
     // ========================================

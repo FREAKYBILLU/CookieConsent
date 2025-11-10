@@ -104,16 +104,17 @@ public class ConsentUtil {
      * Determine consent status based on preference statuses
      */
     public static Status determineConsentStatus(List<Preference> preferences) {
-        boolean hasAccept = preferences.stream()
-                .anyMatch(pref -> pref.getPreferenceStatus() == PreferenceStatus.ACCEPTED);
+        // Check if all preferences have expired
+        boolean allExpired = preferences.stream()
+                .allMatch(pref -> pref.getPreferenceStatus() == PreferenceStatus.EXPIRED);
 
-        boolean allReject = preferences.stream()
-                .allMatch(pref -> pref.getPreferenceStatus() == PreferenceStatus.NOTACCEPTED);
-
-        if (hasAccept || allReject) {
-            return Status.ACTIVE;
+        if (allExpired) {
+            return Status.EXPIRED;
         }
 
-        return Status.INACTIVE;
+        // If consent is being created/updated, it means at least one preference was accepted
+        // Business rule: All-reject scenario marks handle as REJECTED without creating consent
+        // Therefore, if we're determining consent status, at least one preference is ACCEPTED
+        return Status.ACTIVE;
     }
 }

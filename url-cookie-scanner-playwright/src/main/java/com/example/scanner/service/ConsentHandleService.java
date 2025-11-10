@@ -278,7 +278,7 @@ public class ConsentHandleService {
 
     private void validateNotExpired(ConsentHandle handle, String tenantId) {
         if (handle.isExpired()) {
-            handle.setStatus(ConsentHandleStatus.EXPIRED);
+            handle.setStatus(ConsentHandleStatus.REQ_EXPIRED);
             consentHandleRepository.save(handle, tenantId);
 
             throw new ConsentHandleExpiredException(

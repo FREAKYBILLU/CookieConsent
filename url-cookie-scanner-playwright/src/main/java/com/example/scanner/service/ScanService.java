@@ -636,9 +636,9 @@ public class ScanService {
                     subdomainCookies.add(cookieEntity);
                     saveScanResultToTenant(tenantId, result);
 
-                    log.debug("Saved cookie: {} to subdomain: {}", cookieDto.getName(), subdomainName);
+                    log.debug("✅ Saved cookie: {} to subdomain: {}", cookieDto.getName(), subdomainName);
                 } else {
-                    log.debug("Duplicate cookie skipped: {} in subdomain: {}", cookieDto.getName(), subdomainName);
+                    log.debug("⚠️ Duplicate cookie skipped: {} in subdomain: {}", cookieDto.getName(), subdomainName);
                 }
             }
         } catch (Exception e) {

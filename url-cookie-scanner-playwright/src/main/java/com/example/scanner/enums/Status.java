@@ -7,9 +7,6 @@ public enum Status {
     @Schema(description = "Consent is currently active")
     ACTIVE,
 
-    @Schema(description = "Consent has been deactivated")
-    INACTIVE,
-
     @Schema(description = "Consent has been revoked by user")
     REVOKED,
 
