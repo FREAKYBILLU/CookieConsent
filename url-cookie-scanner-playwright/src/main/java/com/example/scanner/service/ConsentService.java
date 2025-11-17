@@ -9,8 +9,8 @@ import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.DashboardRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.*;
-import com.example.scanner.entity.Consent;
-import com.example.scanner.entity.ConsentHandle;
+import com.example.scanner.entity.CookieConsent;
+import com.example.scanner.entity.CookieConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.*;
@@ -71,10 +71,10 @@ public class ConsentService {
         }
 
         // REQUIREMENT 4: Validate consent handle (checks PENDING status and 15 min expiry)
-        ConsentHandle consentHandle = validateConsentHandle(request.getConsentHandleId(), tenantId);
+        CookieConsentHandle consentHandle = validateConsentHandle(request.getConsentHandleId(), tenantId);
 
         // Check for existing consent
-        Consent existingConsent = consentRepositoryImpl.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
+        CookieConsent existingConsent = consentRepositoryImpl.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
                 consentHandle.getTemplateId(), consentHandle.getTemplateVersion(),
                 consentHandle.getCustomerIdentifiers(), tenantId, request.getConsentHandleId());
 
@@ -125,7 +125,7 @@ public class ConsentService {
         );
 
         // Build and save consent
-        Consent consent = buildNewConsent(consentHandle, template, processedPreferences,
+        CookieConsent consent = buildNewConsent(consentHandle, template, processedPreferences,
                 request.getLanguagePreference());
 
         String consentToken = generateConsentToken(consent);
@@ -166,14 +166,14 @@ public class ConsentService {
         // Validate inputs
         validateUpdateInputs(consentId, updateRequest, tenantId);
 
-        ConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(updateRequest.getConsentHandleId(), tenantId);
+        CookieConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(updateRequest.getConsentHandleId(), tenantId);
         if (consentHandle == null) {
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND,
                     ErrorCodes.getDescription(ErrorCodes.CONSENT_HANDLE_NOT_FOUND),
                     "Consent handle not found" );
         }
 
-        Consent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
+        CookieConsent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
 
         if (activeConsent.getStatus() == Status.REVOKED || activeConsent.getStatus() == Status.EXPIRED) {
             throw new ConsentException(
@@ -204,16 +204,16 @@ public class ConsentService {
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
 
         // Create new version
-        Consent newVersion = createNewConsentVersion(activeConsent, updateRequest, consentHandle, template);
+        CookieConsent newVersion = createNewConsentVersion(activeConsent, updateRequest, consentHandle, template);
 
         // Save and return response
         return saveConsentUpdate(activeConsent, newVersion, consentHandle, tenantId);
     }
 
-    public List<Consent> getConsentHistory(String consentId, String tenantId) throws Exception {
+    public List<CookieConsent> getConsentHistory(String consentId, String tenantId) throws Exception {
         validateBasicInputs(consentId, tenantId, "Consent ID");
 
-        List<Consent> history = consentRepositoryImpl.findAllVersionsByConsentId(consentId, tenantId);
+        List<CookieConsent> history = consentRepositoryImpl.findAllVersionsByConsentId(consentId, tenantId);
 
         if (history.isEmpty()) {
             throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND,
@@ -225,7 +225,7 @@ public class ConsentService {
         return history;
     }
 
-    public Optional<Consent> getConsentByIdAndVersion(String tenantId, String consentId, Integer version)
+    public Optional<CookieConsent> getConsentByIdAndVersion(String tenantId, String consentId, Integer version)
             throws Exception {
         validateBasicInputs(consentId, tenantId, "Consent ID");
 
@@ -388,8 +388,8 @@ public class ConsentService {
     /**
      * REQUIREMENT 4: Validate consent handle with explicit PENDING status check
      */
-    private ConsentHandle validateConsentHandle(String consentHandleId, String tenantId) throws Exception {
-        ConsentHandle handle = consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
+    private CookieConsentHandle validateConsentHandle(String consentHandleId, String tenantId) throws Exception {
+        CookieConsentHandle handle = consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
 
         if (handle == null) {
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND,
@@ -432,7 +432,7 @@ public class ConsentService {
         }
     }
 
-    private void validateConsentCanBeUpdated(Consent consent, ConsentHandle handle) throws ConsentException {
+    private void validateConsentCanBeUpdated(CookieConsent consent, CookieConsentHandle handle) throws ConsentException {
         if (!consent.getCustomerIdentifiers().getValue().equals(handle.getCustomerIdentifiers().getValue())) {
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_CUSTOMER_MISMATCH,
                     ErrorCodes.getDescription(ErrorCodes.CONSENT_HANDLE_CUSTOMER_MISMATCH),
@@ -476,7 +476,7 @@ public class ConsentService {
     // HELPER METHODS
     // ============================================
 
-    private ConsentTemplate getTemplate(ConsentHandle handle, String tenantId) throws Exception {
+    private ConsentTemplate getTemplate(CookieConsentHandle handle, String tenantId) throws Exception {
         Optional<ConsentTemplate> templateOpt = templateService.getTemplateByIdAndVersion(
                 tenantId, handle.getTemplateId(), handle.getTemplateVersion());
 
@@ -489,8 +489,8 @@ public class ConsentService {
         return templateOpt.get();
     }
 
-    private Consent findActiveConsentOrThrow(String consentId, String tenantId) throws ConsentException {
-        Consent consent = consentRepositoryImpl.findActiveByConsentId(consentId, tenantId);
+    private CookieConsent findActiveConsentOrThrow(String consentId, String tenantId) throws ConsentException {
+        CookieConsent consent = consentRepositoryImpl.findActiveByConsentId(consentId, tenantId);
 
         if (consent == null) {
             throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND,
@@ -501,13 +501,13 @@ public class ConsentService {
         return consent;
     }
 
-    private Consent buildNewConsent(ConsentHandle handle, ConsentTemplate template,
-                                    List<Preference> preferences, String languagePreference) {
+    private CookieConsent buildNewConsent(CookieConsentHandle handle, ConsentTemplate template,
+                                          List<Preference> preferences, String languagePreference) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiry = calculateConsentExpiry(preferences);
         Status status = determineConsentStatus(preferences);
 
-        return Consent.builder()
+        return CookieConsent.builder()
                 .consentId(UUID.randomUUID().toString())
                 .consentHandleId(handle.getConsentHandleId())
                 .businessId(handle.getBusinessId())
@@ -528,10 +528,10 @@ public class ConsentService {
                 .build();
     }
 
-    private Consent createNewConsentVersion(Consent existing, UpdateConsentRequest request,
-                                            ConsentHandle handle, ConsentTemplate template) throws ConsentException {
+    private CookieConsent createNewConsentVersion(CookieConsent existing, UpdateConsentRequest request,
+                                                  CookieConsentHandle handle, ConsentTemplate template) throws ConsentException {
 
-        Consent newVersion = ConsentUtil.createNewVersionFrom(existing, request,
+        CookieConsent newVersion = ConsentUtil.createNewVersionFrom(existing, request,
                 handle.getConsentHandleId(), handle.getTemplateVersion());
 
         if (request.hasPreferenceUpdates()) {
@@ -568,8 +568,8 @@ public class ConsentService {
     }
 
     @Transactional
-    private UpdateConsentResponse saveConsentUpdate(Consent active, Consent newVersion,
-                                                    ConsentHandle handle, String tenantId) throws Exception {
+    private UpdateConsentResponse saveConsentUpdate(CookieConsent active, CookieConsent newVersion,
+                                                    CookieConsentHandle handle, String tenantId) throws Exception {
         String token = generateConsentToken(newVersion);
         newVersion.setConsentJwtToken(token);
 
@@ -638,7 +638,7 @@ public class ConsentService {
         return Status.ACTIVE;
     }
 
-    private String generateConsentToken(Consent consent) throws Exception {
+    private String generateConsentToken(CookieConsent consent) throws Exception {
         Gson gson = new GsonBuilder()
                 .registerTypeAdapter(LocalDateTime.class, new LocalDateTypeAdapter())
                 .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
@@ -724,7 +724,7 @@ public class ConsentService {
                 Query consentQuery = new Query(consentCriteria);
                 consentQuery.with(Sort.by(Sort.Direction.DESC, "createdAt"));
 
-                List<Consent> consents = mongoTemplate.find(consentQuery, Consent.class);
+                List<CookieConsent> consents = mongoTemplate.find(consentQuery, CookieConsent.class);
 
                 // Map consents to ConsentDetail objects
                 List<ConsentDetail> consentDetails = consents.stream()
@@ -742,23 +742,22 @@ public class ConsentService {
                                 ConsentHandleStatus.PENDING
                         );
 
-                // Apply date filters on handle creation time
-                if (request.getStartDate() != null) {
-                    handleCriteria.and("createdAt").gte(
-                            request.getStartDate().atZone(ZoneId.systemDefault()).toInstant()
-                    );
-                }
-
-                if (request.getEndDate() != null) {
-                    handleCriteria.and("createdAt").lte(
-                            request.getEndDate().atZone(ZoneId.systemDefault()).toInstant()
-                    );
+                if (request.getStartDate() != null && request.getEndDate() != null) {
+                    handleCriteria.and("createdAt")
+                            .gte(request.getStartDate().atZone(ZoneId.systemDefault()).toInstant())
+                            .lte(request.getEndDate().atZone(ZoneId.systemDefault()).toInstant());
+                } else if (request.getStartDate() != null) {
+                    handleCriteria.and("createdAt")
+                            .gte(request.getStartDate().atZone(ZoneId.systemDefault()).toInstant());
+                } else if (request.getEndDate() != null) {
+                    handleCriteria.and("createdAt")
+                            .lte(request.getEndDate().atZone(ZoneId.systemDefault()).toInstant());
                 }
 
                 Query handleQuery = new Query(handleCriteria);
                 handleQuery.with(Sort.by(Sort.Direction.DESC, "createdAt"));
 
-                List<ConsentHandle> orphanHandles = mongoTemplate.find(handleQuery, ConsentHandle.class);
+                List<CookieConsentHandle> orphanHandles = mongoTemplate.find(handleQuery, CookieConsentHandle.class);
 
                 log.info("Found {} orphan handles (REJECTED/EXPIRED/PENDING) for template: {}",
                         orphanHandles.size(), template.getTemplateId());
@@ -812,7 +811,7 @@ public class ConsentService {
         }
     }
 
-    private ConsentDetail mapHandleToConsentDetail(ConsentHandle handle, ConsentTemplate template) {
+    private ConsentDetail mapHandleToConsentDetail(CookieConsentHandle handle, ConsentTemplate template) {
         try {
             // Get all template preference names
             List<String> templatePreferences = template.getPreferences().stream()
@@ -837,14 +836,14 @@ public class ConsentService {
         }
     }
 
-    private ConsentDetail mapToConsentDetail(Consent consent, ConsentTemplate template,
+    private ConsentDetail mapToConsentDetail(CookieConsent consent, ConsentTemplate template,
                                              MongoTemplate mongoTemplate) {
         try {
             // Fetch consent handle
             Query handleQuery = new Query(
                     Criteria.where("consentHandleId").is(consent.getConsentHandleId())
             );
-            ConsentHandle handle = mongoTemplate.findOne(handleQuery, ConsentHandle.class);
+            CookieConsentHandle handle = mongoTemplate.findOne(handleQuery, CookieConsentHandle.class);
 
             // Get all template preference names
             List<String> templatePreferences = template.getPreferences().stream()
@@ -856,7 +855,12 @@ public class ConsentService {
                     .map(Preference::getPurpose)
                     .collect(Collectors.toList());
 
-            assert handle != null;
+            Instant lastUpdated = consent.getUpdatedAt() != null &&
+                    consent.getCreatedAt() != null &&
+                    consent.getUpdatedAt().isAfter(consent.getCreatedAt())
+                    ? consent.getUpdatedAt()
+                    : consent.getCreatedAt();
+
             return ConsentDetail.builder()
                     .consentID(consent.getConsentId())
                     .consentHandle(consent.getConsentHandleId())
@@ -867,6 +871,7 @@ public class ConsentService {
                     .consentStatus(consent.getStatus().toString())
                     .consentHandleStatus(handle.getStatus().toString())
                     .customerIdentifier(consent.getCustomerIdentifiers())
+                    .lastUpdated(lastUpdated)
                     .build();
 
         } catch (Exception e) {
@@ -891,7 +896,7 @@ public class ConsentService {
                         Criteria.where("consentId").is(consentId)
                 ).with(Sort.by(Sort.Direction.DESC, "version")).limit(1);
 
-                Consent consent = mongoTemplate.findOne(handleQuery, Consent.class);
+                CookieConsent consent = mongoTemplate.findOne(handleQuery, CookieConsent.class);
 
                 if (consent == null) {
                     return CheckConsentResponse.builder()
@@ -912,7 +917,7 @@ public class ConsentService {
             handleQuery.with(Sort.by(Sort.Direction.DESC, "createdAt")); // Latest first
             handleQuery.limit(1);
 
-            ConsentHandle latestHandle = mongoTemplate.findOne(handleQuery, ConsentHandle.class);
+            CookieConsentHandle latestHandle = mongoTemplate.findOne(handleQuery, CookieConsentHandle.class);
 
             if (latestHandle == null) {
                 return CheckConsentResponse.builder()
@@ -924,7 +929,7 @@ public class ConsentService {
             if(latestHandle.getStatus().equals(ConsentHandleStatus.USED)){
                 Query consentQuery = new Query(Criteria.where("consentHandleId").is(latestHandle.getConsentHandleId()))
                         .with(Sort.by(Sort.Direction.DESC, "version")).limit(1);;
-                Consent consent = mongoTemplate.findOne(consentQuery, Consent.class);
+                CookieConsent consent = mongoTemplate.findOne(consentQuery, CookieConsent.class);
 
                 if (consent != null) {
                     return CheckConsentResponse.builder()

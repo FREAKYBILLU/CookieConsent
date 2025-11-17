@@ -38,7 +38,6 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "*")
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
 public class ScanController {
 
@@ -436,7 +435,7 @@ public class ScanController {
             }
     )
   @PostMapping("/transaction/{transactionId}/cookies")
-  public ResponseEntity<Map<String, Object>> addCookie(
+  public ResponseEntity<AddCookieResponse> addCookie(
           @RequestHeader("X-Tenant-ID") String tenantId,
           @Parameter(description = "Transaction ID from the scan", required = true)
           @PathVariable("transactionId") String transactionId,
@@ -464,15 +463,7 @@ public class ScanController {
     log.info("Successfully added cookie '{}' to transactionId: {}",
             addRequest.getName(), transactionId);
 
-    Map<String, Object> successResponse = new HashMap<>();
-    successResponse.put("success", true);
-    successResponse.put("message", response.getMessage());
-    successResponse.put("transactionId", response.getTransactionId());
-    successResponse.put("name", response.getName());
-    successResponse.put("domain", response.getDomain());
-    successResponse.put("subdomainName", response.getSubdomainName());
-
-    return ResponseEntity.ok(successResponse);
+        return ResponseEntity.ok(response);
   }
 
 }

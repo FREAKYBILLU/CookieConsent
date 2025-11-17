@@ -59,6 +59,10 @@ public class CookieService {
             );
         }
 
+        if (updateRequest.getExpires() == null || !updateRequest.getExpires().isAfter(Instant.now())) {
+            throw new IllegalArgumentException("Invalid 'expires' — must be a future time");
+        }
+
         // Validate required fields (at least one field must be provided for update)
         if (updateRequest.getCategory() == null && updateRequest.getDescription() == null &&
                 updateRequest.getDomain() == null && updateRequest.getPrivacyPolicyUrl() == null &&
@@ -251,6 +255,10 @@ public class CookieService {
                     "Cookie information is required",
                     "AddCookieRequest is null"
             );
+        }
+
+        if (addRequest.getExpires() == null || !addRequest.getExpires().isAfter(Instant.now())) {
+            throw new IllegalArgumentException("Invalid 'expires' — must be a future time");
         }
 
         log.info("Adding cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);

@@ -23,7 +23,6 @@ import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -31,7 +30,6 @@ import java.util.List;
 @RequiredArgsConstructor
 @Slf4j
 @Validated
-@CrossOrigin(origins = "*")
 @Tag(name = "Cookie Category Management", description = "APIs for managing cookie categories")
 public class CategoryController {
 

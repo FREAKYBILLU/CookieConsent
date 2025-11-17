@@ -3,8 +3,6 @@ package com.example.scanner.entity;
 import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.dto.Multilingual;
 import com.example.scanner.dto.Preference;
-import com.example.scanner.dto.request.UpdateConsentRequest;
-import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
 import com.fasterxml.jackson.annotation.JsonFormat;
@@ -20,7 +18,6 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Document(collection = "cookie_consents")
@@ -28,7 +25,7 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Consent {
+public class CookieConsent {
 
     @Id
     @JsonProperty("_id")
@@ -111,9 +108,9 @@ public class Consent {
     private String className;
 
     // Constructor for new consent creation (version 1)
-    public Consent(String consentHandleId, String businessId, String templateId, Integer templateVersion,
-                   String languagePreferences, Multilingual multilingual, CustomerIdentifiers customerIdentifiers,
-                   List<Preference> preferences, Status status, LocalDateTime startDate, LocalDateTime endDate) {
+    public CookieConsent(String consentHandleId, String businessId, String templateId, Integer templateVersion,
+                         String languagePreferences, Multilingual multilingual, CustomerIdentifiers customerIdentifiers,
+                         List<Preference> preferences, Status status, LocalDateTime startDate, LocalDateTime endDate) {
         this.consentId = UUID.randomUUID().toString(); // Generate logical consent ID
         this.consentHandleId = consentHandleId;
         this.businessId = businessId;

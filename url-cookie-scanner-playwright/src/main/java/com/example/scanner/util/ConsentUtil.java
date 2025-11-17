@@ -2,7 +2,7 @@ package com.example.scanner.util;
 
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.UpdateConsentRequest;
-import com.example.scanner.entity.Consent;
+import com.example.scanner.entity.CookieConsent;
 import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
@@ -11,7 +11,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -24,9 +23,9 @@ public class ConsentUtil {
      * Create new version from existing consent with updates
      * Used for consent update operations
      */
-    public static Consent createNewVersionFrom(Consent existingConsent, UpdateConsentRequest updateRequest,
-                                               String newConsentHandleId, Integer templateVersionFromHandle) {
-        Consent newVersion = new Consent();
+    public static CookieConsent createNewVersionFrom(CookieConsent existingConsent, UpdateConsentRequest updateRequest,
+                                                     String newConsentHandleId, Integer templateVersionFromHandle) {
+        CookieConsent newVersion = new CookieConsent();
 
         // Copy immutable fields
         newVersion.setConsentId(existingConsent.getConsentId());

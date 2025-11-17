@@ -29,4 +29,7 @@ public class ConsentHandleResponse {
             example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
     )
     private String txnId;
+
+    @Schema(description = "Indicates if this is a newly created handle or existing one")
+    private boolean isNewHandle;
 }

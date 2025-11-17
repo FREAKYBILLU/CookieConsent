@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/cookie-templates")
 @Tag(name = "Consent Template", description = "APIs for managing validated consent templates linked to completed scans")

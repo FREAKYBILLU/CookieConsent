@@ -5,7 +5,6 @@ import com.example.scanner.dto.response.ConsentHandleResponse;
 import com.example.scanner.dto.request.CreateHandleRequest;
 import com.example.scanner.dto.response.ErrorResponse;
 import com.example.scanner.dto.response.GetHandleResponse;
-import com.example.scanner.entity.ConsentHandle;
 import com.example.scanner.exception.ScannerException;
 import com.example.scanner.service.ConsentHandleService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -24,7 +23,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/consent-handle")
 @RequiredArgsConstructor
@@ -83,19 +81,18 @@ public class ConsentHandleController {
         log.info("Creating consent handle for templateId: {}, customer: {}, tenant: {}",
                 request.getTemplateId(), request.getCustomerIdentifiers().getValue(), tenantId);
 
-        ConsentHandle consentHandle = this.consentHandleService.createConsentHandle(tenantId, request, headers);
+        ConsentHandleResponse response = this.consentHandleService.createConsentHandle(tenantId, request, headers);
 
-        ConsentHandleResponse response = ConsentHandleResponse.builder()
-                .consentHandleId(consentHandle.getConsentHandleId())
-                .message("Consent Handle Created successfully!")
-                .txnId(headers.get(Constants.TXN_ID))
-                .build();
+        log.info("Successfully {} consent handle: {} for transaction: {} and tenant: {}",
+                response.isNewHandle() ? "created" : "returned existing",
+                response.getConsentHandleId(),
+                headers.get(Constants.TXN_ID),
+                tenantId);
 
-        log.info("Successfully created consent handle: {} for transaction: {} and tenant: {}",
-                consentHandle.getConsentHandleId(), headers.get(Constants.TXN_ID), tenantId);
-
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+        HttpStatus status = response.isNewHandle() ? HttpStatus.CREATED : HttpStatus.OK;
+        return new ResponseEntity<>(response, status);
     }
+
     @GetMapping("/get/{consentHandleId}")
     @Operation(
             summary = "Get consent handle by ID (GetCookieConsentTemplate API)",

@@ -3,7 +3,7 @@ package com.example.scanner.repository.impl;
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
 import com.example.scanner.dto.CustomerIdentifiers;
-import com.example.scanner.entity.Consent;
+import com.example.scanner.entity.CookieConsent;
 import com.example.scanner.enums.VersionStatus;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,7 +23,7 @@ public class ConsentRepositoryImpl {
 
     private final MultiTenantMongoConfig mongoConfig;
 
-    public Consent save(Consent consent, String tenantId) {
+    public CookieConsent save(CookieConsent consent, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
         }
@@ -37,7 +37,7 @@ public class ConsentRepositoryImpl {
         }
     }
 
-    public Consent existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
+    public CookieConsent existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
             String templateId, Integer templateVersion, CustomerIdentifiers customerIdentifiers, String tenantId,
             String consentHandleId) {
 
@@ -57,13 +57,13 @@ public class ConsentRepositoryImpl {
                     .and("consentHandleId").is(consentHandleId);
 
             Query query = new Query(criteria);
-            return tenantMongoTemplate.findOne(query, Consent.class);
+            return tenantMongoTemplate.findOne(query, CookieConsent.class);
         } finally {
             TenantContext.clear();
         }
     }
 
-    public Consent findActiveByConsentId(String consentId, String tenantId) {
+    public CookieConsent findActiveByConsentId(String consentId, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
         }
@@ -75,13 +75,13 @@ public class ConsentRepositoryImpl {
             Query query = new Query(Criteria.where("consentId").is(consentId)
                     .and("consentStatus").is(VersionStatus.ACTIVE));
 
-            return tenantMongoTemplate.findOne(query, Consent.class);
+            return tenantMongoTemplate.findOne(query, CookieConsent.class);
         } finally {
             TenantContext.clear();
         }
     }
 
-    public List<Consent> findAllVersionsByConsentId(String consentId, String tenantId) {
+    public List<CookieConsent> findAllVersionsByConsentId(String consentId, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
         }
@@ -93,14 +93,14 @@ public class ConsentRepositoryImpl {
             Query query = new Query(Criteria.where("consentId").is(consentId))
                     .with(Sort.by(Sort.Direction.DESC, "version"));
 
-            return tenantMongoTemplate.find(query, Consent.class);
+            return tenantMongoTemplate.find(query, CookieConsent.class);
         } finally {
             TenantContext.clear();
         }
     }
 
 
-    public Optional<Consent> findByConsentIdAndVersion(String consentId, Integer version, String tenantId) {
+    public Optional<CookieConsent> findByConsentIdAndVersion(String consentId, Integer version, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
         }
@@ -112,7 +112,7 @@ public class ConsentRepositoryImpl {
             Query query = new Query(Criteria.where("consentId").is(consentId)
                     .and("version").is(version));
 
-            Consent consent = tenantMongoTemplate.findOne(query, Consent.class);
+            CookieConsent consent = tenantMongoTemplate.findOne(query, CookieConsent.class);
             return Optional.ofNullable(consent);
         } finally {
             TenantContext.clear();

@@ -35,6 +35,10 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
 
+        if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
         // CHECK IF RATE LIMITING IS ENABLED FIRST
         if (!rateLimitEnabled) {
             log.debug("Rate limiting is disabled, allowing request to: {}", request.getRequestURI());

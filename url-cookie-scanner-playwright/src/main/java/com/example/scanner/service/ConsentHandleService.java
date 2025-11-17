@@ -6,9 +6,10 @@ import com.example.scanner.constants.Constants;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateHandleRequest;
+import com.example.scanner.dto.response.ConsentHandleResponse;
 import com.example.scanner.dto.response.GetHandleResponse;
 import com.example.scanner.dto.response.PreferenceWithCookies;
-import com.example.scanner.entity.ConsentHandle;
+import com.example.scanner.entity.CookieConsentHandle;
 import com.example.scanner.entity.ConsentTemplate;
 import com.example.scanner.entity.CookieEntity;
 import com.example.scanner.entity.ScanResultEntity;
@@ -16,7 +17,6 @@ import com.example.scanner.enums.ConsentHandleStatus;
 import com.example.scanner.exception.ConsentHandleExpiredException;
 import com.example.scanner.exception.ScannerException;
 import com.example.scanner.repository.ConsentHandleRepository;
-import com.example.scanner.util.CommonUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -43,7 +43,7 @@ public class ConsentHandleService {
     @Value("${consent.handle.expiry.minutes:15}")
     private int handleExpiryMinutes;
 
-    public ConsentHandle createConsentHandle(String tenantId, CreateHandleRequest request, Map<String, String> headers)
+    public ConsentHandleResponse createConsentHandle(String tenantId, CreateHandleRequest request, Map<String, String> headers)
             throws ScannerException {
 
         if (tenantId == null || tenantId.trim().isEmpty()) {
@@ -59,9 +59,33 @@ public class ConsentHandleService {
         try {
             validateTemplate(tenantId, request.getTemplateId(), request.getTemplateVersion());
 
+            CookieConsentHandle existingHandle = consentHandleRepository.findActiveConsentHandle(
+                    request.getCustomerIdentifiers().getValue(),
+                    request.getUrl(),
+                    request.getTemplateId(),
+                    request.getTemplateVersion(),
+                    tenantId
+            );
+
+            if (existingHandle != null) {
+                log.info("Returning existing consent handle: {} for deviceId: {}, url: {}, templateId: {}, version: {}",
+                        existingHandle.getConsentHandleId(),
+                        request.getCustomerIdentifiers().getValue(),
+                        request.getUrl(),
+                        request.getTemplateId(),
+                        request.getTemplateVersion());
+
+                return ConsentHandleResponse.builder()
+                        .consentHandleId(existingHandle.getConsentHandleId())
+                        .message("Existing Consent Handle returned!")
+                        .txnId(headers.get(Constants.TXN_ID))
+                        .isNewHandle(false)
+                        .build();
+            }
+
             String consentHandleId = UUID.randomUUID().toString();
 
-            ConsentHandle consentHandle = new ConsentHandle(
+            CookieConsentHandle consentHandle = new CookieConsentHandle(
                     consentHandleId,
                     headers.get(Constants.BUSINESS_ID_HEADER),
                     headers.get(Constants.TXN_ID),
@@ -73,15 +97,20 @@ public class ConsentHandleService {
                     handleExpiryMinutes
             );
 
-            ConsentHandle savedHandle = this.consentHandleRepository.save(consentHandle, tenantId);
+            CookieConsentHandle savedHandle = this.consentHandleRepository.save(consentHandle, tenantId);
 
             // Log handle created
             auditService.logConsentHandleCreated(tenantId, headers.get(Constants.BUSINESS_ID_HEADER), consentHandleId);
 
-            log.info("Created consent handle with ID: {} for template: {} and tenant: {}",
+            log.info("Created new consent handle with ID: {} for template: {} and tenant: {}",
                     consentHandleId, request.getTemplateId(), tenantId);
 
-            return savedHandle;
+            return ConsentHandleResponse.builder()
+                    .consentHandleId(savedHandle.getConsentHandleId())
+                    .message("Consent Handle Created successfully!")
+                    .txnId(headers.get(Constants.TXN_ID))
+                    .isNewHandle(true)
+                    .build();
 
         } catch (IllegalStateException e) {
             if (e.getMessage().contains("Database") && e.getMessage().contains("does not exist")) {
@@ -91,18 +120,16 @@ public class ConsentHandleService {
                         "Database 'template_" + tenantId + "' does not exist. Please check the tenant ID.");
             }
             throw e;
-        } catch (ScannerException e) {
-            throw e;
         } catch (DataAccessException e) {
-            log.error("Database access error for tenant {}: {}", tenantId, e.getMessage());
+            log.error("Database access error while creating consent handle for tenant: {}", tenantId, e);
             throw new ScannerException(ErrorCodes.INTERNAL_ERROR,
-                    "Database access error",
-                    "Failed to access tenant database: " + e.getMessage());
+                    "Failed to access database",
+                    e.getMessage());
         } catch (Exception e) {
-            log.error("Unexpected error creating consent handle for tenant: {}", tenantId, e);
+            log.error("Error creating consent handle for tenant: {}", tenantId, e);
             throw new ScannerException(ErrorCodes.INTERNAL_ERROR,
                     "Failed to create consent handle",
-                    "Unexpected error: " + e.getMessage());
+                    e.getMessage());
         } finally {
             TenantContext.clear();
         }
@@ -122,7 +149,7 @@ public class ConsentHandleService {
 
         try {
             // Fetch consent handle
-            ConsentHandle consentHandle = this.consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
+            CookieConsentHandle consentHandle = this.consentHandleRepository.getByConsentHandleId(consentHandleId, tenantId);
             if (ObjectUtils.isEmpty(consentHandle)) {
                 log.warn("Consent handle not found: {}", consentHandleId);
                 throw new ScannerException(ErrorCodes.NOT_FOUND,
@@ -276,7 +303,7 @@ public class ConsentHandleService {
         }
     }
 
-    private void validateNotExpired(ConsentHandle handle, String tenantId) {
+    private void validateNotExpired(CookieConsentHandle handle, String tenantId) {
         if (handle.isExpired()) {
             handle.setStatus(ConsentHandleStatus.REQ_EXPIRED);
             consentHandleRepository.save(handle, tenantId);

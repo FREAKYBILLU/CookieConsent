@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -53,6 +54,45 @@ public class ScanService {
     private final CookieScanMetrics metrics;
     private final MultiTenantMongoConfig mongoConfig;
     private final AuditService auditService;
+
+    @Value("${scanner.browser.launch.timeout.ms:30000}")
+    private int browserLaunchTimeout;
+
+    @Value("${scanner.context.default.timeout.ms:15000}")
+    private int contextDefaultTimeout;
+
+    @Value("${scanner.context.navigation.timeout.ms:15000}")
+    private int contextNavigationTimeout;
+
+    @Value("${scanner.navigation.networkidle.timeout.ms:20000}")
+    private int navigationNetworkIdleTimeout;
+
+    @Value("${scanner.navigation.domcontentloaded.timeout.ms:15000}")
+    private int navigationDomContentLoadedTimeout;
+
+    @Value("${scanner.navigation.load.timeout.ms:10000}")
+    private int navigationLoadTimeout;
+
+    @Value("${scanner.wait.initial.load.ms:500}")
+    private int waitInitialLoad;
+
+    @Value("${scanner.wait.embedded.content.ms:1500}")
+    private int waitEmbeddedContent;
+
+    @Value("${scanner.wait.external.resources.ms:2000}")
+    private int waitExternalResources;
+
+    @Value("${scanner.wait.consent.handled.ms:2500}")
+    private int waitConsentHandled;
+
+    @Value("${scanner.wait.scroll.delay.ms:1000}")
+    private int waitScrollDelay;
+
+    @Value("${scanner.wait.analytics.trigger.ms:1500}")
+    private int waitAnalyticsTrigger;
+
+    @Value("${scanner.wait.cookie.sync.ms:4000}")
+    private int waitCookieSync;
 
     @Lazy
     @Autowired
@@ -198,7 +238,7 @@ public class ScanService {
 
             BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions()
                     .setHeadless(true)
-                    .setTimeout(30000)
+                    .setTimeout(browserLaunchTimeout)
                     .setSlowMo(0);
 
             browser = playwright.chromium().launch(launchOptions);
@@ -245,8 +285,8 @@ public class ScanService {
 
                     // NAYA CONTEXT BANAO
                     context = browser.newContext(contextOptions);
-                    context.setDefaultTimeout(15000);
-                    context.setDefaultNavigationTimeout(15000);
+                    context.setDefaultTimeout(contextDefaultTimeout);
+                    context.setDefaultNavigationTimeout(contextNavigationTimeout);
 
                     // Request listener setup (har context ke liye alag)
                     Set<String> trackingDomains = ConcurrentHashMap.newKeySet();
@@ -275,18 +315,18 @@ public class ScanService {
                     try {
                         response = page.navigate(targetUrl, new Page.NavigateOptions()
                                 .setWaitUntil(WaitUntilState.NETWORKIDLE)
-                                .setTimeout(20000));
+                                .setTimeout(navigationNetworkIdleTimeout));
                     } catch (TimeoutError e) {
                         log.warn("Networkidle timeout, trying with domcontentloaded for {}", targetUrl);
                         try {
                             response = page.navigate(targetUrl, new Page.NavigateOptions()
                                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
-                                    .setTimeout(15000));
+                                    .setTimeout(navigationDomContentLoadedTimeout));
                         } catch (TimeoutError e2) {
                             log.warn("Domcontentloaded timeout, trying basic load for {}", targetUrl);
                             response = page.navigate(targetUrl, new Page.NavigateOptions()
                                     .setWaitUntil(WaitUntilState.LOAD)
-                                    .setTimeout(10000));
+                                    .setTimeout(navigationLoadTimeout));
                         }
                     }
 
@@ -295,12 +335,12 @@ public class ScanService {
                         continue; // Skip this target but continue with others
                     }
 
-                    page.waitForTimeout(500);
+                    page.waitForTimeout(waitInitialLoad);
 
                     // PHASE 3: EMBEDDED CONTENT CHECK
                     if ((Boolean) page.evaluate("document.querySelectorAll('iframe, embed, object').length > 0")) {
                         log.info("Embedded content detected on {} - extending wait time", targetSubdomainName);
-                        page.waitForTimeout(1500);
+                        page.waitForTimeout(waitEmbeddedContent);
                     }
 
                     // PHASE 4: EXTERNAL RESOURCE DETECTION
@@ -308,7 +348,7 @@ public class ScanService {
                     log.info("=== PHASE 2: Generic external resource detection and triggering for {} ===", targetSubdomainName);
 
                     page.waitForLoadState(LoadState.NETWORKIDLE);
-                    page.waitForTimeout(2000);
+                    page.waitForTimeout(waitExternalResources);
 
                     // PHASE 5: CONSENT BANNER HANDLING
                     scanMetrics.setScanPhase("HANDLING_CONSENT_" + targetSubdomainName.toUpperCase());
@@ -364,7 +404,7 @@ public class ScanService {
                     }
 
                     if (consentHandled) {
-                        page.waitForTimeout(2500);
+                        page.waitForTimeout(waitConsentHandled);
                         if ("main".equals(targetSubdomainName)) {
                             captureBrowserCookiesEnhanced(context, targetUrl, discoveredCookies, transactionId, scanMetrics, tenantId);
                         } else {
@@ -381,12 +421,12 @@ public class ScanService {
                     page.evaluate("""
                     window.scrollTo(0, document.body.scrollHeight * 0.3);
                 """);
-                    page.waitForTimeout(1000);
+                    page.waitForTimeout(waitScrollDelay);
 
                     page.evaluate("""
                     window.scrollTo(0, document.body.scrollHeight * 0.7);
                 """);
-                    page.waitForTimeout(1000);
+                    page.waitForTimeout(waitScrollDelay);
 
                     // Natural events (not artificial analytics calls)
                     page.evaluate("""
@@ -398,11 +438,11 @@ public class ScanService {
                     scanMetrics.setScanPhase("TRIGGERING_ANALYTICS_" + targetSubdomainName.toUpperCase());
                     log.info("=== PHASE 5: Generic analytics event triggering for {} ===", targetSubdomainName);
 
-                    page.waitForTimeout(1500);
+                    page.waitForTimeout(waitAnalyticsTrigger);
 
                     scanMetrics.setScanPhase("COOKIE_SYNC_DETECTION_" + targetSubdomainName.toUpperCase());
 
-                    page.waitForTimeout(4000);
+                    page.waitForTimeout(waitCookieSync);
                     if ("main".equals(targetSubdomainName)) {
                         captureBrowserCookiesEnhanced(context, targetUrl, discoveredCookies, transactionId, scanMetrics, tenantId);
                     } else {

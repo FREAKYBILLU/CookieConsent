@@ -27,7 +27,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/dashboard")
-@CrossOrigin(origins = "*")
 @Tag(name = "Dashboard", description = "APIs for consent dashboard analytics and reporting")
 @Slf4j
 public class DashboardController {

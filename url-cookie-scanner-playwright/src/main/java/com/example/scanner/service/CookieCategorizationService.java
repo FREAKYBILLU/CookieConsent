@@ -45,16 +45,21 @@ public class CookieCategorizationService {
     @Value("${cookie.categorization.retry.maxAttempts:3}")
     private int maxRetryAttempts;
 
+    @Value("${cookie.categorization.use-external-api:false}")
+    private boolean useExternalApi;
+
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final CategoryService categoryService;
+    private final CookieCsvLoaderService cookieCsvLoaderService;
     private final Map<String, CacheEntry> categorizationCache = new ConcurrentHashMap<>();
 
 
     /**
      * Categorize cookies with retry mechanism
      */
-    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames, String tenantId) throws CookieCategorizationException {        if (cookieNames == null || cookieNames.isEmpty()) {
+    public Map<String, CookieCategorizationResponse> categorizeCookies(List<String> cookieNames, String tenantId) throws CookieCategorizationException {
+        if (cookieNames == null || cookieNames.isEmpty()) {
             log.debug("No cookie names provided for categorization");
             return Collections.emptyMap();
         }
@@ -72,9 +77,13 @@ public class CookieCategorizationService {
 
             if (!uncachedCookies.isEmpty()) {
                 log.debug("Fetching categorization for {} uncached cookies", uncachedCookies.size());
-                apiResults = callCategorizationApiWithRetry(uncachedCookies);
 
-                // ✅ VALIDATE AND MAP CATEGORIES
+                if (useExternalApi) {
+                    apiResults = callCategorizationApiWithRetry(uncachedCookies);
+                } else {
+                    apiResults = getCategoriesFromCsv(uncachedCookies);
+                }
+
                 if (!apiResults.isEmpty()) {
                     log.info("Validating {} predicted categories against Category table for tenant: {}",
                             apiResults.size(), tenantId);
@@ -326,6 +335,30 @@ public class CookieCategorizationService {
         log.warn("Predicted category '{}' not found in database for tenant {}. Using 'Others'",
                 predictedCategory, tenantId);
         return "Others";
+    }
+
+    /**
+     * Get categories from CSV data
+     */
+    private Map<String, CookieCategorizationResponse> getCategoriesFromCsv(List<String> cookieNames) {
+        Map<String, CookieCategorizationResponse> results = new ConcurrentHashMap<>();
+
+        for (String cookieName : cookieNames) {
+            String category = cookieCsvLoaderService.getCategoryForCookie(cookieName);
+
+            if (category == null) {
+                category = "Others";
+            }
+            CookieCategorizationResponse response = new CookieCategorizationResponse();
+            response.setName(cookieName);
+            response.setCategory(category);
+            response.setDescription(null);
+            response.setDescription_gpt(null);
+            results.put(cookieName, response);
+        }
+
+        log.debug("CSV lookup: found {} out of {} cookies", results.size(), cookieNames.size());
+        return results;
     }
 
 }

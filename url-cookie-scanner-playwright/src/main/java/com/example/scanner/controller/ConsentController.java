@@ -3,7 +3,7 @@ package com.example.scanner.controller;
 import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
 import com.example.scanner.dto.response.*;
-import com.example.scanner.entity.Consent;
+import com.example.scanner.entity.CookieConsent;
 import com.example.scanner.service.ConsentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -25,7 +25,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@CrossOrigin(origins = "*")
 @RestController
 @RequestMapping("/consent")
 @RequiredArgsConstructor
@@ -154,7 +153,7 @@ public class ConsentController {
                     @ApiResponse(
                             responseCode = "200",
                             description = "Consent history retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = Consent.class))
+                            content = @Content(schema = @Schema(implementation = CookieConsent.class))
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -173,13 +172,13 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<List<Consent>> getConsentHistory(
+    public ResponseEntity<List<CookieConsent>> getConsentHistory(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId) throws Exception {
 
         log.info("Retrieving consent history for consentId: {} in tenant: {}", consentId, tenantId);
 
-        List<Consent> history = consentService.getConsentHistory(consentId, tenantId);
+        List<CookieConsent> history = consentService.getConsentHistory(consentId, tenantId);
 
         log.info("Retrieved {} versions for consent: {}", history.size(), consentId);
 
@@ -200,7 +199,7 @@ public class ConsentController {
                     @ApiResponse(
                             responseCode = "200",
                             description = "Consent version retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = Consent.class))
+                            content = @Content(schema = @Schema(implementation = CookieConsent.class))
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -219,14 +218,14 @@ public class ConsentController {
                     )
             }
     )
-    public ResponseEntity<Consent> getConsentVersion(
+    public ResponseEntity<CookieConsent> getConsentVersion(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId,
             @PathVariable Integer version) throws Exception {
 
         log.info("Retrieving consent version {} for consentId: {} in tenant: {}", version, consentId, tenantId);
 
-        Optional<Consent> consentOpt = consentService.getConsentByIdAndVersion(tenantId, consentId, version);
+        Optional<CookieConsent> consentOpt = consentService.getConsentByIdAndVersion(tenantId, consentId, version);
 
         if (consentOpt.isEmpty()) {
             log.warn("Consent version not found: consentId={}, version={}, tenant={}", consentId, version, tenantId);

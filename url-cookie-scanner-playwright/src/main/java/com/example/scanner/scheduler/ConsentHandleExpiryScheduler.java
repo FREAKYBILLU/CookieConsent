@@ -1,7 +1,7 @@
 package com.example.scanner.scheduler;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
-import com.example.scanner.entity.ConsentHandle;
+import com.example.scanner.entity.CookieConsentHandle;
 import com.example.scanner.enums.ConsentHandleStatus;
 import com.mongodb.client.MongoClient;
 import lombok.RequiredArgsConstructor;
@@ -89,7 +89,7 @@ public class ConsentHandleExpiryScheduler {
         update.set("updatedAt", now);
 
         // Execute bulk update
-        long modifiedCount = mongoTemplate.updateMulti(query, update, ConsentHandle.class).getModifiedCount();
+        long modifiedCount = mongoTemplate.updateMulti(query, update, CookieConsentHandle.class).getModifiedCount();
 
         return (int) modifiedCount;
     }

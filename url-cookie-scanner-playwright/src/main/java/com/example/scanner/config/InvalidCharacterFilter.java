@@ -47,6 +47,11 @@ public class InvalidCharacterFilter implements Filter {
             HttpServletRequest httpRequest = (HttpServletRequest) request;
             HttpServletResponse httpResponse = (HttpServletResponse) response;
 
+            if ("OPTIONS".equalsIgnoreCase(httpRequest.getMethod())) {
+                chain.doFilter(request, response);
+                return;
+            }
+
             String requestURI = httpRequest.getRequestURI();
 
             // ENHANCED: Check for transaction ID endpoints specifically

@@ -21,7 +21,7 @@ import java.time.Instant;
 @AllArgsConstructor
 @Document(collection = "cookie_consent_handles")
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ConsentHandle {
+public class CookieConsentHandle {
 
     @Id
     private String id;
@@ -65,9 +65,9 @@ public class ConsentHandle {
     @Field("_class")
     private String className;
 
-    public ConsentHandle(String consentHandleId, String businessId, String txnId,
-                         String templateId, int templateVersion, String url, CustomerIdentifiers customerIdentifiers,
-                         ConsentHandleStatus status, int expiryMinutes) {
+    public CookieConsentHandle(String consentHandleId, String businessId, String txnId,
+                               String templateId, int templateVersion, String url, CustomerIdentifiers customerIdentifiers,
+                               ConsentHandleStatus status, int expiryMinutes) {
         this.consentHandleId = consentHandleId;
         this.businessId = businessId;
         this.txnId = txnId;

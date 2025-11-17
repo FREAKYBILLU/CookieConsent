@@ -1,14 +1,14 @@
 package com.example.scanner.repository;
 
-import com.example.scanner.entity.ConsentHandle;
-
-import java.util.List;
-import java.util.Map;
+import com.example.scanner.entity.CookieConsentHandle;
 
 public interface ConsentHandleRepository {
 
-    ConsentHandle save(ConsentHandle consentHandle, String tenantId);
+    CookieConsentHandle save(CookieConsentHandle consentHandle, String tenantId);
 
-    ConsentHandle getByConsentHandleId(String consentHandleId, String tenantId);
+    CookieConsentHandle getByConsentHandleId(String consentHandleId, String tenantId);
+
+    CookieConsentHandle findActiveConsentHandle(String deviceId, String url, String templateId,
+                                                int templateVersion, String tenantId);
 
 }
