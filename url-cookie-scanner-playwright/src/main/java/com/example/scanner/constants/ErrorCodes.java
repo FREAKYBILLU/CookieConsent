@@ -46,6 +46,7 @@ public final class ErrorCodes {
     public static final String CONSENT_NOT_FOUND = "R4047";
     public static final String CONSENT_VERSION_NOT_FOUND = "R4048";
     public static final String CONSENT_NO_ACTIVE_VERSION = "R4049";
+    public static final String CONSENT_JWS_NOT_FOUND = "R40011";
     public static final String MANDATORY_PREFERENCE_REJECTED = "R4230";
     public static final String INCOMPLETE_PREFERENCES = "R4231";
 
@@ -186,6 +187,7 @@ public final class ErrorCodes {
             case UPDATE_NOT_ALLOWED_BUSINESS_HOURS -> "Update not allowed during business hours";
 
             case CONSENT_CANNOT_UPDATE_REVOKED -> "Cannot update revoked consent";
+            case CONSENT_JWS_NOT_FOUND -> "x-jws-signature is required in the header.";
 
             default -> "Unknown error";
         };

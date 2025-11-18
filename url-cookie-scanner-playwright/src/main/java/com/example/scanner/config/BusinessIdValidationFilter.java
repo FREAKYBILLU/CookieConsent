@@ -40,10 +40,10 @@ public class BusinessIdValidationFilter implements Filter {
 
     // ONLY validate business-id for these specific endpoints
     private static final List<String> VALIDATE_BUSINESS_ID_ENDPOINTS = Arrays.asList(
-            "/consent-handle/create",           // 1. CreateConsentHandle
-            "/consent-handle/get",              // 2. GetConsentHandle
-            "/consent/get",                     // 3. Get Consent
-            "/cookie-templates"                 // 4. Create/Update Template (POST and PUT)
+            "/consent-handle/create",
+            "/consent-handle/get",
+            "/consent/get",
+            "/cookie-templates"
     );
 
     public BusinessIdValidationFilter(MultiTenantMongoConfig mongoConfig, ObjectMapper objectMapper) {
@@ -121,6 +121,10 @@ public class BusinessIdValidationFilter implements Filter {
 
         // Check consent history ONLY
         if (requestURI.contains("/consent/") && requestURI.endsWith("/history")) {
+            return true;
+        }
+
+        if (requestURI.contains("/consent/validate-token")) {
             return true;
         }
 

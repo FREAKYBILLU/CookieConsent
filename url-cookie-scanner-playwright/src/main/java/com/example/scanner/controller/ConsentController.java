@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -51,7 +52,12 @@ public class ConsentController {
                     @ApiResponse(
                             responseCode = "201",
                             description = "Consent created successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentCreateResponse.class))
+                            content = @Content(schema = @Schema(implementation = ConsentCreateResponse.class)),
+                            headers = @io.swagger.v3.oas.annotations.headers.Header(
+                                    name = "x-jws-signature",
+                                    description = "JWS token for consent verification",
+                                    schema = @Schema(type = "string")
+                            )
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -80,6 +86,11 @@ public class ConsentController {
         ConsentCreateResponse response = consentService.createConsentByConsentHandleId(request, tenantId);
 
         log.info("Successfully created consent: {} for handle: {}", response.getConsentId(), request.getConsentHandleId());
+
+        HttpHeaders responseHeaders = new HttpHeaders();
+        if (response.getJwsToken() != null) {
+            responseHeaders.set("x-jws-signature", response.getJwsToken());
+        }
 
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
@@ -240,21 +251,35 @@ public class ConsentController {
 
     @GetMapping("/validate-token")
     @Operation(
-            summary = "Validate a consent token",
+            summary = "Validate consent token with JWS verification",
+            description = "First verifies JWS token against vault, then validates consent token. " +
+                    "JWS verification compares complete consent object from vault with database.",
             parameters = {
-                    @Parameter(name = "consent-token", description = "Consent Token", required = true, example = "eyJhbGciOiJIUzI1NiJ9..."),
-                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true, example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true, example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
+                    @Parameter(name = "consent-token", description = "Consent JWT Token", required = true,
+                            example = "eyJhbGciOiJIUzI1NiJ9..."),
+                    @Parameter(name = "x-jws-signature", description = "x-jws-signature Token from vault", required = true,
+                            example = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."),
+                    @Parameter(name = "business-id", description = "Business ID", required = true,
+                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef"),
+                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
+                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
+                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },
             responses = {
                     @ApiResponse(
                             responseCode = "200",
-                            description = "Consent token validated successfully",
+                            description = "Token validated successfully",
                             content = @Content(schema = @Schema(implementation = ConsentTokenValidateResponse.class))
                     ),
                     @ApiResponse(
+                            responseCode = "400",
+                            description = "JWS or consent token validation failed",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
+                    ),
+                    @ApiResponse(
                             responseCode = "404",
-                            description = "Consent token not found",
+                            description = "Consent not found",
                             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
                     ),
                     @ApiResponse(
@@ -266,9 +291,12 @@ public class ConsentController {
     )
     public ResponseEntity<ConsentTokenValidateResponse> validateConsent(
             @RequestHeader("consent-token") String consentToken,
-            @RequestHeader("X-Tenant-ID") String tenantId) throws Exception {
-
-        return new ResponseEntity<>(consentService.validateConsentToken(consentToken, tenantId), HttpStatus.OK);
+            @RequestHeader(value = "x-jws-signature") String jwsToken,
+            @RequestHeader("business-id") String businessId,
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestHeader Map<String, String> headers) throws Exception {
+        return new ResponseEntity<>(consentService.validateConsentToken(consentToken, jwsToken, tenantId, businessId),
+                HttpStatus.OK);
     }
 
     @GetMapping("/check")

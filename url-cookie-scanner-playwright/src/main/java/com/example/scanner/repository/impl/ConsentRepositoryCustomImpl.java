@@ -5,25 +5,27 @@ import com.example.scanner.config.TenantContext;
 import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.entity.CookieConsent;
 import com.example.scanner.enums.VersionStatus;
+import com.example.scanner.repository.ConsentRepositoryCustom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.stereotype.Repository;
+import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Optional;
 
-@Repository
+@Component
 @RequiredArgsConstructor
 @Slf4j
-public class ConsentRepositoryImpl {
+public class ConsentRepositoryCustomImpl implements ConsentRepositoryCustom {
 
     private final MultiTenantMongoConfig mongoConfig;
 
-    public CookieConsent save(CookieConsent consent, String tenantId) {
+    @Override
+    public CookieConsent saveToDatabase(CookieConsent consent, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
         }
@@ -37,9 +39,10 @@ public class ConsentRepositoryImpl {
         }
     }
 
-    public CookieConsent existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
-            String templateId, Integer templateVersion, CustomerIdentifiers customerIdentifiers, String tenantId,
-            String consentHandleId) {
+    @Override
+    public CookieConsent existsByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
+            String templateId, Integer templateVersion, CustomerIdentifiers customerIdentifiers,
+            String tenantId, String consentHandleId) {
 
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
@@ -63,6 +66,7 @@ public class ConsentRepositoryImpl {
         }
     }
 
+    @Override
     public CookieConsent findActiveByConsentId(String consentId, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
@@ -81,6 +85,7 @@ public class ConsentRepositoryImpl {
         }
     }
 
+    @Override
     public List<CookieConsent> findAllVersionsByConsentId(String consentId, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");
@@ -99,7 +104,7 @@ public class ConsentRepositoryImpl {
         }
     }
 
-
+    @Override
     public Optional<CookieConsent> findByConsentIdAndVersion(String consentId, Integer version, String tenantId) {
         if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not set");

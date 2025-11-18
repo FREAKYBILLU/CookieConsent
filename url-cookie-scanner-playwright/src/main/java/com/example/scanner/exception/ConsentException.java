@@ -15,13 +15,7 @@ public class ConsentException extends Exception {
      * @param developerDetails - Technical details for developers
      */
     public ConsentException(String errorCode, String userMessage, String developerDetails) {
-        super(developerDetails); // Technical details go to getMessage()
-
-        // VALIDATION: Ensure only R-format error codes are used
-        if (errorCode != null && !errorCode.matches("^R\\d{4}$")) {
-            throw new IllegalArgumentException("Invalid error code format: " + errorCode +
-                    ". Must follow R-format (e.g., R4001, R5001). No JCMP codes allowed!");
-        }
+        super(developerDetails);
 
         this.errorCode = errorCode;
         this.userMessage = userMessage;

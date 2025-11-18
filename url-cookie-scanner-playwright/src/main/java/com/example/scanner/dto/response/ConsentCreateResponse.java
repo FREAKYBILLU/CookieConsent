@@ -85,4 +85,9 @@ public class ConsentCreateResponse {
     )
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime consentExpiry;
+
+    @Schema(
+            description = "JWS token from vault service for consent verification (NOT stored in DB)"
+    )
+    private String jwsToken;
 }

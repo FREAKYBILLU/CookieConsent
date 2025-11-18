@@ -16,11 +16,12 @@ import com.example.scanner.entity.ScanResultEntity;
 import com.example.scanner.enums.*;
 import com.example.scanner.exception.ConsentException;
 import com.example.scanner.repository.ConsentHandleRepository;
-import com.example.scanner.repository.impl.ConsentRepositoryImpl;
+import com.example.scanner.repository.ConsentRepository;
 import com.example.scanner.util.ConsentUtil;
 import com.example.scanner.util.InstantTypeAdapter;
 import com.example.scanner.util.LocalDateTypeAdapter;
 import com.example.scanner.util.TokenUtility;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import lombok.RequiredArgsConstructor;
@@ -47,9 +48,11 @@ public class ConsentService {
     private final ConsentHandleRepository consentHandleRepository;
     private final ConsentTemplateService templateService;
     private final TokenUtility tokenUtility;
-    private final ConsentRepositoryImpl consentRepositoryImpl;
+    private final ConsentRepository consentRepository;
     private final MultiTenantMongoConfig mongoConfig;
     private final AuditService auditService;
+    private final VaultService vaultService;
+    private final ObjectMapper objectMapper;
 
 
     // ============================================
@@ -59,22 +62,17 @@ public class ConsentService {
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
 
-        // ✅ ADD THIS - Log consent creation initiated
         auditService.logConsentCreationInitiated(tenantId, null, request.getConsentHandleId());
 
-
-        // Validate preferences present
         if (request.getPreferencesStatus() == null || request.getPreferencesStatus().isEmpty()) {
             throw new ConsentException(ErrorCodes.VALIDATION_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
                     "Preferences status cannot be empty");
         }
 
-        // REQUIREMENT 4: Validate consent handle (checks PENDING status and 15 min expiry)
         CookieConsentHandle consentHandle = validateConsentHandle(request.getConsentHandleId(), tenantId);
 
-        // Check for existing consent
-        CookieConsent existingConsent = consentRepositoryImpl.existByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
+        CookieConsent existingConsent = consentRepository.existsByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
                 consentHandle.getTemplateId(), consentHandle.getTemplateVersion(),
                 consentHandle.getCustomerIdentifiers(), tenantId, request.getConsentHandleId());
 
@@ -90,11 +88,8 @@ public class ConsentService {
 
         // Get template
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
-
-        // REQUIREMENT 3: FIRST validate ALL template preferences are present in request
         validateAllPreferencesPresent(template.getPreferences(), request.getPreferencesStatus());
 
-        // REQUIREMENT 1: Check if ALL preferences are NOTACCEPTED (Reject All scenario)
         // This check happens AFTER we know all preferences are present
         boolean allNotAccepted = request.getPreferencesStatus().values().stream()
                 .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
@@ -114,8 +109,6 @@ public class ConsentService {
                     .build();
         }
 
-        // REQUIREMENT 2: Validate mandatory preferences are not NOTACCEPTED
-        // This only runs if it's NOT a reject-all case
         validateMandatoryNotRejected(template.getPreferences(), request.getPreferencesStatus());
 
         // Process preferences (returns only matched ones for creation)
@@ -131,9 +124,30 @@ public class ConsentService {
         String consentToken = generateConsentToken(consent);
         consent.setConsentJwtToken(consentToken);
 
-        consentRepositoryImpl.save(consent, tenantId);
+        String consentJsonString;
+        try {
+            consentJsonString = objectMapper.writeValueAsString(consent);
+            log.debug("Converted CookieConsent to JSON string for signing");
+        } catch (Exception e) {
+            log.error("Failed to convert consent to JSON", e);
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
+                    "Failed to convert consent to JSON: " + e.getMessage());
+        }
 
-        // ✅ ADD THIS - Log consent created
+        String jwsToken;
+        try {
+            jwsToken = vaultService.signJsonPayload(consentJsonString, tenantId, consentHandle.getBusinessId());
+            log.info("Vault signing successful for consent: {}", consent.getConsentId());
+        } catch (Exception e) {
+            log.error("Vault signing failed, not saving consent: {}", consent.getConsentId(), e);
+            throw new ConsentException(ErrorCodes.EXTERNAL_SERVICE_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
+                    "Failed to sign consent with vault service: " + e.getMessage());
+        }
+
+        consentRepository.saveToDatabase(consent, tenantId);
+
         auditService.logConsentCreated(tenantId, null, consent.getConsentId());
 
         // Mark handle as USED
@@ -141,7 +155,6 @@ public class ConsentService {
         consentHandle.setUpdatedAt(Instant.now());
         consentHandleRepository.save(consentHandle, tenantId);
 
-        // ✅ ADD THIS - Log handle marked used
         auditService.logConsentHandleMarkedUsed(tenantId, null,consentHandle.getConsentHandleId());
 
         log.info("Successfully created consent: {}", consent.getConsentId());
@@ -149,6 +162,7 @@ public class ConsentService {
         return ConsentCreateResponse.builder()
                 .consentId(consent.getConsentId())
                 .consentJwtToken(consentToken)
+                .jwsToken(jwsToken)
                 .message("Consent created successfully!")
                 .consentExpiry(consent.getEndDate())
                 .build();
@@ -188,7 +202,7 @@ public class ConsentService {
 
             activeConsent.setStatus(Status.REVOKED);
             activeConsent.setUpdatedAt(Instant.now());
-            consentRepositoryImpl.save(activeConsent, tenantId);
+            consentRepository.saveToDatabase(activeConsent, tenantId);
 
             auditService.logConsentRevoked(tenantId, activeConsent.getBusinessId(), activeConsent.getConsentId());
 
@@ -213,7 +227,7 @@ public class ConsentService {
     public List<CookieConsent> getConsentHistory(String consentId, String tenantId) throws Exception {
         validateBasicInputs(consentId, tenantId, "Consent ID");
 
-        List<CookieConsent> history = consentRepositoryImpl.findAllVersionsByConsentId(consentId, tenantId);
+        List<CookieConsent> history = consentRepository.findAllVersionsByConsentId(consentId, tenantId);
 
         if (history.isEmpty()) {
             throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND,
@@ -235,33 +249,52 @@ public class ConsentService {
                     "Version must be positive, got: " + version);
         }
 
-        return consentRepositoryImpl.findByConsentIdAndVersion(consentId, version, tenantId);
+        return consentRepository.findByConsentIdAndVersion(consentId, version, tenantId);
     }
 
-    public ConsentTokenValidateResponse validateConsentToken(String token, String tenantId) throws Exception {
+    public ConsentTokenValidateResponse validateConsentToken(String consentToken, String jwsToken,
+                                                             String tenantId, String businessId) throws Exception {
 
-        String tokenId = token.substring(0, Math.min(20, token.length()));
+        String tokenId = consentToken.substring(0, Math.min(20, consentToken.length()));
 
-        // ✅ Log token verification initiated
-        auditService.logTokenVerificationInitiated(tenantId, null, tokenId);
+        if (jwsToken != null && !jwsToken.trim().isEmpty()) {
+            try {
+                log.info("JWS token provided, verifying before consent token validation");
+                verifyJwsToken(jwsToken, tenantId, businessId);
+                log.info("JWS token verification successful");
+            } catch (ConsentException e) {
+                log.error("JWS verification failed: {}", e.getMessage());
+                auditService.logTokenValidationFailed(tenantId, businessId, tokenId);
+
+                return ConsentTokenValidateResponse.builder()
+                        .message(e.getUserMessage())
+                        .build();
+            }
+        } else {
+            log.warn("JWS token not provided in request header");
+            throw new ConsentException(
+                    ErrorCodes.CONSENT_JWS_NOT_FOUND,
+                    ErrorCodes.getDescription(ErrorCodes.CONSENT_JWS_NOT_FOUND),
+                    "Add x-jws-signature header."
+            );
+        }
+
+        auditService.logTokenVerificationInitiated(tenantId, businessId, tokenId);
 
         try {
-            ConsentTokenValidateResponse response = tokenUtility.verifyConsentToken(token);
+            ConsentTokenValidateResponse response = tokenUtility.verifyConsentToken(consentToken);
 
-            // ✅ Log token signature verified
-            auditService.logTokenSignatureVerified(tenantId, null, tokenId);
-
-            // ✅ Log token validation success
-            auditService.logTokenValidationSuccess(tenantId, null, tokenId);
+            auditService.logTokenSignatureVerified(tenantId, businessId, tokenId);
+            auditService.logTokenValidationSuccess(tenantId, businessId, tokenId);
 
             return response;
 
         } catch (Exception e) {
-            // ✅ Log token validation failed
-            auditService.logTokenValidationFailed(tenantId, null, tokenId);
+            auditService.logTokenValidationFailed(tenantId, businessId, tokenId);
             throw e;
         }
     }
+
     // ============================================
     // VALIDATION & PROCESSING METHODS
     // ============================================
@@ -490,7 +523,7 @@ public class ConsentService {
     }
 
     private CookieConsent findActiveConsentOrThrow(String consentId, String tenantId) throws ConsentException {
-        CookieConsent consent = consentRepositoryImpl.findActiveByConsentId(consentId, tenantId);
+        CookieConsent consent = consentRepository.findActiveByConsentId(consentId, tenantId);
 
         if (consent == null) {
             throw new ConsentException(ErrorCodes.CONSENT_NOT_FOUND,
@@ -573,7 +606,7 @@ public class ConsentService {
         String token = generateConsentToken(newVersion);
         newVersion.setConsentJwtToken(token);
 
-        consentRepositoryImpl.save(newVersion, tenantId);
+        consentRepository.saveToDatabase(newVersion, tenantId);
         log.info("Created consent version {} for {}", newVersion.getVersion(), newVersion.getConsentId());
 
         // Log new version created
@@ -581,7 +614,7 @@ public class ConsentService {
 
         active.setConsentStatus(VersionStatus.UPDATED);
         active.setUpdatedAt(Instant.now());
-        consentRepositoryImpl.save(active, tenantId);
+        consentRepository.saveToDatabase(active, tenantId);
 
         // Log old version marked updated
         auditService.logOldConsentVersionMarkedUpdated(tenantId, null, active.getConsentId());
@@ -954,5 +987,114 @@ public class ConsentService {
         }finally {
             TenantContext.clear();
         }
+    }
+
+    private void verifyJwsToken(String jwsToken, String tenantId, String businessId) throws ConsentException {
+        log.info("Starting JWS token verification");
+
+        // Step 1: Verify token with vault service
+        VaultVerifyResponse verifyResponse = verifyTokenWithVault(jwsToken, tenantId, businessId);
+
+        // Step 2: Validate response
+        validateVaultResponse(verifyResponse);
+
+        // Step 3: Extract and convert payload to CookieConsent
+        CookieConsent jwsConsent = extractConsentFromPayload(verifyResponse.getPayload());
+
+        // Step 4: Fetch consent from database
+        CookieConsent dbConsent = fetchConsentFromDatabase(jwsConsent.getConsentId(),
+                jwsConsent.getVersion(),
+                tenantId);
+
+        // Step 5: Compare objects directly
+        compareConsents(jwsConsent, dbConsent);
+
+        log.info("JWS token verification successful for consentId: {}, version: {}",
+                jwsConsent.getConsentId(), jwsConsent.getVersion());
+    }
+
+    private VaultVerifyResponse verifyTokenWithVault(String jwsToken, String tenantId, String businessId)
+            throws ConsentException {
+        try {
+            return vaultService.verifyJwtToken(jwsToken, tenantId, businessId);
+        } catch (Exception e) {
+            log.error("Vault verify API call failed", e);
+            throw new ConsentException(
+                    ErrorCodes.EXTERNAL_SERVICE_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
+                    "Failed to verify JWS token with vault service: " + e.getMessage()
+            );
+        }
+    }
+
+    private void validateVaultResponse(VaultVerifyResponse response) throws ConsentException {
+        if (!response.isValid()) {
+            log.error("JWS token signature validation failed");
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "JWS token signature is invalid"
+            );
+        }
+
+        if (response.getPayload() == null || response.getPayload().isEmpty()) {
+            log.error("JWS token payload is empty");
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "JWS token payload is empty"
+            );
+        }
+    }
+
+    private CookieConsent extractConsentFromPayload(Map<String, Object> payload) throws ConsentException {
+        try {
+            // Direct Map to Object conversion - NO intermediate JSON string
+            return objectMapper.convertValue(payload, CookieConsent.class);
+        } catch (IllegalArgumentException e) {
+            log.error("Failed to convert JWS payload to CookieConsent object", e);
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Invalid consent data structure in JWS token"
+            );
+        }
+    }
+
+    private CookieConsent fetchConsentFromDatabase(String consentId, Integer version, String tenantId)
+            throws ConsentException {
+
+        Optional<CookieConsent> consentOpt = consentRepository.findByConsentIdAndVersion(
+                consentId, version, tenantId
+        );
+
+        return consentOpt.orElseThrow(() -> {
+            log.error("Consent not found in database - consentId: {}, version: {}", consentId, version);
+            return new ConsentException(
+                    ErrorCodes.CONSENT_NOT_FOUND,
+                    ErrorCodes.getDescription(ErrorCodes.CONSENT_NOT_FOUND),
+                    "No consent found with ID: " + consentId + ", version: " + version
+            );
+        });
+    }
+
+
+    private void compareConsents(CookieConsent jwsConsent, CookieConsent dbConsent) throws ConsentException {
+        if (!jwsConsent.equals(dbConsent)) {
+            logConsentMismatch(jwsConsent, dbConsent);
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Consent data in JWS token does not match database records"
+            );
+        }
+    }
+
+    private void logConsentMismatch(CookieConsent jwsConsent, CookieConsent dbConsent) {
+        log.error("JWS consent data does not match DB consent data");
+        log.debug("JWS Consent - ID: {}, Version: {}, Status: {}",
+                jwsConsent.getConsentId(), jwsConsent.getVersion(), jwsConsent.getStatus());
+        log.debug("DB Consent - ID: {}, Version: {}, Status: {}",
+                dbConsent.getConsentId(), dbConsent.getVersion(), dbConsent.getStatus());
     }
 }

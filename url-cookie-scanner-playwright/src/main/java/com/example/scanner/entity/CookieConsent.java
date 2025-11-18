@@ -18,6 +18,7 @@ import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Document(collection = "cookie_consents")
@@ -128,5 +129,31 @@ public class CookieConsent {
         this.createdAt = Instant.now();
         this.updatedAt = Instant.now();
         this.className = "com.example.scanner.entity.Consent";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+
+        CookieConsent that = (CookieConsent) o;
+
+        return Objects.equals(consentId, that.consentId) &&
+                Objects.equals(version, that.version) &&
+                Objects.equals(templateId, that.templateId) &&
+                Objects.equals(templateVersion, that.templateVersion) &&
+                Objects.equals(businessId, that.businessId) &&
+                Objects.equals(customerIdentifiers, that.customerIdentifiers) &&
+                Objects.equals(preferences, that.preferences) &&
+                Objects.equals(status, that.status) &&
+                Objects.equals(consentStatus, that.consentStatus) &&
+                Objects.equals(startDate, that.startDate) &&
+                Objects.equals(endDate, that.endDate);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(consentId, version, templateId, templateVersion,
+                businessId, customerIdentifiers, status, consentStatus);
     }
 }
