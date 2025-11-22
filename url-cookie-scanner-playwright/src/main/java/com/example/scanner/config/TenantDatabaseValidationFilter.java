@@ -66,7 +66,7 @@ public class TenantDatabaseValidationFilter implements Filter {
             String tenantId = httpRequest.getHeader("X-Tenant-ID");
 
             if (tenantId == null || tenantId.trim().isEmpty()) {
-                log.warn("TENANT VALIDATION ERROR: Missing X-Tenant-ID header for URI: {}", requestURI);
+                log.warn("TENANT VALIDATION ERROR: Missing X-Tenant-ID header for URI");
                 handleMissingTenantId(httpRequest, httpResponse);
                 return;
             }
@@ -75,13 +75,12 @@ public class TenantDatabaseValidationFilter implements Filter {
             String databaseName = tenantDatabasePrefix + tenantId.trim();
 
             if (!databaseExists(databaseName)) {
-                log.warn("TENANT DATABASE ERROR: Database '{}' does not exist for tenant '{}'",
-                        databaseName, tenantId);
+                log.warn("TENANT DATABASE ERROR");
                 handleDatabaseNotExists(httpRequest, httpResponse, tenantId, databaseName);
                 return;
             }
 
-            log.debug("Tenant database validation passed for: {}", tenantId);
+            log.debug("Tenant database validation passed");
         }
 
         chain.doFilter(request, response);

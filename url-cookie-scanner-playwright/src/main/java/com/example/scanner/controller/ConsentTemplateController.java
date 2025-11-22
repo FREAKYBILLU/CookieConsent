@@ -93,21 +93,14 @@ public class ConsentTemplateController {
                 return handleValidationErrors(bindingResult, "/cookie-templates");
             }
 
-            log.info("Creating template '{}' for tenant: {} linked to scan: {}",
-                    createRequest.getTemplateName(), tenantId, createRequest.getScanId());
-
             ConsentTemplate createdTemplate = service.createTemplate(tenantId, createRequest, businessId);
 
             TemplateResponse response = new TemplateResponse(createdTemplate.getTemplateId(),
                     "Template created successfully and linked to scan: " + createdTemplate.getScanId());
 
-            log.info("Successfully created template with ID: {} linked to scan: {}",
-                    createdTemplate.getId(), createdTemplate.getScanId());
-
             return new ResponseEntity<>(response, HttpStatus.CREATED);
 
         } catch (IllegalArgumentException e) {
-            log.warn("Validation failed for template creation: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.BAD_REQUEST,
                     ErrorCodes.VALIDATION_ERROR,
                     "Validation failed",
@@ -116,14 +109,12 @@ public class ConsentTemplateController {
 
         } catch (RuntimeException e) {
             if (e.getMessage().contains("not found") || e.getMessage().contains("does not exist")) {
-                log.warn("Scan not found for template creation: {}", e.getMessage());
                 return buildErrorResponse(HttpStatus.NOT_FOUND,
                         ErrorCodes.NOT_FOUND,
                         "Scan not found",
                         e.getMessage(),
                         "/cookie-templates");
             } else {
-                log.error("Unexpected error creating template for tenant: {}", tenantId, e);
                 return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                         ErrorCodes.INTERNAL_ERROR,
                         "Failed to create consent template",
@@ -131,7 +122,6 @@ public class ConsentTemplateController {
                         "/cookie-templates");
             }
         } catch (Exception e) {
-            log.error("Unexpected error creating template for tenant: {}", tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to create consent template",
@@ -142,11 +132,11 @@ public class ConsentTemplateController {
 
     @Operation(
             summary = "Get templates by tenant with optional filters",
-            description = "Retrieves consent templates for a tenant. Supports optional filtering by scanId and/or templateId. " +
-                    "When scanId or templateId is provided, returns template with scanned cookies array. " +
-                    "Without filters, returns all templates without cookies.",
+            description = "Retrieves consent templates for a tenant. Supports optional filtering by businessId, scanId and/or templateId. " +
+                    "All filters are optional and can be used in any combination.",
             parameters = {
                     @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
+                    @Parameter(name = "businessId", description = "Business ID (optional)", required = false),
                     @Parameter(name = "scanId", description = "Scan ID (optional)", required = false),
                     @Parameter(name = "templateId", description = "Template ID (optional)", required = false)
             },
@@ -154,10 +144,7 @@ public class ConsentTemplateController {
                     @ApiResponse(
                             responseCode = "200",
                             description = "Templates retrieved successfully",
-                            content = @Content(schema = @Schema(oneOf = {
-                                    ConsentTemplate.class,
-                                    TemplateWithCookiesResponse.class
-                            }))
+                            content = @Content(schema = @Schema(implementation = TemplateWithCookiesResponse.class))
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -174,6 +161,7 @@ public class ConsentTemplateController {
     @GetMapping("/tenant")
     public ResponseEntity<?> getTemplatesByTenantAndScanId(
             @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestParam(value = "businessId", required = false) String businessId,
             @RequestParam(value = "scanId", required = false) String scanId,
             @RequestParam(value = "templateId", required = false) String templateId) {
 
@@ -187,21 +175,20 @@ public class ConsentTemplateController {
             }
 
             List<TemplateWithCookiesResponse> templates =
-                    service.getTemplateWithCookies(tenantId, scanId, templateId);
+                    service.getTemplateWithCookies(tenantId, businessId, scanId, templateId);
 
             if (templates.isEmpty()) {
                 return buildErrorResponse(HttpStatus.NOT_FOUND,
                         ErrorCodes.NOT_FOUND,
                         "No consent templates found",
-                        String.format("No templates found for tenantId: %s, scanId: %s, templateId: %s",
-                                tenantId, scanId, templateId),
+                        String.format("No templates found for tenantId: %s, businessId: %s, scanId: %s, templateId: %s",
+                                tenantId, businessId, scanId, templateId),
                         "/cookie-templates/tenant");
             }
 
             return ResponseEntity.ok(templates);
 
         } catch (Exception e) {
-            log.error("Unexpected error retrieving templates for tenant: {}", tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to retrieve templates",
@@ -209,7 +196,6 @@ public class ConsentTemplateController {
                     "/cookie-templates/tenant");
         }
     }
-
 
     private ResponseEntity<ErrorResponse> handleValidationErrors(BindingResult bindingResult, String path) {
         List<String> errors = bindingResult.getAllErrors().stream()
@@ -287,15 +273,10 @@ public class ConsentTemplateController {
             @org.springframework.web.bind.annotation.RequestBody @Valid UpdateTemplateRequest updateRequest) {
 
         try {
-            log.info("Received template update request for templateId: {} in tenant: {}", templateId, tenantId);
-
             UpdateTemplateResponse response = service.updateTemplate(tenantId, templateId, businessId, updateRequest);
-
-            log.info("Successfully updated template: {} to version: {}", templateId, response.getNewVersion());
             return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
-            log.warn("Validation error for template update: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.BAD_REQUEST,
                     ErrorCodes.VALIDATION_ERROR,
                     "Validation failed",
@@ -303,7 +284,6 @@ public class ConsentTemplateController {
                     "/cookie-templates/" + templateId + "/update");
 
         } catch (IllegalStateException e) {
-            log.warn("Business rule violation for template update: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY,
                     ErrorCodes.BUSINESS_RULE_VIOLATION,
                     "Template cannot be updated",
@@ -311,7 +291,6 @@ public class ConsentTemplateController {
                     "/cookie-templates/" + templateId + "/update");
 
         } catch (ConsentException e) {
-            log.warn("Business rule violation for template update: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.UNPROCESSABLE_ENTITY,
                     ErrorCodes.BUSINESS_RULE_VIOLATION,
                     "Template cannot be updated",
@@ -320,7 +299,6 @@ public class ConsentTemplateController {
 
         }
         catch (Exception e) {
-            log.error("Unexpected error updating template: {} in tenant: {}", templateId, tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to update template",
@@ -366,15 +344,12 @@ public class ConsentTemplateController {
             @PathVariable String templateId) {
 
         try {
-            log.info("Retrieving template history for templateId: {} in tenant: {}", templateId, tenantId);
 
             List<ConsentTemplate> history = service.getTemplateHistory(tenantId, templateId);
 
-            log.info("Retrieved {} versions for template: {}", history.size(), templateId);
             return ResponseEntity.ok(history);
 
         } catch (IllegalArgumentException e) {
-            log.warn("Template not found for history request: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.NOT_FOUND,
                     ErrorCodes.NOT_FOUND,
                     "Template not found",
@@ -382,7 +357,6 @@ public class ConsentTemplateController {
                     "/cookie-templates/" + templateId + "/history");
 
         } catch (Exception e) {
-            log.error("Error retrieving template history for templateId: {} in tenant: {}", templateId, tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to retrieve template history",
@@ -429,12 +403,10 @@ public class ConsentTemplateController {
             @PathVariable Integer version) {
 
         try {
-            log.info("Retrieving template version {} for templateId: {} in tenant: {}", version, templateId, tenantId);
 
             Optional<ConsentTemplate> templateOpt = service.getTemplateByIdAndVersion(tenantId, templateId, version);
 
             if (templateOpt.isEmpty()) {
-                log.warn("Template version not found: templateId={}, version={}, tenant={}", templateId, version, tenantId);
                 return buildErrorResponse(HttpStatus.NOT_FOUND,
                         ErrorCodes.NOT_FOUND,
                         "Template version not found",
@@ -442,11 +414,9 @@ public class ConsentTemplateController {
                         "/cookie-templates/" + templateId + "/versions/" + version);
             }
 
-            log.info("Retrieved template version {} for templateId: {}", version, templateId);
             return ResponseEntity.ok(templateOpt.get());
 
         } catch (IllegalArgumentException e) {
-            log.warn("Validation error for template version request: {}", e.getMessage());
             return buildErrorResponse(HttpStatus.BAD_REQUEST,
                     ErrorCodes.VALIDATION_ERROR,
                     "Invalid request parameters",
@@ -454,8 +424,6 @@ public class ConsentTemplateController {
                     "/cookie-templates/" + templateId + "/versions/" + version);
 
         } catch (Exception e) {
-            log.error("Error retrieving template version for templateId: {}, version: {}, tenant: {}",
-                    templateId, version, tenantId, e);
             return buildErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to retrieve template version",

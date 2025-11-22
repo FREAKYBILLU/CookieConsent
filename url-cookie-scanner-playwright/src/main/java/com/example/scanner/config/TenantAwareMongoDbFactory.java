@@ -23,13 +23,11 @@ public class TenantAwareMongoDbFactory extends SimpleMongoClientDatabaseFactory 
         String tenantId = TenantContext.getCurrentTenant();
 
         if (tenantId == null || tenantId.trim().isEmpty()) {
-            log.warn("No tenant context found, using shared database: {}", sharedDatabase);
+            log.warn("No tenant context found");
             return super.getMongoDatabase(sharedDatabase);
         }
 
         String dbName = tenantDatabasePrefix + tenantId;
-
-        log.debug("Using database '{}' for tenant '{}'", dbName, tenantId);
         return super.getMongoDatabase(dbName);
     }
 }

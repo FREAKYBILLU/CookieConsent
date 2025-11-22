@@ -4,7 +4,6 @@ import com.example.scanner.client.AuditClient;
 import com.example.scanner.constants.AuditConstants;
 import com.example.scanner.dto.Actor;
 import com.example.scanner.dto.request.AuditRequest;
-import com.example.scanner.dto.response.AuditResponse;
 import com.example.scanner.dto.Resource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,33 +22,30 @@ public class AuditService {
     private final AuditClient auditClient;
 
     public void logAudit(String tenantId, String businessId, String component, String actionType,
-                         String initiator, String resourceType, String resourceId) {
+                         String initiator, String resourceType, String resourceId, String actorId,
+                         Map<String, Object> context, String status) {
         try {
-            String auditId = "audit-" + UUID.randomUUID();
-            String transactionId = "txn-" + UUID.randomUUID();
 
             Actor actor = Actor.builder()
-                    .id("actor-" + UUID.randomUUID())
-                    .role("SYSTEM")
+                    .id(actorId != null? actorId : tenantId)
+                    .role("initiator")
                     .type(AuditConstants.ACTOR_TYPE_SYSTEM)
                     .build();
 
             Resource resource = Resource.builder()
                     .type(resourceType)
-                    .id(resourceId != null ? resourceId : "resource-" + UUID.randomUUID())
+                    .id(resourceId != null ? resourceId : "resource-" + UUID.randomUUID()) // ID
                     .build();
-
-            Map<String, Object> context = new HashMap<>();
-            context.put("txnId", transactionId);
-            context.put("ipAddress", "127.0.0.1");
 
             Map<String, Object> extra = new HashMap<>();
             extra.put("source", "cookie-consent-service");
 
+            String transactionId = UUID.randomUUID().toString();
+            log.info("Initiating audit log with - " + transactionId);
+
             AuditRequest auditRequest = AuditRequest.builder()
-                    .auditId(auditId)
                     .tenantId(tenantId)
-                    .businessId(businessId)
+                    .businessId(businessId != null ? businessId :  UUID.randomUUID().toString())
                     .transactionId(transactionId)
                     .actor(actor)
                     .group(AuditConstants.GROUP_COOKIE_CONSENT)
@@ -57,158 +53,183 @@ public class AuditService {
                     .actionType(actionType)
                     .initiator(initiator)
                     .resource(resource)
-                    .payloadHash("hash-" + UUID.randomUUID())
                     .context(context)
-                    .extra(extra)
-                    .status("SUCCESS")
+                    .status(status)
                     .timestamp(Instant.now().toString())
                     .build();
 
             auditClient.createAudit(auditRequest, tenantId, businessId, transactionId);
 
         } catch (Exception e) {
-            log.error("Audit logging failed: {}", e.getMessage());
+            log.error("Audit logging failed");
         }
     }
 
     // ========================================
     // COOKIE SCAN METHODS (3) - Pass null for businessId
     // ========================================
-    public void logCookieScanInitiated(String tenantId, String scanId) {
+    public void logCookieScanInitiated(String tenantId, String scanId,
+                                       Map<String, Object> context) {
         logAudit(tenantId, null, AuditConstants.COMPONENT_COOKIE_SCAN,
                 AuditConstants.ACTION_SCAN_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_SCAN, scanId);
+                AuditConstants.RESOURCE_COOKIE_SCAN_ID, scanId, null, context,
+                AuditConstants.ACTION_SCAN_INITIATED);
     }
 
-    public void logCookieScanStarted(String tenantId, String scanId) {
+    public void logCookieScanStarted(String tenantId, String scanId,
+                                     Map<String, Object> context) {
         logAudit(tenantId, null, AuditConstants.COMPONENT_COOKIE_SCAN,
                 AuditConstants.ACTION_SCAN_STARTED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_SCAN, scanId);
+                AuditConstants.RESOURCE_COOKIE_SCAN_ID, scanId, null, context,AuditConstants.ACTION_SCAN_STARTED );
     }
 
-    public void logCookieScanFailed(String tenantId, String scanId) {
+    public void logCookieScanFailed(String tenantId, String scanId,
+                                    Map<String, Object> context) {
         logAudit(tenantId, null, AuditConstants.COMPONENT_COOKIE_SCAN,
                 AuditConstants.ACTION_SCAN_FAILED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_SCAN, scanId);
+                AuditConstants.RESOURCE_COOKIE_SCAN_ID, scanId, null, context, AuditConstants.ACTION_SCAN_FAILED);
     }
 
     // ========================================
     // TEMPLATE METHODS (4) - businessId parameter added
     // ========================================
-    public void logTemplateCreationInitiated(String tenantId, String businessId, String templateId) {
+    public void logTemplateCreationInitiated(String tenantId, String businessId,
+                                             Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TEMPLATE_CREATION,
                 AuditConstants.ACTION_TEMPLATE_CREATION_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_TEMPLATE, templateId);
+                AuditConstants.RESOURCE_COOKIE_TEMPLATE_ID, "Pending Creation", null, context,
+                AuditConstants.ACTION_TEMPLATE_CREATION_INITIATED);
+
     }
 
-    public void logTemplateCreated(String tenantId, String businessId, String templateId) {
+    public void logTemplateCreated(String tenantId, String businessId, String templateId,
+                                   Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TEMPLATE_CREATION,
                 AuditConstants.ACTION_TEMPLATE_CREATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_TEMPLATE, templateId);
+                AuditConstants.RESOURCE_COOKIE_TEMPLATE_ID, templateId, null, context,
+                AuditConstants.ACTION_TEMPLATE_CREATED);
     }
 
-    public void logTemplateUpdateInitiated(String tenantId, String businessId, String templateId) {
+    public void logTemplateUpdateInitiated(String tenantId, String businessId, String templateId,
+                                           Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TEMPLATE_UPDATE,
                 AuditConstants.ACTION_TEMPLATE_UPDATE_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_TEMPLATE, templateId);
+                AuditConstants.RESOURCE_COOKIE_TEMPLATE_ID, templateId, null, context,AuditConstants.ACTION_TEMPLATE_UPDATE_INITIATED );
     }
 
-    public void logNewTemplateVersionCreated(String tenantId, String businessId, String templateId) {
+    public void logNewTemplateVersionCreated(String tenantId, String businessId, String templateId,
+                                             Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TEMPLATE_UPDATE,
                 AuditConstants.ACTION_NEW_TEMPLATE_VERSION_CREATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_COOKIE_TEMPLATE, templateId);
+                AuditConstants.ACTION_NEW_TEMPLATE_VERSION_CREATED_ID, templateId, null, context,
+                AuditConstants.ACTION_NEW_TEMPLATE_VERSION_CREATED);
     }
 
     // ========================================
     // CONSENT HANDLE METHODS (2) - businessId parameter added
     // ========================================
-    public void logConsentHandleCreationInitiated(String tenantId, String businessId, String handleId) {
+    public void logConsentHandleCreationInitiated(String tenantId, String businessId, String handleId,
+                                                  Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_HANDLE,
                 AuditConstants.ACTION_CONSENT_HANDLE_CREATION_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT_HANDLE, handleId);
+                AuditConstants.RESOURCE_CONSENT_HANDLE, handleId, null, context,
+                AuditConstants.ACTION_CONSENT_HANDLE_CREATION_INITIATED);
     }
 
-    public void logConsentHandleCreated(String tenantId, String businessId, String handleId) {
+    public void logConsentHandleCreated(String tenantId, String businessId, String actorId ,String handleId,
+                                        Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_HANDLE,
                 AuditConstants.ACTION_CONSENT_HANDLE_CREATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT_HANDLE, handleId);
+                AuditConstants.RESOURCE_CONSENT_HANDLE_ID, handleId, actorId,context, AuditConstants.ACTION_CONSENT_HANDLE_CREATED);
     }
 
     // ========================================
     // CONSENT METHODS (7) - businessId parameter added
     // ========================================
-    public void logConsentCreationInitiated(String tenantId, String businessId, String consentId) {
+    public void logConsentCreationInitiated(String tenantId, String businessId, String actorId ,
+                                            Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_CREATION,
-                AuditConstants.ACTION_CONSENT_CREATION_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.ACTION_CONSENT_CREATION_INITIATED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT, "Initiated", actorId, context,AuditConstants.ACTION_CONSENT_CREATION_INITIATED);
     }
 
-    public void logConsentCreated(String tenantId, String businessId, String consentId) {
+    public void logConsentCreated(String tenantId, String businessId, String consentId, String actorId,
+                                  Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_CREATION,
                 AuditConstants.ACTION_CONSENT_CREATED, AuditConstants.INITIATOR_USER,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.ACTION_CONSENT_ID, consentId, actorId, context, AuditConstants.ACTION_CONSENT_CREATED);
     }
 
-    public void logConsentHandleMarkedUsed(String tenantId, String businessId, String handleId) {
+    public void logConsentHandleMarkedUsed(String tenantId, String businessId, String handleId, String actorId,
+                                           Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_CREATION,
-                AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT, handleId);
+                AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT_HANDLE_ID, handleId, actorId, context, AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED);
     }
 
-    public void logConsentUpdateInitiated(String tenantId, String businessId, String consentId) {
+    public void logConsentUpdateInitiated(String tenantId, String businessId, String consentId, String actorId,
+                                          Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
-                AuditConstants.ACTION_CONSENT_UPDATE_INITIATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.ACTION_CONSENT_UPDATE_INITIATED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT, consentId, actorId, context, AuditConstants.ACTION_CONSENT_UPDATE_INITIATED);
     }
 
-    public void logNewConsentVersionCreated(String tenantId, String businessId, String consentId) {
+    public void logNewConsentVersionCreated(String tenantId, String businessId, String consentId, String actorId,
+                                            Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
-                AuditConstants.ACTION_NEW_CONSENT_VERSION_CREATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.ACTION_NEW_CONSENT_VERSION_CREATED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT, consentId, actorId, context, AuditConstants.ACTION_NEW_CONSENT_VERSION_CREATED);
     }
 
-    public void logOldConsentVersionMarkedUpdated(String tenantId, String businessId, String consentId) {
+    public void logOldConsentVersionMarkedUpdated(String tenantId, String businessId, String consentId, String actorId,
+                                                  Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
-                AuditConstants.ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED, AuditConstants.INITIATOR_USER,
+                AuditConstants.RESOURCE_CONSENT, consentId, actorId, context, AuditConstants.ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED);
     }
 
-    public void logConsentHandleMarkedUsedAfterUpdate(String tenantId, String businessId, String handleId) {
+    public void logConsentHandleMarkedUsedAfterUpdate(String tenantId, String businessId, String handleId, String actorId,
+                                                      Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
                 AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED_AFTER_UPDATE, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_CONSENT_HANDLE, handleId);
+                AuditConstants.RESOURCE_CONSENT_HANDLE, handleId, actorId, context, AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED_AFTER_UPDATE);
     }
 
-    public void logConsentRevoked(String tenantId, String businessId, String consentId) {
+    public void logConsentRevoked(String tenantId, String businessId, String consentId, String actorId,
+                                  Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_CONSENT_UPDATE,
                 AuditConstants.ACTION_CONSENT_REVOKED, AuditConstants.INITIATOR_USER,
-                AuditConstants.RESOURCE_CONSENT, consentId);
+                AuditConstants.RESOURCE_CONSENT, consentId, actorId, context, AuditConstants.ACTION_CONSENT_REVOKED);
     }
 
     // ========================================
     // TOKEN METHODS (4) - businessId parameter added
     // ========================================
-    public void logTokenVerificationInitiated(String tenantId, String businessId, String tokenId) {
+    public void logTokenVerificationInitiated(String tenantId, String businessId, String tokenId,
+                                              Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TOKEN_VERIFICATION,
                 AuditConstants.ACTION_TOKEN_VERIFICATION_INITIATED, AuditConstants.INITIATOR_DP,
-                AuditConstants.RESOURCE_TOKEN, tokenId);
+                AuditConstants.RESOURCE_TOKEN, tokenId, null, context, AuditConstants.ACTION_TOKEN_VERIFICATION_INITIATED);
     }
 
-    public void logTokenSignatureVerified(String tenantId, String businessId, String tokenId) {
+    public void logTokenSignatureVerified(String tenantId, String businessId, String tokenId,
+                                          Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TOKEN_VERIFICATION,
-                AuditConstants.ACTION_TOKEN_SIGNATURE_VERIFIED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_TOKEN, tokenId);
+                AuditConstants.ACTION_TOKEN_SIGNATURE_VERIFIED, AuditConstants.INITIATOR_DP,
+                AuditConstants.RESOURCE_TOKEN, tokenId, null, context, AuditConstants.ACTION_TOKEN_SIGNATURE_VERIFIED);
     }
 
-    public void logTokenValidationSuccess(String tenantId, String businessId, String tokenId) {
+    public void logTokenValidationSuccess(String tenantId, String businessId, String tokenId,
+                                          Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TOKEN_VERIFICATION,
-                AuditConstants.ACTION_TOKEN_VALIDATION_SUCCESS, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_TOKEN, tokenId);
+                AuditConstants.ACTION_TOKEN_VALIDATION_SUCCESS, AuditConstants.INITIATOR_DP,
+                AuditConstants.RESOURCE_TOKEN, tokenId, null, context, AuditConstants.ACTION_TOKEN_VALIDATION_SUCCESS);
     }
 
-    public void logTokenValidationFailed(String tenantId, String businessId, String tokenId) {
+    public void logTokenValidationFailed(String tenantId, String businessId, String tokenId,
+                                         Map<String, Object> context) {
         logAudit(tenantId, businessId, AuditConstants.COMPONENT_TOKEN_VERIFICATION,
-                AuditConstants.ACTION_TOKEN_VALIDATION_FAILED, AuditConstants.INITIATOR_DF,
-                AuditConstants.RESOURCE_TOKEN, tokenId);
+                AuditConstants.ACTION_TOKEN_VALIDATION_FAILED, AuditConstants.INITIATOR_DP,
+                AuditConstants.RESOURCE_TOKEN, tokenId, null, context, AuditConstants.ACTION_TOKEN_VALIDATION_FAILED);
     }
 }

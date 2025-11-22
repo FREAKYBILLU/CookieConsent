@@ -19,4 +19,8 @@ public interface ConsentRepositoryCustom {
     List<CookieConsent> findAllVersionsByConsentId(String consentId, String tenantId);
 
     Optional<CookieConsent> findByConsentIdAndVersion(String consentId, Integer version, String tenantId);
+
+    CookieConsent findLatestByCreatedAt();
+
+    Optional<CookieConsent> findById(String id, String tenantId);
 }

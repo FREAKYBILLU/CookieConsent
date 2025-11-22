@@ -2,6 +2,7 @@ package com.example.scanner.service;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
+import com.example.scanner.constants.AuditConstants;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.request.CreateTemplateRequest;
 import com.example.scanner.dto.Preference;
@@ -97,7 +98,9 @@ public class ConsentTemplateService {
         validateInputs(tenantId, "Tenant ID cannot be null or empty");
         validateCreateRequest(createRequest);
 
-        auditService.logTemplateCreationInitiated(tenantId, businessId, "pending");
+        Map<String, Object> context = new HashMap<>();
+        context.put(AuditConstants.ACTION_TEMPLATE_CREATION_INITIATED, "Initiated");
+        auditService.logTemplateCreationInitiated(tenantId, businessId, context);
 
         validateScanExists(tenantId, createRequest.getScanId());
 
@@ -123,10 +126,11 @@ public class ConsentTemplateService {
             // Save template
             ConsentTemplate savedTemplate = tenantMongoTemplate.save(template);
 
-            auditService.logTemplateCreated(tenantId, businessId, savedTemplate.getTemplateId());
+            Map<String, Object> context2 = new HashMap<>();
+            context2.put(AuditConstants.RESOURCE_COOKIE_TEMPLATE_ID,  savedTemplate.getTemplateId());
+            auditService.logTemplateCreated(tenantId, businessId, savedTemplate.getTemplateId(), context2);
 
-            log.info("Successfully created template with ID: {} for scan: {} in tenant: {}",
-                    savedTemplate.getId(), createRequest.getScanId(), tenantId);
+            log.info("Successfully created template");
 
             return savedTemplate;
 
@@ -290,8 +294,7 @@ public class ConsentTemplateService {
             }
         }
 
-        log.debug("Create template request validation passed for: {} with scan: {}",
-                request.getTemplateName(), request.getScanId());
+        log.debug("Create template request validation passed");
     }
 
     @Transactional
@@ -302,7 +305,9 @@ public class ConsentTemplateService {
         validateUpdateRequest(updateRequest);
 
         // Log template update initiated
-        auditService.logTemplateUpdateInitiated(tenantId, businessId, templateId);
+        Map<String, Object> context = new HashMap<>();
+        context.put(AuditConstants.ACTION_TEMPLATE_UPDATE_INITIATED, templateId);
+        auditService.logTemplateUpdateInitiated(tenantId, businessId, templateId, context);
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -361,7 +366,9 @@ public class ConsentTemplateService {
             ConsentTemplate savedNewTemplate = tenantMongoTemplate.save(newTemplate);
 
             // Log new version created
-            auditService.logNewTemplateVersionCreated(tenantId, businessId, templateId);
+            Map<String, Object> context2 = new HashMap<>();
+            context2.put(AuditConstants.ACTION_NEW_TEMPLATE_VERSION_CREATED_ID, templateId);
+            auditService.logNewTemplateVersionCreated(tenantId, businessId, templateId, context2);
 
             // Step 5: Update old template: templateStatus ACTIVE -> UPDATED
             currentActiveTemplate.setTemplateStatus(VersionStatus.UPDATED);
@@ -401,17 +408,16 @@ public class ConsentTemplateService {
             List<ConsentTemplate> history = tenantMongoTemplate.find(query, ConsentTemplate.class);
 
             if (history.isEmpty()) {
-                log.warn("No template versions found for templateId: {} in tenant: {}", templateId, tenantId);
+                log.warn("No template versions found");
                 throw new IllegalArgumentException("Template with ID '" + templateId + "' not found");
             }
 
-            log.info("Retrieved {} versions for template: {} in tenant: {}", history.size(), templateId, tenantId);
             return history;
 
         } catch (IllegalArgumentException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Error retrieving template history for templateId: {} in tenant: {}", templateId, tenantId, e);
+            log.error("Error retrieving template history");
             throw new RuntimeException("Failed to retrieve template history: " + e.getMessage(), e);
         } finally {
             TenantContext.clear();
@@ -491,15 +497,15 @@ public class ConsentTemplateService {
                     );
                 }
 
-                log.debug("Preference validation passed for purposes: {}", preference.getPurpose());
+                log.debug("Preference validation passed");
 
             } catch (ConsentException e) {
                 // Re-throw ConsentException as-is
-                log.error("Template preference validation failed: {}", e.getMessage());
+                log.error("Template preference validation failed");
                 throw e;
             } catch (Exception e) {
                 // Convert any other exception to ConsentException
-                log.error("Unexpected error during preference validation", e);
+                log.error("Unexpected error during preference validation");
                 throw new ConsentException(
                         ErrorCodes.INVALID_TEMPLATE,
                         ErrorCodes.getDescription(ErrorCodes.INVALID_TEMPLATE),
@@ -508,7 +514,7 @@ public class ConsentTemplateService {
             }
         }
 
-        log.debug("All {} preferences validated successfully for PUBLISHED template", preferences.size());
+        log.debug("All preferences validated successfully");
     }
 
     private void validateUpdateRequest(UpdateTemplateRequest request) {
@@ -540,41 +546,42 @@ public class ConsentTemplateService {
 
 
     public List<TemplateWithCookiesResponse> getTemplateWithCookies(
-            String tenantId, String scanId, String templateId) {
+            String tenantId, String businessId, String scanId, String templateId) {
 
-
-        log.info("Fetching template with cookies - tenant: {}, scanId: {}, templateId: {}",
-                tenantId, scanId, templateId);
+        log.info("Fetching template with cookies for tenantId: {}, businessId: {}, scanId: {}, templateId: {}",
+                tenantId, businessId, scanId, templateId);
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
         try {
-            List<ConsentTemplate> templates = new ArrayList<>();
+            // Build dynamic query - always filter by ACTIVE templates
+            Query query = new Query();
+            query.addCriteria(Criteria.where("templateStatus").is("ACTIVE"));
 
+            // Add businessId filter if provided
+            if (businessId != null && !businessId.trim().isEmpty()) {
+                query.addCriteria(Criteria.where("businessId").is(businessId));
+            }
+
+            // Add scanId filter if provided
+            if (scanId != null && !scanId.trim().isEmpty()) {
+                query.addCriteria(Criteria.where("scanId").is(scanId));
+            }
+
+            // Add templateId filter if provided
             if (templateId != null && !templateId.trim().isEmpty()) {
-                Query query = new Query(Criteria.where("templateId").is(templateId)
-                        .and("templateStatus").is("ACTIVE"));
-                query.with(Sort.by(Sort.Direction.DESC, "version"));
-                ConsentTemplate template = mongoTemplate.findOne(query, ConsentTemplate.class);
-                if (template != null) templates.add(template);
+                query.addCriteria(Criteria.where("templateId").is(templateId));
             }
 
-            // --- Case 2: Fetch by scanId ---
-            else if (scanId != null && !scanId.trim().isEmpty()) {
-                Query query = new Query(Criteria.where("scanId").is(scanId)
-                        .and("templateStatus").is("ACTIVE"));
-                query.with(Sort.by(Sort.Direction.DESC, "version"));
-                ConsentTemplate template = mongoTemplate.findOne(query, ConsentTemplate.class);
-                if (template != null) templates.add(template);
-            }
+            query.with(Sort.by(Sort.Direction.DESC, "version"));
 
-            // --- Case 3: No filters, get all active templates for tenant ---
-            else {
-                Query query = new Query(Criteria.where("templateStatus").is("ACTIVE"));
-                templates = mongoTemplate.find(query, ConsentTemplate.class);
-            }
+            // Execute query
+            List<ConsentTemplate> templates = mongoTemplate.find(query, ConsentTemplate.class);
 
+            log.info("Found {} templates matching the criteria", templates.size());
+
+            // Map templates to response with cookies
             return templates.stream()
                     .map(template -> {
                         List<PreferenceWithCookies> preferencesWithCookies =
@@ -604,6 +611,7 @@ public class ConsentTemplateService {
             TenantContext.clear();
         }
     }
+
     /**
      * Fetch cookies from scan and map to preferences
      */
@@ -620,7 +628,7 @@ public class ConsentTemplateService {
             ScanResultEntity scanResult = mongoTemplate.findOne(scanQuery, ScanResultEntity.class);
 
             if (scanResult == null || scanResult.getCookiesBySubdomain() == null) {
-                log.warn("No cookies found for scanId: {}", scanId);
+                log.warn("No cookies found for scanId");
                 // Return preferences without cookies
                 return preferences.stream()
                         .map(pref -> PreferenceWithCookies.from(pref, Collections.emptyList()))
@@ -644,15 +652,12 @@ public class ConsentTemplateService {
                         List<CookieEntity> matchingCookies = cookiesByCategory.getOrDefault(
                                 categoryKey, Collections.emptyList());
 
-                        log.debug("Mapped {} cookies to purpose: {}",
-                                matchingCookies.size(), categoryKey);
-
                         return PreferenceWithCookies.from(preference, matchingCookies);
                     })
                     .collect(Collectors.toList());
 
         } catch (Exception e) {
-            log.error("Error fetching cookies for scanId: {}", scanId, e);
+            log.error("Error fetching cookies");
             // Return preferences without cookies on error
             return preferences.stream()
                     .map(pref -> PreferenceWithCookies.from(pref, Collections.emptyList()))

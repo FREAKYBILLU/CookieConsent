@@ -16,7 +16,7 @@ public class TemplateResponse {
 
     @Schema(
             description = "Logical template ID (remains same across versions)",
-            example = "tpl_123e4567-e89b-12d3-a456-426614174000"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX-......"
     )
     private String templateId;
     private String message;

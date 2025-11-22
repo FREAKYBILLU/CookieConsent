@@ -12,12 +12,12 @@ public class CommonUtil {
             return false;
         }
 
-        if (transactionId.contains("..") ||      // Basic path traversal (../../../etc/passwd)
-                transactionId.contains("/") ||       // Forward slash (shouldn't be in UUID)
-                transactionId.contains("\\") ||      // Backslash (Windows path traversal)
-                transactionId.contains("%2e") ||     // URL-encoded dot (encoded ..)
-                transactionId.contains("%2f") ||     // URL-encoded forward slash (encoded /)
-                transactionId.contains("%5c")) {     // URL-encoded backslash (encoded \)
+        if (transactionId.contains("..") ||
+                transactionId.contains("/") ||
+                transactionId.contains("\\") ||
+                transactionId.contains("%2e") ||
+                transactionId.contains("%2f") ||
+                transactionId.contains("%5c")) {
             return false;
         }
 

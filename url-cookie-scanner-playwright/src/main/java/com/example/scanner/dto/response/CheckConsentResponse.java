@@ -22,7 +22,7 @@ public class CheckConsentResponse {
 
     @Schema(
             description = "Consent handle ID - UUID",
-            example = "123e4567-e89b-12d3-a456-426614174000"
+            example = "123e4567-XXXXXX-4266XXXX..."
     )
     String consentHandleId;
 }

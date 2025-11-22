@@ -1,10 +1,13 @@
 package com.example.scanner.service;
 
+import com.example.scanner.client.notification.NotificationManager;
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
+import com.example.scanner.constants.AuditConstants;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.ConsentDetail;
 import com.example.scanner.dto.Preference;
+import com.example.scanner.dto.SignableConsent;
 import com.example.scanner.dto.request.CreateConsentRequest;
 import com.example.scanner.dto.request.DashboardRequest;
 import com.example.scanner.dto.request.UpdateConsentRequest;
@@ -21,6 +24,7 @@ import com.example.scanner.util.ConsentUtil;
 import com.example.scanner.util.InstantTypeAdapter;
 import com.example.scanner.util.LocalDateTypeAdapter;
 import com.example.scanner.util.TokenUtility;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -37,6 +41,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -53,31 +58,32 @@ public class ConsentService {
     private final AuditService auditService;
     private final VaultService vaultService;
     private final ObjectMapper objectMapper;
-
-
-    // ============================================
-    // PUBLIC API METHODS
-    // ============================================
+    private final NotificationManager notificationManager;
 
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
 
-        auditService.logConsentCreationInitiated(tenantId, null, request.getConsentHandleId());
-
+        // Validate preferences not empty
         if (request.getPreferencesStatus() == null || request.getPreferencesStatus().isEmpty()) {
             throw new ConsentException(ErrorCodes.VALIDATION_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
                     "Preferences status cannot be empty");
         }
 
+        // Validate consent handle
         CookieConsentHandle consentHandle = validateConsentHandle(request.getConsentHandleId(), tenantId);
 
+        Map<String, Object> context3 = new HashMap<>();
+        context3.put(AuditConstants.RESOURCE_CONSENT_HANDLE_ID, "Initiated");
+        auditService.logConsentCreationInitiated(tenantId, consentHandle.getBusinessId(), consentHandle.getCustomerIdentifiers().getValue(), context3);
+
+        // Check if consent already exists
         CookieConsent existingConsent = consentRepository.existsByTemplateIdAndTemplateVersionAndCustomerIdentifiers(
                 consentHandle.getTemplateId(), consentHandle.getTemplateVersion(),
                 consentHandle.getCustomerIdentifiers(), tenantId, request.getConsentHandleId());
 
         if (existingConsent != null) {
-            log.info("Consent already exists for template: {}", consentHandle.getTemplateId());
+            log.info("Consent already exists");
             return ConsentCreateResponse.builder()
                     .consentId(existingConsent.getConsentId())
                     .consentJwtToken(existingConsent.getConsentJwtToken())
@@ -90,7 +96,7 @@ public class ConsentService {
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
         validateAllPreferencesPresent(template.getPreferences(), request.getPreferencesStatus());
 
-        // This check happens AFTER we know all preferences are present
+        // Check if all preferences rejected
         boolean allNotAccepted = request.getPreferencesStatus().values().stream()
                 .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
 
@@ -111,51 +117,94 @@ public class ConsentService {
 
         validateMandatoryNotRejected(template.getPreferences(), request.getPreferencesStatus());
 
-        // Process preferences (returns only matched ones for creation)
+        // Process preferences
         List<Preference> processedPreferences = processPreferencesForCreation(
                 template.getPreferences(),
                 request.getPreferencesStatus()
         );
 
-        // Build and save consent
+        // Build consent
         CookieConsent consent = buildNewConsent(consentHandle, template, processedPreferences,
                 request.getLanguagePreference());
 
+        // Generate JWT token
         String consentToken = generateConsentToken(consent);
         consent.setConsentJwtToken(consentToken);
+        consent.setStaleStatus(StaleStatus.NOT_STALE);
 
+        SignableConsent signableConsent = toSignableConsent(consent);
+        // Convert SignableConsent to JSON
+        String signableJson;
+        try {
+            signableJson = objectMapper.writeValueAsString(signableConsent);
+            log.debug("Converted SignableConsent to JSON for signing");
+        } catch (Exception e) {
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
+                    "Failed to convert signable consent to JSON: " + e.getMessage());
+        }
+
+        // Convert to JSON BEFORE encryption
         String consentJsonString;
         try {
             consentJsonString = objectMapper.writeValueAsString(consent);
-            log.debug("Converted CookieConsent to JSON string for signing");
+            log.debug("Converted CookieConsent to JSON string");
         } catch (Exception e) {
-            log.error("Failed to convert consent to JSON", e);
             throw new ConsentException(ErrorCodes.INTERNAL_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
                     "Failed to convert consent to JSON: " + e.getMessage());
         }
 
-        String jwsToken;
+
+        // Compute payload hash BEFORE encryption
+        String consentJsonStringHash = null;
         try {
-            jwsToken = vaultService.signJsonPayload(consentJsonString, tenantId, consentHandle.getBusinessId());
-            log.info("Vault signing successful for consent: {}", consent.getConsentId());
+            if (consentJsonString != null) {
+                consentJsonStringHash = ConsentUtil.computeSHA256Hash(consentJsonString);
+                consent.setPayloadHash(consentJsonStringHash);
+            }
         } catch (Exception e) {
-            log.error("Vault signing failed, not saving consent: {}", consent.getConsentId(), e);
-            throw new ConsentException(ErrorCodes.EXTERNAL_SERVICE_ERROR,
-                    ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
-                    "Failed to sign consent with vault service: " + e.getMessage());
+            log.warn("Failed to compute payload hash");
         }
 
+        // Encrypt (sets encryptionTime, encryptedReferenceId, encryptedString)
+        generateConsentEncryption(consent, tenantId);
+
+        String jwsToken = generateConsentSigning(signableJson, tenantId, consent.getBusinessId());
+
+        // Save consent to database
         consentRepository.saveToDatabase(consent, tenantId);
 
-        auditService.logConsentCreated(tenantId, null, consent.getConsentId());
+        Map<String, Object> context4 = new HashMap<>();
+        context4.put(AuditConstants.ACTION_CONSENT_ID, consent.getConsentId());
+        auditService.logConsentCreated(tenantId, consentHandle.getBusinessId(),
+                consentHandle.getCustomerIdentifiers().getValue(), consent.getConsentId(), context4);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("expiryDate", consent.getEndDate());
+        payload.put("consentId", consent.getConsentId());
+        payload.put("consentHandleId",consent.getConsentHandleId());
+        payload.put("version",consent.getVersion());
+        payload.put("templateId",consent.getTemplateId());
+
+        notificationManager.initiateCookieConsentCreatedNotification(NotificationEvent.COOKIE_CONSENT_CREATED,
+                tenantId,
+                consent.getBusinessId() != null ? consent.getBusinessId() : null,
+                consent.getCustomerIdentifiers() != null ? consent.getCustomerIdentifiers() : null,
+                payload,
+                consent.getLanguagePreferences() != null ? consent.getLanguagePreferences() : LANGUAGE.ENGLISH,
+                consent.getConsentId()
+        );
 
         // Mark handle as USED
         consentHandle.setStatus(ConsentHandleStatus.USED);
         consentHandle.setUpdatedAt(Instant.now());
         consentHandleRepository.save(consentHandle, tenantId);
 
-        auditService.logConsentHandleMarkedUsed(tenantId, null,consentHandle.getConsentHandleId());
+        Map<String, Object> context5 = new HashMap<>();
+        context5.put(AuditConstants.RESOURCE_CONSENT_HANDLE_ID, consentHandle.getConsentHandleId());
+        auditService.logConsentHandleMarkedUsed(tenantId, consentHandle.getBusinessId(), consentHandle.getConsentHandleId(),
+        consentHandle.getCustomerIdentifiers().getValue(), context5);
 
         log.info("Successfully created consent: {}", consent.getConsentId());
 
@@ -173,22 +222,30 @@ public class ConsentService {
             throws Exception {
         log.info("Processing consent update for consentId: {}, tenant: {}", consentId, tenantId);
 
-
-        // Log consent update initiated
-        auditService.logConsentUpdateInitiated(tenantId, null, consentId);
-
         // Validate inputs
         validateUpdateInputs(consentId, updateRequest, tenantId);
 
-        CookieConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(updateRequest.getConsentHandleId(), tenantId);
+        // Get consent handle
+        CookieConsentHandle consentHandle = consentHandleRepository.getByConsentHandleId(
+                updateRequest.getConsentHandleId(), tenantId);
         if (consentHandle == null) {
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_NOT_FOUND,
                     ErrorCodes.getDescription(ErrorCodes.CONSENT_HANDLE_NOT_FOUND),
-                    "Consent handle not found" );
+                    "Consent handle not found");
         }
 
+        // Log consent update initiated
+        Map<String, Object> context5 = new HashMap<>();
+        context5.put(AuditConstants.ACTION_CONSENT_UPDATE_INITIATED, consentId);
+        auditService.logConsentUpdateInitiated(tenantId, null, consentId, consentHandle.getCustomerIdentifiers().getValue(), context5);
+
+        // Get active consent
         CookieConsent activeConsent = findActiveConsentOrThrow(consentId, tenantId);
 
+        // Validate consent can be updated (customer, business, status checks)
+        validateConsentCanBeUpdated(activeConsent, consentHandle);
+
+        // Check if already REVOKED or EXPIRED - Cannot update!
         if (activeConsent.getStatus() == Status.REVOKED || activeConsent.getStatus() == Status.EXPIRED) {
             throw new ConsentException(
                     ErrorCodes.CONSENT_CANNOT_UPDATE_REVOKED,
@@ -197,31 +254,300 @@ public class ConsentService {
             );
         }
 
+        // Handle REVOKE Request
         if (updateRequest.getStatus() != null && updateRequest.getStatus() == Status.REVOKED) {
-            log.info("Revoking consent: {}", activeConsent.getConsentId());
-
-            activeConsent.setStatus(Status.REVOKED);
-            activeConsent.setUpdatedAt(Instant.now());
-            consentRepository.saveToDatabase(activeConsent, tenantId);
-
-            auditService.logConsentRevoked(tenantId, activeConsent.getBusinessId(), activeConsent.getConsentId());
-
-            log.info("Successfully revoked consent: {}", activeConsent.getConsentId());
-
-            return UpdateConsentResponse.builder()
-                    .message("Consent revoked successfully")
-                    .build();
-
+            return handleConsentRevocation(activeConsent, consentHandle, tenantId);
         }
 
-        // Get template
+        // Handle NORMAL UPDATE
+        return handleNormalConsentUpdate(activeConsent, updateRequest, consentHandle, tenantId);
+    }
+
+    /**
+     * Handle consent revocation - Creates new version with REVOKED status
+     * Only ENCRYPTION happens, NO SIGNING
+     */
+    private UpdateConsentResponse handleConsentRevocation(CookieConsent activeConsent,
+                                                          CookieConsentHandle consentHandle,
+                                                          String tenantId) throws Exception {
+        log.info("Revoking consent: {}", activeConsent.getConsentId());
+
+        // Store original document ID and previous payload hash
+        String originalId = activeConsent.getId();
+        String previousPayloadHash = activeConsent.getPayloadHash();
+
+        // Create new version by copying active consent
+        CookieConsent newVersion = new CookieConsent(activeConsent);
+        newVersion.setId(null);
+        newVersion.setVersion(activeConsent.getVersion() + 1);
+        newVersion.setStatus(Status.REVOKED);
+        newVersion.setConsentStatus(VersionStatus.ACTIVE);
+        newVersion.setStaleStatus(StaleStatus.NOT_STALE);
+        newVersion.setCreatedAt(Instant.now());
+        newVersion.setUpdatedAt(Instant.now());
+
+        // Generate new JWT token
+        String consentToken = generateConsentToken(newVersion);
+        newVersion.setConsentJwtToken(consentToken);
+
+        // Convert to JSON BEFORE encryption
+        String consentJsonString;
+        try {
+            consentJsonString = objectMapper.writeValueAsString(newVersion);
+        } catch (Exception e) {
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
+                    "Failed to convert consent to JSON: " + e.getMessage());
+        }
+
+        String newPayloadHash = null;
+        try {
+            if (consentJsonString != null) {
+                newPayloadHash = ConsentUtil.computeSHA256Hash(consentJsonString);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to compute payload hash: {}", e.getMessage());
+        }
+
+        String chainedHash = null;
+        if (previousPayloadHash != null && newPayloadHash != null) {
+            chainedHash = ConsentUtil.computeSHA256Hash(previousPayloadHash + newPayloadHash);
+        } else if (newPayloadHash != null) {
+            chainedHash = newPayloadHash;
+        }
+        newVersion.setPayloadHash(chainedHash);
+
+        // ENCRYPT
+        generateConsentEncryption(newVersion, tenantId);
+
+        // Save new version
+        consentRepository.saveToDatabase(newVersion, tenantId);
+
+        Map<String, Object> context6 = new HashMap<>();
+        context6.put(AuditConstants.ACTION_CONSENT_REVOKED, newVersion.getConsentId());
+
+        auditService.logConsentRevoked(tenantId, null, newVersion.getConsentId(), consentHandle.getCustomerIdentifiers().getValue(), context6);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("expiryDate", newVersion.getEndDate());
+        payload.put("consentId", newVersion.getConsentId());
+        payload.put("consentHandleId",newVersion.getConsentHandleId());
+        payload.put("version",newVersion.getVersion());
+        payload.put("templateId",newVersion.getTemplateId());
+
+        notificationManager.initiateConsentRevokedNotification(NotificationEvent.CONSENT_REVOKED,
+                tenantId,
+                newVersion.getBusinessId() != null ? newVersion.getBusinessId() : null,
+                newVersion.getCustomerIdentifiers() != null ? newVersion.getCustomerIdentifiers() : null,
+                payload,
+                newVersion.getLanguagePreferences() != null ? newVersion.getLanguagePreferences() : LANGUAGE.ENGLISH,
+                newVersion.getConsentId()
+        );
+
+        Map<String, Object> context5 = new HashMap<>();
+        context5.put(AuditConstants.ACTION_CONSENT_UPDATE_INITIATED, newVersion.getConsentId());
+        auditService.logNewConsentVersionCreated(tenantId, null, newVersion.getConsentId(),
+                consentHandle.getCustomerIdentifiers().getValue(),context5);
+
+        notificationManager.initiateNewCookieConsentVersionCreatedNotification(NotificationEvent.NEW_COOKIE_CONSENT_VERSION_CREATED,
+                tenantId,
+                newVersion.getBusinessId() != null ? newVersion.getBusinessId() : null,
+                newVersion.getCustomerIdentifiers() != null ? newVersion.getCustomerIdentifiers() : null,
+                payload,
+                newVersion.getLanguagePreferences() != null ? newVersion.getLanguagePreferences() : LANGUAGE.ENGLISH,
+                newVersion.getConsentId()
+        );
+
+        // Mark old version as STALE and UPDATED
+        if (originalId != null) {
+            Optional<CookieConsent> optionalConsent = consentRepository.findById(originalId, tenantId);
+            if (optionalConsent.isPresent()) {
+                CookieConsent originalConsent = optionalConsent.get();
+                originalConsent.setStaleStatus(StaleStatus.STALE);
+                originalConsent.setConsentStatus(VersionStatus.UPDATED);
+                originalConsent.setUpdatedAt(Instant.now());
+                consentRepository.saveToDatabase(originalConsent, tenantId);
+                Map<String, Object> context7 = new HashMap<>();
+                context7.put(AuditConstants.ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED, originalConsent.getConsentId());
+                auditService.logOldConsentVersionMarkedUpdated(tenantId, null, originalConsent.getConsentId(), consentHandle.getCustomerIdentifiers().getValue(),context7);
+            }
+        }
+
+        // Mark handle as USED
+        consentHandle.setStatus(ConsentHandleStatus.USED);
+        consentHandle.setUpdatedAt(Instant.now());
+        consentHandleRepository.save(consentHandle, tenantId);
+
+        Map<String, Object> context7 = new HashMap<>();
+        context7.put(AuditConstants.ACTION_CONSENT_HANDLE_MARKED_USED_AFTER_UPDATE, newVersion.getConsentId());
+        auditService.logConsentHandleMarkedUsedAfterUpdate(tenantId, null, consentHandle.getConsentHandleId(),
+                consentHandle.getCustomerIdentifiers().getValue(),context7);
+
+        log.info("Successfully revoked consent: {}", activeConsent.getConsentId());
+
+        return UpdateConsentResponse.builder()
+                .message("Consent revoked successfully")
+                .build();
+    }
+
+    /**
+     * Handle normal consent update - Updates preferences and creates new version
+     * ENCRYPTION + SIGNING with SignableConsent
+     */
+    private UpdateConsentResponse handleNormalConsentUpdate(CookieConsent activeConsent,
+                                                            UpdateConsentRequest updateRequest,
+                                                            CookieConsentHandle consentHandle,
+                                                            String tenantId) throws Exception {
+        log.info("Processing normal consent update for consentId: {}", activeConsent.getConsentId());
+
+        // Store original document ID and previous payload hash
+        String originalId = activeConsent.getId();
+        String previousPayloadHash = activeConsent.getPayloadHash();
+
+        // Get template to validate preferences
         ConsentTemplate template = getTemplate(consentHandle, tenantId);
 
-        // Create new version
-        CookieConsent newVersion = createNewConsentVersion(activeConsent, updateRequest, consentHandle, template);
+        // Validate preferences if provided
+        if (updateRequest.getPreferencesStatus() != null && !updateRequest.getPreferencesStatus().isEmpty()) {
+            validateAllPreferencesPresent(template.getPreferences(), updateRequest.getPreferencesStatus());
 
-        // Save and return response
-        return saveConsentUpdate(activeConsent, newVersion, consentHandle, tenantId);
+            // Check if all preferences rejected
+            boolean allNotAccepted = updateRequest.getPreferencesStatus().values().stream()
+                    .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
+
+            if (allNotAccepted) {
+                log.info("All preferences NOTACCEPTED in update - marking handle as REJECTED");
+                consentHandle.setStatus(ConsentHandleStatus.REJECTED);
+                consentHandleRepository.save(consentHandle, tenantId);
+
+                throw new ConsentException(
+                        ErrorCodes.VALIDATION_ERROR,
+                        ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                        "Cannot update consent - all preferences rejected"
+                );
+            }
+
+            validateMandatoryNotRejected(template.getPreferences(), updateRequest.getPreferencesStatus());
+        }
+
+        // Create new version by copying active consent
+        CookieConsent newVersion = new CookieConsent(activeConsent);
+        newVersion.setId(null);
+        newVersion.setVersion(activeConsent.getVersion() + 1);
+        newVersion.setConsentStatus(VersionStatus.ACTIVE);
+        newVersion.setStaleStatus(StaleStatus.NOT_STALE);
+        newVersion.setConsentHandleId(consentHandle.getConsentHandleId());
+        newVersion.setTemplateVersion(consentHandle.getTemplateVersion());
+        newVersion.setCreatedAt(Instant.now());
+        newVersion.setUpdatedAt(Instant.now());
+
+        // Apply updates from request
+        if (updateRequest.getLanguagePreference() != null) {
+            newVersion.setLanguagePreferences(updateRequest.getLanguagePreference());
+        }
+
+        if (updateRequest.getPreferencesStatus() != null && !updateRequest.getPreferencesStatus().isEmpty()) {
+            List<Preference> updatedPreferences = processPreferencesForUpdate(
+                    template.getPreferences(),
+                    updateRequest.getPreferencesStatus()
+            );
+            newVersion.setPreferences(updatedPreferences);
+            newVersion.setEndDate(calculateConsentExpiry(updatedPreferences));
+            newVersion.setStatus(determineConsentStatus(updatedPreferences));
+        }
+
+        // Generate new JWT token
+        String consentToken = generateConsentToken(newVersion);
+        newVersion.setConsentJwtToken(consentToken);
+        newVersion.setStaleStatus(StaleStatus.NOT_STALE);
+
+        SignableConsent signableConsent = toSignableConsent(newVersion);
+
+        // Convert SignableConsent to JSON for signing
+        String signableJson;
+        try {
+            signableJson = objectMapper.writeValueAsString(signableConsent);
+            log.debug("Converted SignableConsent to JSON for signing");
+        } catch (Exception e) {
+            throw new ConsentException(ErrorCodes.INTERNAL_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.INTERNAL_ERROR),
+                    "Failed to convert signable consent to JSON: " + e.getMessage());
+        }
+
+        String newPayloadHash = null;
+        try {
+            if (signableJson != null) {
+                newPayloadHash = ConsentUtil.computeSHA256Hash(signableJson);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to compute payload hash: {}", e.getMessage());
+        }
+
+        // CHAIN HASH: Combine previous hash + new hash
+        String chainedHash = null;
+        if (previousPayloadHash != null && newPayloadHash != null) {
+            chainedHash = ConsentUtil.computeSHA256Hash(previousPayloadHash + newPayloadHash);
+        } else if (newPayloadHash != null) {
+            chainedHash = newPayloadHash;
+        }
+        newVersion.setPayloadHash(chainedHash);
+
+        // ENCRYPT (sets encryptionTime, encryptedReferenceId, encryptedString)
+        generateConsentEncryption(newVersion, tenantId);
+
+        // SIGN using SignableConsent JSON (without encryption fields)
+        String jwsToken = generateConsentSigning(signableJson, tenantId, newVersion.getBusinessId());
+
+        // Save new version
+        consentRepository.saveToDatabase(newVersion, tenantId);
+        Map<String, Object> context5 = new HashMap<>();
+        context5.put(AuditConstants.RESOURCE_CONSENT, newVersion.getConsentId());
+        auditService.logNewConsentVersionCreated(tenantId, null, newVersion.getConsentId()
+        ,consentHandle.getCustomerIdentifiers().getValue(), context5);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("expiryDate", newVersion.getEndDate());
+        payload.put("consentId", newVersion.getConsentId());
+        payload.put("consentHandleId",newVersion.getConsentHandleId());
+        payload.put("version",newVersion.getVersion());
+        payload.put("templateId",newVersion.getTemplateId());
+
+        notificationManager.initiateNewCookieConsentVersionCreatedNotification(NotificationEvent.NEW_COOKIE_CONSENT_VERSION_CREATED,
+                tenantId,
+                newVersion.getBusinessId() != null ? newVersion.getBusinessId() : null,
+                newVersion.getCustomerIdentifiers() != null ? newVersion.getCustomerIdentifiers() : null,
+                payload,
+                newVersion.getLanguagePreferences() != null ? newVersion.getLanguagePreferences() : LANGUAGE.ENGLISH,
+                newVersion.getConsentId()
+        );
+
+
+        // Mark old version as STALE and UPDATED
+        if (originalId != null) {
+            Optional<CookieConsent> optionalConsent = consentRepository.findById(originalId, tenantId);
+            if (optionalConsent.isPresent()) {
+                CookieConsent originalConsent = optionalConsent.get();
+                originalConsent.setStaleStatus(StaleStatus.STALE);
+                originalConsent.setConsentStatus(VersionStatus.UPDATED);
+                originalConsent.setUpdatedAt(Instant.now());
+                consentRepository.saveToDatabase(originalConsent, tenantId);
+                Map<String, Object> context = new HashMap<>();
+                context.put(AuditConstants.ACTION_OLD_CONSENT_VERSION_MARKED_UPDATED, originalConsent.getConsentId());
+                auditService.logOldConsentVersionMarkedUpdated(tenantId, null, originalConsent.getConsentId(), consentHandle.getCustomerIdentifiers().getValue(),context);
+            }
+        }
+
+        log.info("Successfully updated consent: {} to version: {}", newVersion.getConsentId(), newVersion.getVersion());
+
+        return UpdateConsentResponse.success(
+                newVersion.getConsentId(),
+                newVersion.getId(),
+                newVersion.getVersion(),
+                activeConsent.getVersion(),
+                consentToken,
+                newVersion.getEndDate(),
+                jwsToken
+        );
     }
 
     public List<CookieConsent> getConsentHistory(String consentId, String tenantId) throws Exception {
@@ -235,7 +561,7 @@ public class ConsentService {
                     "No consent versions found for consentId: " + consentId);
         }
 
-        log.info("Retrieved {} versions for consent: {}", history.size(), consentId);
+        log.info("Retrieved versions consent");
         return history;
     }
 
@@ -256,15 +582,17 @@ public class ConsentService {
                                                              String tenantId, String businessId) throws Exception {
 
         String tokenId = consentToken.substring(0, Math.min(20, consentToken.length()));
-
+        SignableConsent signableConsent;
         if (jwsToken != null && !jwsToken.trim().isEmpty()) {
             try {
                 log.info("JWS token provided, verifying before consent token validation");
-                verifyJwsToken(jwsToken, tenantId, businessId);
+                signableConsent = verifyJwsToken(jwsToken, tenantId, businessId);
                 log.info("JWS token verification successful");
             } catch (ConsentException e) {
-                log.error("JWS verification failed: {}", e.getMessage());
-                auditService.logTokenValidationFailed(tenantId, businessId, tokenId);
+                log.error("JWS verification failed");
+                Map<String, Object> context = new HashMap<>();
+                context.put(AuditConstants.ACTION_TOKEN_VALIDATION_FAILED,"Failed");
+                auditService.logTokenValidationFailed(tenantId, businessId, tokenId, context);
 
                 return ConsentTokenValidateResponse.builder()
                         .message(e.getUserMessage())
@@ -279,18 +607,43 @@ public class ConsentService {
             );
         }
 
-        auditService.logTokenVerificationInitiated(tenantId, businessId, tokenId);
+        Map<String, Object> context = new HashMap<>();
+        context.put(AuditConstants.ACTION_TOKEN_VERIFICATION_INITIATED,"Initiated");
+        auditService.logTokenVerificationInitiated(tenantId, businessId, tokenId, context);
 
         try {
             ConsentTokenValidateResponse response = tokenUtility.verifyConsentToken(consentToken);
 
-            auditService.logTokenSignatureVerified(tenantId, businessId, tokenId);
-            auditService.logTokenValidationSuccess(tenantId, businessId, tokenId);
+            context.clear();
+            context.put(AuditConstants.ACTION_TOKEN_SIGNATURE_VERIFIED,"Verified");
+            auditService.logTokenSignatureVerified(tenantId, businessId, tokenId, context);
+
+            context.clear();
+            context.put(AuditConstants.ACTION_TOKEN_VALIDATION_SUCCESS,"Success");
+            auditService.logTokenValidationSuccess(tenantId, businessId, tokenId, context);
+
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("expiryDate", signableConsent.getEndDate());
+            payload.put("consentId", signableConsent.getConsentId());
+            payload.put("consentHandleId",signableConsent.getConsentHandleId());
+            payload.put("version",signableConsent.getVersion());
+            payload.put("templateId",signableConsent.getTemplateId());
+
+            notificationManager.initiateTokenValidationSuccessNotification(NotificationEvent.TOKEN_VALIDATION_SUCCESS,
+                    tenantId,
+                    businessId,
+                    signableConsent.getCustomerIdentifiers() != null ? signableConsent.getCustomerIdentifiers() : null,
+                    payload,
+                    signableConsent.getLanguagePreferences() != null ? signableConsent.getLanguagePreferences() : LANGUAGE.ENGLISH,
+                    signableConsent.getConsentHandleId()
+            );
 
             return response;
 
         } catch (Exception e) {
-            auditService.logTokenValidationFailed(tenantId, businessId, tokenId);
+            context.clear();
+            context.put(AuditConstants.ACTION_TOKEN_VALIDATION_FAILED,"Failed");
+            auditService.logTokenValidationFailed(tenantId, businessId, tokenId, context);
             throw e;
         }
     }
@@ -315,8 +668,7 @@ public class ConsentService {
                 .collect(Collectors.toSet());
 
         if (!missingPreferences.isEmpty()) {
-            log.error("Request must contain all template preferences. Template has {} preferences, request has {}. Missing: {}",
-                    templatePurposes.size(), userChoices.size(), missingPreferences);
+            log.error("Request must contain all template preferences");
             throw new ConsentException(
                     ErrorCodes.INCOMPLETE_PREFERENCES,
                     ErrorCodes.getDescription(ErrorCodes.INCOMPLETE_PREFERENCES),
@@ -330,7 +682,7 @@ public class ConsentService {
                 .collect(Collectors.toSet());
 
         if (!invalidPurposes.isEmpty()) {
-            log.error("Invalid purposes provided: {}. Template has: {}", invalidPurposes, templatePurposes);
+            log.error("Invalid purposes provided.");
             throw new ConsentException(
                     ErrorCodes.VALIDATION_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
@@ -357,7 +709,7 @@ public class ConsentService {
                 .collect(Collectors.toList());
 
         if (!rejectedMandatory.isEmpty()) {
-            log.error("User attempted to reject mandatory preferences: {}", rejectedMandatory);
+            log.error("User attempted to reject mandatory preferences");
             throw new ConsentException(
                     ErrorCodes.MANDATORY_PREFERENCE_REJECTED,
                     ErrorCodes.getDescription(ErrorCodes.MANDATORY_PREFERENCE_REJECTED),
@@ -432,7 +784,7 @@ public class ConsentService {
 
         // REQUIREMENT 4: Explicit check for PENDING status (must be checked before expiry)
         if (handle.getStatus() != ConsentHandleStatus.PENDING) {
-            log.error("Consent handle is not in PENDING status. Current status: {}", handle.getStatus());
+            log.error("Consent handle is not in PENDING status. Current status");
             throw new ConsentException(ErrorCodes.CONSENT_HANDLE_ALREADY_USED,
                     ErrorCodes.getDescription(ErrorCodes.CONSENT_HANDLE_ALREADY_USED),
                     "Consent handle is already used. Current status: " + handle.getStatus());
@@ -535,7 +887,7 @@ public class ConsentService {
     }
 
     private CookieConsent buildNewConsent(CookieConsentHandle handle, ConsentTemplate template,
-                                          List<Preference> preferences, String languagePreference) {
+                                          List<Preference> preferences, LANGUAGE languagePreference) {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime expiry = calculateConsentExpiry(preferences);
         Status status = determineConsentStatus(preferences);
@@ -557,82 +909,8 @@ public class ConsentService {
                 .endDate(expiry)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
-                .className("com.example.scanner.entity.Consent")
                 .build();
     }
-
-    private CookieConsent createNewConsentVersion(CookieConsent existing, UpdateConsentRequest request,
-                                                  CookieConsentHandle handle, ConsentTemplate template) throws ConsentException {
-
-        CookieConsent newVersion = ConsentUtil.createNewVersionFrom(existing, request,
-                handle.getConsentHandleId(), handle.getTemplateVersion());
-
-        if (request.hasPreferenceUpdates()) {
-            // Apply same validation rules as create consent
-
-            // REQUIREMENT 3: Validate ALL template preferences are present in update request
-            validateAllPreferencesPresent(template.getPreferences(), request.getPreferencesStatus());
-
-            // REQUIREMENT 1: Check if ALL preferences are NOTACCEPTED (Reject All scenario for update)
-            boolean allNotAccepted = request.getPreferencesStatus().values().stream()
-                    .allMatch(status -> status == PreferenceStatus.NOTACCEPTED);
-
-            if (allNotAccepted) {
-                log.info("All preferences are NOTACCEPTED in update - marking handle as REJECTED");
-                // For update, we still create the new version but mark handle as rejected
-                // This maintains the consent history
-            }
-
-            // REQUIREMENT 2: Validate mandatory preferences are not NOTACCEPTED
-            validateMandatoryNotRejected(template.getPreferences(), request.getPreferencesStatus());
-
-            // Process preferences (returns ALL template preferences for updates)
-            List<Preference> updated = processPreferencesForUpdate(
-                    template.getPreferences(),
-                    request.getPreferencesStatus()
-            );
-
-            newVersion.setPreferences(updated);
-            newVersion.setEndDate(calculateConsentExpiry(updated));
-            newVersion.setStatus(determineConsentStatus(updated));
-        }
-
-        return newVersion;
-    }
-
-    @Transactional
-    private UpdateConsentResponse saveConsentUpdate(CookieConsent active, CookieConsent newVersion,
-                                                    CookieConsentHandle handle, String tenantId) throws Exception {
-        String token = generateConsentToken(newVersion);
-        newVersion.setConsentJwtToken(token);
-
-        consentRepository.saveToDatabase(newVersion, tenantId);
-        log.info("Created consent version {} for {}", newVersion.getVersion(), newVersion.getConsentId());
-
-        // Log new version created
-        auditService.logNewConsentVersionCreated(tenantId, null, newVersion.getConsentId());
-
-        active.setConsentStatus(VersionStatus.UPDATED);
-        active.setUpdatedAt(Instant.now());
-        consentRepository.saveToDatabase(active, tenantId);
-
-        // Log old version marked updated
-        auditService.logOldConsentVersionMarkedUpdated(tenantId, null, active.getConsentId());
-
-        // ADD THESE 3 LINES - MISSING TTHA YE!
-        handle.setStatus(ConsentHandleStatus.USED);
-        handle.setUpdatedAt(Instant.now());
-        consentHandleRepository.save(handle, tenantId);
-
-        // ADD THIS LINE - YE BHI MISSING THA!
-        auditService.logConsentHandleMarkedUsedAfterUpdate(tenantId, null, handle.getConsentHandleId());
-
-        return UpdateConsentResponse.success(
-                newVersion.getConsentId(), newVersion.getId(), newVersion.getVersion(),
-                active.getVersion(), token, newVersion.getEndDate()
-        );
-    }
-
 
     private LocalDateTime calculatePreferenceEndDate(LocalDateTime start,
                                                      com.example.scanner.dto.Duration validity) {
@@ -688,7 +966,7 @@ public class ConsentService {
     public List<DashboardTemplateResponse> getDashboardDataGroupedByTemplate(
             String tenantId, DashboardRequest request) throws ConsentException {
 
-        log.info("Processing dashboard request for tenant: {}", tenantId);
+        log.info("Processing dashboard request");
 
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
@@ -792,9 +1070,6 @@ public class ConsentService {
 
                 List<CookieConsentHandle> orphanHandles = mongoTemplate.find(handleQuery, CookieConsentHandle.class);
 
-                log.info("Found {} orphan handles (REJECTED/EXPIRED/PENDING) for template: {}",
-                        orphanHandles.size(), template.getTemplateId());
-
                 // Map orphan handles to ConsentDetail objects
                 List<ConsentDetail> handleDetails = orphanHandles.stream()
                         .map(handle -> mapHandleToConsentDetail(handle, template))
@@ -833,7 +1108,7 @@ public class ConsentService {
             return responses;
 
         } catch (Exception e) {
-            log.error("Error fetching dashboard data: {}", e.getMessage(), e);
+            log.error("Error fetching dashboard data");
             throw new ConsentException(
                     ErrorCodes.INTERNAL_ERROR,
                     "Failed to fetch dashboard data",
@@ -864,7 +1139,7 @@ public class ConsentService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error mapping handle to detail: {}", e.getMessage());
+            log.error("Error mapping handle to detail");
             return null;
         }
     }
@@ -908,7 +1183,7 @@ public class ConsentService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error mapping consent to detail: {}", e.getMessage());
+            log.error("Error mapping consent");
             return null;
         }
     }
@@ -978,18 +1253,17 @@ public class ConsentService {
                         .build();
 
         } catch (IllegalArgumentException e) {
-            log.error("Invalid input parameters: {}", e.getMessage());
+            log.error("Invalid input parameters");
             throw e;
         } catch (Exception e) {
-            log.error("Error checking consent status - deviceId: {}, url: {}, consentId: {}",
-                    deviceId, url, consentId, e);
+            log.error("Failed to retrieve consent status");
             throw new RuntimeException("Failed to retrieve consent status", e);
         }finally {
             TenantContext.clear();
         }
     }
 
-    private void verifyJwsToken(String jwsToken, String tenantId, String businessId) throws ConsentException {
+    private SignableConsent verifyJwsToken(String jwsToken, String tenantId, String businessId) throws ConsentException {
         log.info("Starting JWS token verification");
 
         // Step 1: Verify token with vault service
@@ -998,19 +1272,115 @@ public class ConsentService {
         // Step 2: Validate response
         validateVaultResponse(verifyResponse);
 
-        // Step 3: Extract and convert payload to CookieConsent
-        CookieConsent jwsConsent = extractConsentFromPayload(verifyResponse.getPayload());
+        // Step 3: Extract SignableConsent from JWS payload
+        SignableConsent jwsConsent = extractSignableConsentFromPayload(verifyResponse.getPayload());
 
         // Step 4: Fetch consent from database
-        CookieConsent dbConsent = fetchConsentFromDatabase(jwsConsent.getConsentId(),
+        CookieConsent dbConsent = fetchConsentFromDatabase(
+                jwsConsent.getConsentId(),
                 jwsConsent.getVersion(),
-                tenantId);
+                tenantId
+        );
 
-        // Step 5: Compare objects directly
-        compareConsents(jwsConsent, dbConsent);
+        // Step 5: Convert DB consent to SignableConsent
+        SignableConsent dbSignableConsent = toSignableConsent(dbConsent);
 
-        log.info("JWS token verification successful for consentId: {}, version: {}",
-                jwsConsent.getConsentId(), jwsConsent.getVersion());
+        // Step 6: Compare SignableConsent objects (NO encryption fields)
+        SignableConsent signableConsent = compareSignableConsents(jwsConsent, dbSignableConsent);
+
+        log.info("JWS token verification successful");
+
+        return signableConsent;
+    }
+
+    /**
+     * Extract SignableConsent from JWS payload
+     */
+    private SignableConsent extractSignableConsentFromPayload(Map<String, Object> payload) throws ConsentException {
+        try {
+            Object dataObject = payload.get("data");
+
+            if (dataObject == null) {
+                throw new ConsentException(
+                        ErrorCodes.VALIDATION_ERROR,
+                        ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                        "Missing 'data' field in JWS payload"
+                );
+            }
+
+            // Parse to SignableConsent (NOT CookieConsent)
+            if (dataObject instanceof String) {
+                String jsonString = (String) dataObject;
+                return objectMapper.readValue(jsonString, SignableConsent.class);
+            }
+
+            if (dataObject instanceof Map) {
+                return objectMapper.convertValue(dataObject, SignableConsent.class);
+            }
+
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Invalid data field type in JWS payload"
+            );
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse signable consent JSON: {}", e.getMessage());
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Invalid JSON format in consent data: " + e.getMessage()
+            );
+        }
+    }
+
+    /**
+     * Normalize timestamps to millisecond precision
+     */
+    private SignableConsent compareSignableConsents(SignableConsent jwsConsent, SignableConsent dbConsent)
+            throws ConsentException {
+
+        // Normalize timestamps before comparison (truncate to milliseconds)
+        jwsConsent = normalizeTimestamps(jwsConsent);
+        dbConsent = normalizeTimestamps(dbConsent);
+
+        if (!jwsConsent.equals(dbConsent)) {
+            log.error("Signable consent mismatch between JWS and database");
+            log.error("JWS Consent: {}", jwsConsent);
+            log.error("DB Consent: {}", dbConsent);
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Consent data in JWS token does not match database records"
+            );
+        }else {
+            return dbConsent;
+        }
+    }
+
+    /**
+     * Normalize timestamps to millisecond precision
+     */
+    private SignableConsent normalizeTimestamps(SignableConsent consent) {
+        if (consent.getStartDate() != null) {
+            consent.setStartDate(consent.getStartDate().truncatedTo(ChronoUnit.MILLIS));
+        }
+        if (consent.getEndDate() != null) {
+            consent.setEndDate(consent.getEndDate().truncatedTo(ChronoUnit.MILLIS));
+        }
+        if (consent.getCreatedAt() != null) {
+            consent.setCreatedAt(consent.getCreatedAt().truncatedTo(ChronoUnit.MILLIS));
+        }
+        if (consent.getUpdatedAt() != null) {
+            consent.setUpdatedAt(consent.getUpdatedAt().truncatedTo(ChronoUnit.MILLIS));
+        }
+
+        // Ensure staleStatus consistency
+        if (consent.getStaleStatus() == null) {
+            consent.setStaleStatus(StaleStatus.NOT_STALE);
+        }
+
+        return consent;
     }
 
     private VaultVerifyResponse verifyTokenWithVault(String jwsToken, String tenantId, String businessId)
@@ -1018,7 +1388,7 @@ public class ConsentService {
         try {
             return vaultService.verifyJwtToken(jwsToken, tenantId, businessId);
         } catch (Exception e) {
-            log.error("Vault verify API call failed", e);
+            log.error("Vault verify API call failed");
             throw new ConsentException(
                     ErrorCodes.EXTERNAL_SERVICE_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
@@ -1049,14 +1419,46 @@ public class ConsentService {
 
     private CookieConsent extractConsentFromPayload(Map<String, Object> payload) throws ConsentException {
         try {
-            // Direct Map to Object conversion - NO intermediate JSON string
-            return objectMapper.convertValue(payload, CookieConsent.class);
-        } catch (IllegalArgumentException e) {
-            log.error("Failed to convert JWS payload to CookieConsent object", e);
+            Object dataObject = payload.get("data");
+
+            if (dataObject == null) {
+                throw new ConsentException(
+                        ErrorCodes.VALIDATION_ERROR,
+                        ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                        "Missing 'data' field in JWS payload"
+                );
+            }
+
+            // Data is a JSON string, parse it first
+            if (dataObject instanceof String) {
+                String jsonString = (String) dataObject;
+                return objectMapper.readValue(jsonString, CookieConsent.class);
+            }
+
+            // Data is already a Map
+            if (dataObject instanceof Map) {
+                return objectMapper.convertValue(dataObject, CookieConsent.class);
+            }
+
             throw new ConsentException(
                     ErrorCodes.VALIDATION_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
-                    "Invalid consent data structure in JWS token"
+                    "Invalid data field type in JWS payload"
+            );
+
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse consent data JSON: {}", e.getMessage());
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Invalid JSON format in consent data: " + e.getMessage()
+            );
+        } catch (IllegalArgumentException e) {
+            log.error("Failed to convert consent data: {}", e.getMessage());
+            throw new ConsentException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
+                    "Invalid consent data structure: " + e.getMessage()
             );
         }
     }
@@ -1069,7 +1471,7 @@ public class ConsentService {
         );
 
         return consentOpt.orElseThrow(() -> {
-            log.error("Consent not found in database - consentId: {}, version: {}", consentId, version);
+            log.error("Consent not found in database");
             return new ConsentException(
                     ErrorCodes.CONSENT_NOT_FOUND,
                     ErrorCodes.getDescription(ErrorCodes.CONSENT_NOT_FOUND),
@@ -1081,7 +1483,6 @@ public class ConsentService {
 
     private void compareConsents(CookieConsent jwsConsent, CookieConsent dbConsent) throws ConsentException {
         if (!jwsConsent.equals(dbConsent)) {
-            logConsentMismatch(jwsConsent, dbConsent);
             throw new ConsentException(
                     ErrorCodes.VALIDATION_ERROR,
                     ErrorCodes.getDescription(ErrorCodes.VALIDATION_ERROR),
@@ -1090,11 +1491,93 @@ public class ConsentService {
         }
     }
 
-    private void logConsentMismatch(CookieConsent jwsConsent, CookieConsent dbConsent) {
-        log.error("JWS consent data does not match DB consent data");
-        log.debug("JWS Consent - ID: {}, Version: {}, Status: {}",
-                jwsConsent.getConsentId(), jwsConsent.getVersion(), jwsConsent.getStatus());
-        log.debug("DB Consent - ID: {}, Version: {}, Status: {}",
-                dbConsent.getConsentId(), dbConsent.getVersion(), dbConsent.getStatus());
+    /**
+     * Encrypt consent payload using Vault API
+     * Sets: encryptionTime, encryptedReferenceId, encryptedString
+     * Returns: encrypted JSON string
+     */
+    private String generateConsentEncryption(CookieConsent consent, String tenantId) throws ConsentException {
+        CookieConsent tempConsent = new CookieConsent(consent);
+        Gson gson = new GsonBuilder()
+                .registerTypeAdapter(LocalDateTime.class, new LocalDateTypeAdapter())
+                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                .disableHtmlEscaping()
+                .create();
+
+        String consentJsonString = "";
+        try {
+            consentJsonString = gson.toJson(tempConsent).replaceAll("\\s+", "");
+
+            // Encrypt the consentJsonString using Vault encryptPayload API
+            String businessId = consent.getBusinessId();
+
+            EncryptPayloadResponse encryptResponse = vaultService.encryptPayload(
+                    tenantId,
+                    businessId,
+                    "CookieConsent",
+                    "CookieConsent",
+                    consentJsonString
+            );
+
+            // SET ENCRYPTION TIME from Vault API response
+            consent.setEncryptionTime(encryptResponse.getCreatedTimeStamp());
+
+            // Store encryptedReferenceId in the consent entity
+            consent.setEncryptedReferenceId(encryptResponse.getReferenceId());
+            consent.setEncryptedString(encryptResponse.getEncryptedString());
+
+            log.info("Vault encryption successful for consent: {}", consent.getConsentId());
+
+        } catch (Exception e) {
+            throw new ConsentException(ErrorCodes.EXTERNAL_SERVICE_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
+                    "Failed to encrypt consent with vault service: " + e.getMessage());
+        }
+
+        return consentJsonString;
+    }
+
+    /**
+     * Sign consent JSON using Vault API
+     * Returns: JWS token
+     */
+    private String generateConsentSigning(String consentJsonString, String tenantId, String businessId)
+            throws ConsentException {
+        try {
+            String jwsToken = vaultService.signJsonPayload(consentJsonString, tenantId, businessId);
+            log.info("Vault signing successful");
+            return jwsToken;
+        } catch (Exception e) {
+            log.error("Vault signing failed: {}", e.getMessage());
+            throw new ConsentException(ErrorCodes.EXTERNAL_SERVICE_ERROR,
+                    ErrorCodes.getDescription(ErrorCodes.EXTERNAL_SERVICE_ERROR),
+                    "Failed to sign consent with vault service: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Convert CookieConsent to SignableConsent (removes encryption fields)
+     */
+    private SignableConsent toSignableConsent(CookieConsent consent) {
+        return SignableConsent.builder()
+                .consentId(consent.getConsentId())
+                .consentHandleId(consent.getConsentHandleId())
+                .businessId(consent.getBusinessId())
+                .templateId(consent.getTemplateId())
+                .templateVersion(consent.getTemplateVersion())
+                .languagePreferences(consent.getLanguagePreferences())
+                .multilingual(consent.getMultilingual())
+                .customerIdentifiers(consent.getCustomerIdentifiers())
+                .preferences(consent.getPreferences())
+                .status(consent.getStatus())
+                .consentStatus(consent.getConsentStatus())
+                .version(consent.getVersion())
+                .consentJwtToken(consent.getConsentJwtToken())
+                .startDate(consent.getStartDate())
+                .endDate(consent.getEndDate())
+                .createdAt(consent.getCreatedAt())
+                .updatedAt(consent.getUpdatedAt())
+                .staleStatus(consent.getStaleStatus())
+                .build();
     }
 }

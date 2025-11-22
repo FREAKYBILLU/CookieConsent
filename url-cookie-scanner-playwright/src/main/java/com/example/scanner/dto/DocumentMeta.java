@@ -18,7 +18,7 @@ public class DocumentMeta {
 
     @Schema(
             description = "Unique document identifier",
-            example = "doc_123e4567-e89b-12d3-a456-426614174000"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX"
     )
     private String documentId;
 

@@ -32,11 +32,11 @@ public class CategoryService {
         try {
             // Set tenant context for multi-tenant database connection
             TenantContext.setCurrentTenant(tenantId);
-            log.info("Processing add category request for tenant: {}", tenantId);
+            log.info("Processing add category request");
 
             // Validate request
             if (request == null) {
-                log.error("Request is null for tenant: {}", tenantId);
+                log.error("Request is null");
                 return CookieCategoryResponse.builder()
                         .success(false)
                         .message("Invalid request")
@@ -47,7 +47,7 @@ public class CategoryService {
             Optional<CookieCategory> existingCookie = categoryRepository.findByCategory(request.getCategory());
 
             if (existingCookie.isPresent()) {
-                log.warn("Category '{}' already exists for tenant: {}", request.getCategory(), tenantId);
+                log.warn("Category already exists");
                 return CookieCategoryResponse.builder()
                         .success(false)
                         .message("Category already exists: " + request.getCategory())
@@ -66,8 +66,7 @@ public class CategoryService {
             // Save to database
             CookieCategory savedCookie = categoryRepository.save(cookieCategory);
 
-            log.info("Successfully added category '{}' with ID: {} for tenant: {}",
-                    savedCookie.getCategory(), savedCookie.getCategoryId(), tenantId);
+            log.info("Successfully added category");
 
             // Build success response
             return CookieCategoryResponse.builder()
@@ -82,7 +81,7 @@ public class CategoryService {
                     .build();
 
         } catch (Exception e) {
-            log.error("Error adding category for tenant: {}. Error: {}", tenantId, e.getMessage(), e);
+            log.error("Error adding category");
             return CookieCategoryResponse.builder()
                     .success(false)
                     .message("Failed to add category: " + e.getMessage())
@@ -96,11 +95,11 @@ public class CategoryService {
     public CookieCategoryResponse updateCookieCategory(UpdateCookieCategoryRequest request, String tenantId) {
         try {
             TenantContext.setCurrentTenant(tenantId);
-            log.info("Processing add category request for tenant: {}", tenantId);
+            log.info("Processing add category request");
 
             // Validate request
             if (request == null) {
-                log.error("Request is null for tenant: {}", tenantId);
+                log.error("Request is null");
                 throw new IllegalArgumentException("Update request cannot be null");
             }
 
@@ -113,8 +112,7 @@ public class CategoryService {
             category.setUpdatedAt(new Date());
             CookieCategory upDatedCookieCategory = categoryRepository.save(category);
 
-            log.info("Successfully added category '{}' with ID: {} for tenant: {}",
-                    upDatedCookieCategory.getCategory(), upDatedCookieCategory.getCategoryId(), tenantId);
+            log.info("Successfully added category");
 
             return CookieCategoryResponse.builder()
                     .categoryId(upDatedCookieCategory.getCategoryId())
@@ -129,7 +127,7 @@ public class CategoryService {
         } catch (CategoryUpdateException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Error updating category for tenant: {}", tenantId, e);
+            log.error("Error updating category");
             throw new CategoryUpdateException(
                     ErrorCodes.CATEGORY_UPDATE_FAILED,
                     "Failed to update category. Please try again later.",
@@ -143,7 +141,7 @@ public class CategoryService {
     public List<CookieCategoryResponse> findAll(String tenantId){
         try {
             TenantContext.setCurrentTenant(tenantId);
-            log.info("Processing add category request for tenant: {}", tenantId);
+            log.info("Processing add category request");
 
             List<CookieCategory> categories = categoryRepository.findAll();
             

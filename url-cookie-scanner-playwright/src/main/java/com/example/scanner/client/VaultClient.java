@@ -1,7 +1,9 @@
 package com.example.scanner.client;
 
+import com.example.scanner.dto.request.EncryptPayloadRequest;
 import com.example.scanner.dto.request.VaultSignRequest;
 import com.example.scanner.dto.request.VaultVerifyRequest;
+import com.example.scanner.dto.response.EncryptPayloadResponse;
 import com.example.scanner.dto.response.VaultSignResponse;
 import com.example.scanner.dto.response.VaultVerifyResponse;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +11,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.HashMap;
@@ -29,6 +32,9 @@ public class VaultClient {
 
     @Value("${vault.service.verify-endpoint}")
     private String verifyEndpoint;
+
+    @Value("${vault.service.endpoints.encryptPayload}")
+    private String encryptPayload;
 
     public String signPayload(String jsonPayload, String tenantId, String businessId) {
         try {
@@ -107,6 +113,56 @@ public class VaultClient {
         } catch (Exception e) {
             log.error("Vault verify API failed - Error: {}", e.getMessage());
             throw new RuntimeException("Failed to verify token: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Encrypt a payload
+     *
+     * @param tenantId Tenant ID
+     * @param businessId Business ID
+     * @param dataCategoryType Data category type (e.g., "consent")
+     * @param dataCategoryValue Data category value
+     * @param dataString Data string to encrypt
+     * @return EncryptPayloadResponse containing encrypted data
+     */
+    public EncryptPayloadResponse encryptPayload(String tenantId, String businessId,
+                                                 String dataCategoryType, String dataCategoryValue,
+                                                 String dataString) {
+        try {
+
+            String url = vaultBaseUrl + encryptPayload;
+
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Tenant-Id", tenantId);
+            headers.set("Business-Id", businessId);
+            headers.set("Data-Category-Type", dataCategoryType);
+            headers.set("Data-Category-Value", dataCategoryValue);
+
+            EncryptPayloadRequest request = EncryptPayloadRequest.builder()
+                    .dataString(dataString)
+                    .build();
+
+            HttpEntity<EncryptPayloadRequest> requestEntity = new HttpEntity<>(request, headers);
+
+            ResponseEntity<EncryptPayloadResponse> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.POST,
+                    requestEntity,
+                    EncryptPayloadResponse.class
+            );
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                log.info("Payload encrypted successfully for tenant: {}, business: {}, referenceId: {}",
+                        tenantId, businessId, response.getBody().getReferenceId());
+                return response.getBody();
+            } else {
+                log.error("Failed to encrypt payload - HTTP Status: {}", response.getStatusCode());
+                throw new RuntimeException("Failed to encrypt payload: " + response.getStatusCode());
+            }
+        } catch (RestClientException e) {
+            throw new RuntimeException("Exception occurred while encrypting payload", e);
         }
     }
 

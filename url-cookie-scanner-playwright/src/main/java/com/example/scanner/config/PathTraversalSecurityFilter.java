@@ -52,16 +52,14 @@ public class PathTraversalSecurityFilter implements Filter {
 
             // Check URI for path traversal
             if (isPathTraversalAttempt(requestURI)) {
-                log.warn("SECURITY ALERT: Path traversal attempt blocked - URI: {} from IP: {}",
-                        requestURI, getClientIpAddress(httpRequest));
+                log.warn("SECURITY ALERT: Path traversal attempt blocked");
                 handlePathTraversalAttempt(httpRequest, httpResponse, requestURI);
                 return;
             }
 
             // Check query parameters for path traversal
             if (queryString != null && isPathTraversalAttempt(queryString)) {
-                log.warn("SECURITY ALERT: Path traversal in query parameters - Query: {} from IP: {}",
-                        queryString, getClientIpAddress(httpRequest));
+                log.warn("SECURITY ALERT: Path traversal in query parameters - ");
                 handlePathTraversalAttempt(httpRequest, httpResponse, requestURI + "?" + queryString);
                 return;
             }

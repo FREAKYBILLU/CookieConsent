@@ -93,19 +93,10 @@ public class ScanController {
       );
     }
 
-    log.info("Received scan request for URL: {} with {} subdomains",
-            url, subdomains != null ? subdomains.size() : 0);
-
-    if (subdomains != null && !subdomains.isEmpty()) {
-      log.info("Subdomains to scan: {}", subdomains);
-    }
 
     try {
       String transactionId;
-        log.info("Using ENHANCED scan service with protection for URL: {}", url);
-        transactionId = scanService.startScan(tenantId, url, subdomains);
-
-      log.info("Scan initiated successfully with transactionId: {}", transactionId);
+      transactionId = scanService.startScan(tenantId, url, subdomains);
 
       String message = "Scan started for main URL";
       if (subdomains != null && !subdomains.isEmpty()) {
@@ -122,10 +113,8 @@ public class ScanController {
       return ResponseEntity.ok(response);
 
     } catch (UrlValidationException e) {
-      log.warn("URL/Subdomain validation failed for: {} with subdomains: {}", url, subdomains);
       throw e;
     } catch (Exception e) {
-      log.error("Unexpected error starting scan for URL: {} with subdomains: {}", url, subdomains, e);
       throw new ScanExecutionException("Failed to initiate scan: " + e.getMessage());
     }
   }
@@ -164,7 +153,6 @@ public class ScanController {
           @PathVariable("transactionId") String transactionId) throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
     if (!CommonUtil.isValidTransactionId(transactionId)) {
-      log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
               "Invalid transaction ID format",
@@ -172,12 +160,9 @@ public class ScanController {
       );
     }
 
-    log.debug("Retrieving status for transactionId: {}", transactionId);
-
     try {
       Optional<ScanResultEntity> resultOpt = scanService.getScanResult(tenantId, transactionId);
       if (resultOpt.isEmpty()) {
-        log.warn("Transaction not found: {}", transactionId);
         throw new TransactionNotFoundException(transactionId);
       }
 
@@ -230,15 +215,11 @@ public class ScanController {
               summary
       );
 
-      log.debug("Retrieved transaction {} with status {} and {} cookies in {} subdomains",
-              transactionId, result.getStatus(), allCookies.size(), subdomains.size());
-
       return ResponseEntity.ok(response);
 
     } catch (TransactionNotFoundException e) {
       throw e;
     } catch (Exception e) {
-      log.error("Unexpected error retrieving status for transactionId: {}", transactionId, e);
       throw new ScanExecutionException("Failed to retrieve scan status: " + e.getMessage());
     }
   }
@@ -288,7 +269,6 @@ public class ScanController {
           @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
 
     if (!CommonUtil.isValidTransactionId(transactionId)) {
-      log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
               "Invalid transaction ID format",
@@ -296,30 +276,20 @@ public class ScanController {
       );
     }
 
-    log.info("Received request to update cookie '{}' for transactionId: {}",
-            updateRequest.getName(), transactionId); // CHANGED: cookieName to name
-
     try {
       CookieUpdateResponse response = cookieService.updateCookie(tenantId, transactionId, updateRequest);
 
       if (response.isUpdated()) {
-        log.info("Successfully updated cookie '{}' for transactionId: {}",
-                updateRequest.getName(), transactionId); // CHANGED: cookieName to name
         return ResponseEntity.ok(response);
       } else {
-        log.warn("Failed to update cookie '{}' for transactionId: {} - Reason: {}",
-                updateRequest.getName(), transactionId, response.getMessage()); // CHANGED: cookieName to name
         return ResponseEntity.badRequest().body(response);
       }
 
     } catch (CookieNotFoundException | TransactionNotFoundException e) {
-      log.warn("Field validation error found for update: {}", e.getMessage());
       throw e;
     } catch (UrlValidationException e) {
-      log.warn("Cookie not found for update: {}", e.getMessage());
       throw e;
     } catch (Exception e) {
-      log.error("Error processing cookie update request for transactionId: {}", transactionId, e);
       throw new ScanExecutionException("Failed to update cookie: " + e.getMessage());
     }
   }
@@ -337,7 +307,6 @@ public class ScanController {
     )
   @GetMapping("/health")
   public ResponseEntity<Map<String, Object>> healthCheck() {
-    log.debug("Enhanced health check requested");
 
     Map<String, Object> healthInfo = new HashMap<>();
     healthInfo.put("status", "UP");
@@ -443,7 +412,6 @@ public class ScanController {
           @Valid @RequestBody AddCookieRequest addRequest) throws ScanExecutionException, TransactionNotFoundException, UrlValidationException {
 
     if (!CommonUtil.isValidTransactionId(transactionId)) {
-      log.warn("Invalid transaction ID format attempted: {}", transactionId);
       throw new UrlValidationException(
               ErrorCodes.VALIDATION_ERROR,
               "Invalid transaction ID format",
@@ -455,15 +423,8 @@ public class ScanController {
       throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
     }
 
-    log.info("Received request to add cookie '{}' to transactionId: {}",
-            addRequest.getName(), transactionId);
-
     AddCookieResponse response = cookieService.addCookie(tenantId, transactionId, addRequest);
-
-    log.info("Successfully added cookie '{}' to transactionId: {}",
-            addRequest.getName(), transactionId);
-
-        return ResponseEntity.ok(response);
+    return ResponseEntity.ok(response);
   }
 
 }

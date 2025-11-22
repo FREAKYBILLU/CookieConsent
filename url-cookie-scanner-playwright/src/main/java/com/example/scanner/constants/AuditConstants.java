@@ -3,7 +3,7 @@ package com.example.scanner.constants;
 public class AuditConstants {
 
     // Groups
-    public static final String GROUP_COOKIE_CONSENT = "Cookie Consent";
+    public static final String GROUP_COOKIE_CONSENT = "COOKIE CONSENT";
 
     // Components
     public static final String COMPONENT_COOKIE_SCAN = "Cookie Scan Flow";
@@ -54,8 +54,16 @@ public class AuditConstants {
     public static final String RESOURCE_COOKIE_SCAN = "Cookie Scan";
     public static final String RESOURCE_COOKIE_TEMPLATE = "Cookie Template";
     public static final String RESOURCE_CONSENT_HANDLE = "Consent Handle";
-    public static final String RESOURCE_CONSENT = "Consent";
+    public static final String RESOURCE_CONSENT = "CONSENT";
     public static final String RESOURCE_TOKEN = "Token";
+    public static final String RESOURCE_COOKIE_SCAN_ID = "COOKIE SCAN ID";
+    public static final String RESOURCE_COOKIE_TEMPLATE_ID = "COOKIE TEMPLATE ID";
+
+    public static final String ACTION_NEW_TEMPLATE_VERSION_CREATED_ID = "NEW_TEMPLATE_VERSION_CREATED_ID";
+
+    public static final String RESOURCE_CONSENT_HANDLE_ID = "CONSENT HANDLE ID";
+
+    public static final String ACTION_CONSENT_ID = "CONSENT ID";
 
     // Actor Types
     public static final String ACTOR_TYPE_SYSTEM = "SYSTEM";

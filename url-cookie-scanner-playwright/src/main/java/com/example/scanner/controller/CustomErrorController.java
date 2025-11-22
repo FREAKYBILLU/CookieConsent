@@ -30,9 +30,6 @@ public class CustomErrorController implements ErrorController {
 
         String originalUri = requestUri != null ? requestUri.toString() : request.getRequestURI();
 
-        log.warn("SECURITY: CustomErrorController triggered - Status: {}, URI: {}, Message: {}",
-                status, originalUri, message);
-
         // CRITICAL: Force JSON response
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         response.setCharacterEncoding("UTF-8");
@@ -52,9 +49,6 @@ public class CustomErrorController implements ErrorController {
                         originalUri,
                         message != null ? message.toString() : "Invalid path format"
                 );
-
-                log.warn("SECURITY ALERT: Path traversal attempt from IP: {} - URI: {}",
-                        getClientIpAddress(request), originalUri);
             }
             else if (statusCode == HttpStatus.BAD_REQUEST.value()) {
                 userMessage = "Invalid request format or characters in URL";

@@ -86,9 +86,6 @@ public class DashboardController {
             HttpServletRequest httpRequest) {
 
         try {
-            log.info("Dashboard GET API called - tenant: {}, template: {}, scanId: {}",
-                    tenantId, templateId, scanId);
-
             // Validation: Tenant ID
             CommonUtil.validateTenantId(tenantId);
 
@@ -106,7 +103,6 @@ public class DashboardController {
                     consentService.getDashboardDataGroupedByTemplate(tenantId, request);
 
             if (dashboardData.isEmpty()) {
-                log.info("No data found for tenant: {}", tenantId);
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
                         new ErrorResponse(
                                 "NO_DATA_FOUND",
@@ -118,11 +114,9 @@ public class DashboardController {
                 );
             }
 
-            log.info("Successfully retrieved {} template groups", dashboardData.size());
             return ResponseEntity.ok(dashboardData);
 
         } catch (Exception e) {
-            log.error("Error in dashboard API: {}", e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new ErrorResponse(
                             ErrorCodes.INTERNAL_ERROR,

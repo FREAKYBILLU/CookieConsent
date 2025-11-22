@@ -41,38 +41,26 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
         // CHECK IF RATE LIMITING IS ENABLED FIRST
         if (!rateLimitEnabled) {
-            log.debug("Rate limiting is disabled, allowing request to: {}", request.getRequestURI());
+            log.debug("Rate limiting is disabled, allowing request");
             return true;
         }
 
-        log.info("INTERCEPTOR TRIGGERED for path: {}", request.getRequestURI());
-
         String requestPath = request.getRequestURI();
-        log.info("Rate limit interceptor triggered for path: {}", requestPath);
-
-        // Get client identifier (IP + User-Agent hash for better uniqueness)
         String clientId = getClientId(request);
-        log.info("Client ID: {}", clientId);
-
         // Get bucket for this client
         Bucket bucket = rateLimitingConfig.resolveBucket(clientId);
-        log.info("Bucket retrieved for client: {}", clientId);
 
         // Try to consume 1 token
         ConsumptionProbe probe = bucket.tryConsumeAndReturnRemaining(1);
-        log.info("Rate limit check - consumed: {}, remaining: {}", probe.isConsumed(), probe.getRemainingTokens());
 
         if (probe.isConsumed()) {
             // Add rate limit headers for transparency
             response.addHeader("X-Rate-Limit-Remaining", String.valueOf(probe.getRemainingTokens()));
-            log.info("Request allowed - remaining tokens: {}", probe.getRemainingTokens());
             response.addHeader("X-Rate-Limit-Total", "100");
             response.addHeader("X-Rate-Limit-Window", "60s");
 
-            log.debug("Request allowed for client: {} (remaining: {})", clientId, probe.getRemainingTokens());
             return true;
         } else {
-            log.warn("RATE LIMIT EXCEEDED for client: {}", clientId);
             long waitForRefill = probe.getNanosToWaitForRefill() / 1_000_000_000; // Convert to seconds
 
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
@@ -91,10 +79,6 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             );
 
             response.getWriter().write(objectMapper.writeValueAsString(errorResponse));
-
-            log.warn("Rate limit exceeded for client: {} on endpoint: {}. Retry after: {} seconds",
-                    clientId, request.getRequestURI(), waitForRefill);
-
             return false;
         }
     }

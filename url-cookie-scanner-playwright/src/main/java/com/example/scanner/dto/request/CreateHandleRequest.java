@@ -22,7 +22,7 @@ import lombok.NoArgsConstructor;
 public class CreateHandleRequest {
     @Schema(
             description = "Logical template ID",
-            example = "tpl_123e4567-e89b-12d3-a456-426614174000",
+            example = "tpl_123e4567-CXXXXXX.....",
             required = true
     )
     @NotBlank(message = "Template ID is required")

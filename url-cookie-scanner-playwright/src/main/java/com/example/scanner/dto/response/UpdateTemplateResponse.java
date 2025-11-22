@@ -18,10 +18,10 @@ import java.time.Instant;
 @Schema(description = "Response for template update operation")
 public class UpdateTemplateResponse {
 
-    @Schema(description = "Logical template ID (same across versions)", example = "tpl_123e4567-e89b-12d3-a456-426614174000")
+    @Schema(description = "Logical template ID (same across versions)", example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX.....")
     private String templateId;
 
-    @Schema(description = "New document ID for this version", example = "507f1f77bcf86cd799439011")
+    @Schema(description = "New document ID for this version", example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX....")
     private String newVersionId;
 
     @Schema(description = "New version number", example = "2")

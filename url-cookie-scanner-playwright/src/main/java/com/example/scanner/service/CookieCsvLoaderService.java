@@ -25,7 +25,7 @@ public class CookieCsvLoaderService {
         try {
             ClassPathResource resource = new ClassPathResource(CSV_FILE_PATH);
             if (!resource.exists()) {
-                log.warn("CSV file not found: {}", CSV_FILE_PATH);
+                log.warn("CSV file not found");
                 return;
             }
 
@@ -50,10 +50,10 @@ public class CookieCsvLoaderService {
                 }
             }
 
-            log.info("CSV loaded successfully. Total mappings: {}", count);
+            log.info("CSV loaded successfully.");
 
         } catch (Exception e) {
-            log.error("Failed to load CSV: {}", e.getMessage());
+            log.error("Failed to load");
         }
     }
 

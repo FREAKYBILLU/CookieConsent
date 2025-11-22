@@ -81,28 +81,25 @@ public class BusinessIdValidationFilter implements Filter {
 
                 // Business ID is REQUIRED for these endpoints
                 if (businessId == null || businessId.trim().isEmpty()) {
-                    log.warn("BUSINESS VALIDATION ERROR: Business ID is required but missing for URI: {}", requestURI);
+                    log.warn("BUSINESS VALIDATION ERROR: Business ID is required but missing");
                     handleMissingBusinessId(httpRequest, httpResponse);
                     return;
                 }
 
                 // Validate that tenantId is also present
                 if (tenantId == null || tenantId.trim().isEmpty()) {
-                    log.warn("BUSINESS VALIDATION ERROR: Business ID provided but Tenant ID missing for URI: {}", requestURI);
+                    log.warn("BUSINESS VALIDATION ERROR: Business ID provided but Tenant ID");
                     handleMissingTenantId(httpRequest, httpResponse);
                     return;
                 }
 
                 // Validate business ID exists in tenant database
                 if (!businessIdExistsInTenant(businessId.trim(), tenantId.trim())) {
-                    log.warn("BUSINESS VALIDATION ERROR: Business ID '{}' not found in tenant '{}' for URI: {}",
-                            businessId, tenantId, requestURI);
                     handleInvalidBusinessId(httpRequest, httpResponse, businessId, tenantId);
                     return;
                 }
 
-                log.debug("Business ID validation passed for: {} in tenant: {} for URI: {}",
-                        businessId, tenantId, requestURI);
+                log.debug("Business ID validation passed");
             }
         }
 
@@ -154,8 +151,7 @@ public class BusinessIdValidationFilter implements Filter {
             // Check existence in business_applications collection
             return tenantMongoTemplate.exists(query, "business_applications");
         } catch (Exception e) {
-            log.error("Error checking business ID existence for businessId: {} in tenant: {}",
-                    businessId, tenantId, e);
+            log.error("Error checking business ID existence");
             return false;
         } finally {
             // Clear tenant context

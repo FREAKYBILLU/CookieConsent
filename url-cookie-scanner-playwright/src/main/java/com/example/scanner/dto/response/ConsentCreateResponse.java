@@ -26,7 +26,7 @@ public class ConsentCreateResponse {
 
     @Schema(
             description = "Logical consent ID (remains same across versions)",
-            example = "cst_123e4567-e89b-12d3-a456-426614174000"
+            example = "123e4567-XXXX...."
     )
     private String consentId;
 
@@ -57,7 +57,7 @@ public class ConsentCreateResponse {
 
     @Schema(
             description = "JWT token for this consent - use for validation",
-            example = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjb25zZW50SWQiOiJjc3RfMTIzZTQ1NjciLCJleHAiOjE3MzAwMDAwMDB9.abcd1234"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX"
     )
     private String consentJwtToken;
 
@@ -86,8 +86,7 @@ public class ConsentCreateResponse {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private LocalDateTime consentExpiry;
 
-    @Schema(
-            description = "JWS token from vault service for consent verification (NOT stored in DB)"
-    )
+    @Schema(description = "JWS token from vault service for consent verification (NOT stored in DB)",
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX.....")
     private String jwsToken;
 }

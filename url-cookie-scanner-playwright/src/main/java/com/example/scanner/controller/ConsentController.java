@@ -81,18 +81,18 @@ public class ConsentController {
             @org.springframework.web.bind.annotation.RequestBody @Valid CreateConsentRequest request,
             @RequestHeader Map<String, String> headers) throws Exception {
 
-        log.info("Creating consent for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
+        log.info("Creating consent for handle");
 
         ConsentCreateResponse response = consentService.createConsentByConsentHandleId(request, tenantId);
 
-        log.info("Successfully created consent: {} for handle: {}", response.getConsentId(), request.getConsentHandleId());
+        log.info("Successfully created consent for handle");
 
         HttpHeaders responseHeaders = new HttpHeaders();
         if (response.getJwsToken() != null) {
             responseHeaders.set("x-jws-signature", response.getJwsToken());
         }
 
-        return new ResponseEntity<>(response, HttpStatus.CREATED);
+        return new ResponseEntity<>(response, responseHeaders, HttpStatus.CREATED);
     }
 
     @PutMapping("/{consentId}/update")
@@ -140,13 +140,18 @@ public class ConsentController {
             @PathVariable String consentId,
             @org.springframework.web.bind.annotation.RequestBody @Valid UpdateConsentRequest updateRequest) throws Exception {
 
-        log.info("Received consent update request for consentId: {} in tenant: {}", consentId, tenantId);
+        log.info("Received consent update request for consent");
 
         UpdateConsentResponse response = consentService.updateConsent(consentId, updateRequest, tenantId);
 
-        log.info("Successfully updated consent: {} to version: {}", consentId, response.getNewVersion());
+        HttpHeaders responseHeaders = new HttpHeaders();
+        if (response.getJwsToken() != null) {
+            responseHeaders.set("x-jws-signature", response.getJwsToken());
+        }
 
-        return ResponseEntity.ok(response);
+        log.info("Successfully updated consent");
+
+        return new ResponseEntity<>(response, responseHeaders, HttpStatus.OK);
     }
 
     @GetMapping("/{consentId}/history")
@@ -187,11 +192,11 @@ public class ConsentController {
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId) throws Exception {
 
-        log.info("Retrieving consent history for consentId: {} in tenant: {}", consentId, tenantId);
+        log.info("Retrieving consent history for consent ");
 
         List<CookieConsent> history = consentService.getConsentHistory(consentId, tenantId);
 
-        log.info("Retrieved {} versions for consent: {}", history.size(), consentId);
+        log.info("Retrieved versions for consent");
 
         return ResponseEntity.ok(history);
     }
@@ -234,17 +239,11 @@ public class ConsentController {
             @PathVariable String consentId,
             @PathVariable Integer version) throws Exception {
 
-        log.info("Retrieving consent version {} for consentId: {} in tenant: {}", version, consentId, tenantId);
-
         Optional<CookieConsent> consentOpt = consentService.getConsentByIdAndVersion(tenantId, consentId, version);
 
         if (consentOpt.isEmpty()) {
-            log.warn("Consent version not found: consentId={}, version={}, tenant={}", consentId, version, tenantId);
-            // This will be handled by GlobalExceptionHandler
             throw new IllegalArgumentException("No consent found with ID '" + consentId + "' and version " + version);
         }
-
-        log.info("Retrieved consent version {} for consentId: {}", version, consentId);
 
         return ResponseEntity.ok(consentOpt.get());
     }

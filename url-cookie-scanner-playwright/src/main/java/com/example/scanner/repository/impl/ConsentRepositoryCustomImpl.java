@@ -2,12 +2,15 @@ package com.example.scanner.repository.impl;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
 import com.example.scanner.config.TenantContext;
+import com.example.scanner.constants.Constants;
 import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.entity.CookieConsent;
 import com.example.scanner.enums.VersionStatus;
 import com.example.scanner.repository.ConsentRepositoryCustom;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.logging.log4j.ThreadContext;
+import org.bson.types.ObjectId;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -122,5 +125,40 @@ public class ConsentRepositoryCustomImpl implements ConsentRepositoryCustom {
         } finally {
             TenantContext.clear();
         }
+    }
+
+    @Override
+    public Optional<CookieConsent> findById(String id, String tenantId) {
+        if (tenantId == null) {
+            throw new IllegalStateException("Tenant context is not set");
+        }
+
+        TenantContext.setCurrentTenant(tenantId);
+        try {
+            MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+
+            ObjectId objectId;
+            if (ObjectId.isValid(id)) {
+                objectId = new ObjectId(id);
+            } else {
+                throw new IllegalArgumentException("Invalid ObjectId: " + id);
+            }
+
+            Query query = new Query(Criteria.where("_id").is(objectId));
+
+            CookieConsent consent = tenantMongoTemplate.findOne(query, CookieConsent.class);
+            return Optional.ofNullable(consent);
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Override
+    public CookieConsent findLatestByCreatedAt() {
+        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(Constants.TENANT_ID_HEADER);
+        Query query = new Query();
+        query.with(Sort.by(Sort.Direction.DESC, "createdAt"));
+        query.limit(1);
+        return tenantMongoTemplate.findOne(query, CookieConsent.class);
     }
 }

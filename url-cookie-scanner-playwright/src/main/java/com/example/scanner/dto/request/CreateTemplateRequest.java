@@ -26,7 +26,7 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class CreateTemplateRequest {
 
-    @Schema(description = "Scan ID from completed cookie scan", example = "550e8400-e29b-41d4-a716-446655440000", required = true)
+    @Schema(description = "Scan ID from completed cookie scan", example = "550e8400-XXXXXX.......", required = true)
     @NotBlank(message = "Scan ID is required and must be from a completed scan")
     private String scanId;
 

@@ -84,7 +84,7 @@ public class CookieService {
             }
         }
 
-        log.info("Updating cookie '{}' for transactionId: {}", updateRequest.getName(), transactionId);
+        log.info("Updating cookie");
 
         try {
             // Find the scan result by transaction ID
@@ -105,9 +105,7 @@ public class CookieService {
             // Save the updated scan result
             saveScanResult(tenantId, scanResult, transactionId);
 
-            log.info("Successfully updated cookie '{}' for transactionId: {}. Category: {}, Description: {}, Domain: {}, PrivacyPolicyUrl: {}, Expires: {}",
-                    updateRequest.getName(), transactionId, updatedCookie.getCategory(), updatedCookie.getDescription(),
-                    updatedCookie.getDomain(), updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires());
+            log.info("Successfully updated cookie");
 
             // Return updated response with all fields
             return CookieUpdateResponse.success(transactionId, updateRequest.getName(),
@@ -115,21 +113,14 @@ public class CookieService {
                     updatedCookie.getPrivacyPolicyUrl(), updatedCookie.getExpires(), updatedCookie.getProvider());
 
         } catch (TransactionNotFoundException e) {
-            log.warn("Transaction not found for cookie update: {}", transactionId);
-            throw e; // Re-throw as-is
+            throw e;
         } catch (CookieNotFoundException e) {
-            log.warn("Cookie not found for update: {}", e.getMessage());
-            throw e; // Re-throw as-is
+            throw e;
         } catch (UrlValidationException e) {
-            // FIXED: Don't wrap UrlValidationException - let it bubble up with correct message
-            log.warn("Validation error during cookie update: {}", e.getMessage());
-            throw e; // Re-throw as-is
+            throw e;
         } catch (DataAccessException e) {
-            log.error("Database error during cookie update for transactionId: {}", transactionId, e);
             throw new ScanExecutionException("Database error during cookie update: " + e.getMessage());
         } catch (Exception e) {
-            log.error("Unexpected error updating cookie '{}' for transactionId: {}",
-                    updateRequest.getName(), transactionId, e);
             throw new ScanExecutionException("Unexpected error during cookie update: " + e.getMessage());
         }
     }
@@ -148,7 +139,6 @@ public class CookieService {
 
     private void validateScanStatus(ScanResultEntity scanResult, String transactionId) throws UrlValidationException {
         if (!"COMPLETED".equals(scanResult.getStatus())) {
-            log.warn("Invalid scan status for transactionId {}: {}", transactionId, scanResult.getStatus());
             throw new UrlValidationException(ErrorCodes.INVALID_STATE_ERROR,
                     "Scan must be completed before updating cookies. Current status: " + scanResult.getStatus(),
                     "Scan status validation failed for transactionId: " + transactionId + ", current status: " + scanResult.getStatus()
@@ -166,7 +156,7 @@ public class CookieService {
         }
 
         if (allCookies.isEmpty()) {
-            log.warn("No cookies available for update in transactionId: {}", transactionId);
+            log.warn("No cookies available for update in");
             throw new UrlValidationException(ErrorCodes.NO_COOKIES_FOUND,
                     "No cookies available for this transaction",
                     "Cookie list validation failed: transaction " + transactionId + " has null or empty cookie list"
@@ -179,7 +169,7 @@ public class CookieService {
                 .findFirst();
 
         if (cookieToUpdate.isEmpty()) {
-            log.warn("Cookie '{}' not found in transactionId: {}", updateRequest.getName(), transactionId);
+            log.warn("Cookie not found in transactionId");
             throw new CookieNotFoundException(updateRequest.getName(), transactionId);
         }
 
@@ -220,12 +210,6 @@ public class CookieService {
             cookie.setProvider(updateRequest.getProvider());
         }
 
-        log.debug("Updated cookie '{}': Category {} -> {}, Description {} -> {}, Domain {} -> {}, PrivacyPolicyUrl {} -> {}, Expires {} -> {}, Provider {} -> {}",
-                updateRequest.getName(), oldCategory, cookie.getCategory(),
-                oldDescription, cookie.getDescription(), oldDomain, cookie.getDomain(),
-                oldPrivacyPolicyUrl, cookie.getPrivacyPolicyUrl(), oldExpires, cookie.getExpires(),
-                oldProvider, cookie.getProvider());
-
         return cookie;
     }
 
@@ -261,7 +245,7 @@ public class CookieService {
             throw new IllegalArgumentException("Invalid 'expires' — must be a future time");
         }
 
-        log.info("Adding cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);
+        log.info("Adding cookie");
 
         try {
             // Find the scan result by transaction ID
@@ -319,21 +303,18 @@ public class CookieService {
             // Save the updated scan result
             saveScanResult(tenantId, scanResult, transactionId);
 
-            log.info("Successfully added cookie '{}' to transactionId: {}", addRequest.getName(), transactionId);
+            log.info("Successfully added cookie to transactionId");
 
             return AddCookieResponse.success(transactionId, addRequest.getName(),
                     addRequest.getDomain(), subdomainName, addRequest.getProvider());
 
         } catch (TransactionNotFoundException | UrlValidationException e) {
-            log.warn("Validation failed for adding cookie '{}' to transactionId: {}: {}",
-                    addRequest.getName(), transactionId, e.getMessage());
+            log.warn("Validation failed for adding cookie");
             throw e;
         } catch (DataAccessException e) {
-            log.error("Database error during cookie addition for transactionId: {}", transactionId, e);
+            log.error("Database error during cookie addition");
             throw new ScanExecutionException("Database error during cookie addition: " + e.getMessage());
         } catch (Exception e) {
-            log.error("Unexpected error adding cookie '{}' to transactionId: {}",
-                    addRequest.getName(), transactionId, e);
             throw new ScanExecutionException("Unexpected error during cookie addition: " + e.getMessage());
         }
     }
@@ -358,8 +339,7 @@ public class CookieService {
                 );
             }
 
-            log.debug("Cookie domain validation passed: {} belongs to scan domain {}",
-                    cookieDomain, scanRootDomain);
+            log.debug("Cookie domain validation passed");
 
         } catch (Exception e) {
             throw new UrlValidationException(ErrorCodes.INVALID_FORMAT_ERROR,
@@ -387,7 +367,7 @@ public class CookieService {
             );
         }
 
-        log.debug("Subdomain validation passed: {} exists in scan", subdomainName);
+        log.debug("Subdomain validation passed");
     }
 
     private boolean cookieExistsInSubdomain(ScanResultEntity scanResult, AddCookieRequest addRequest, String subdomainName) {
@@ -460,7 +440,6 @@ public class CookieService {
         // Add the cookie
         subdomainCookies.add(cookie);
 
-        log.debug("Added cookie '{}' to subdomain '{}'. Subdomain now has {} cookies.",
-                cookie.getName(), subdomainName, subdomainCookies.size());
+        log.debug("Added cookie to subdomain.");
     }
 }

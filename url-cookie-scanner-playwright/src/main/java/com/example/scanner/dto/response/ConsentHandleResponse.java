@@ -16,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class ConsentHandleResponse {
     @Schema(
             description = "Unique consent handle ID - use this in consent creation",
-            example = "handle_123e4567-e89b-12d3-a456-426614174000"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX..."
     )
     private String consentHandleId;
     @Schema(
@@ -26,7 +26,7 @@ public class ConsentHandleResponse {
     private String message;
     @Schema(
             description = "Transaction ID from request header",
-            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX....."
     )
     private String txnId;
 

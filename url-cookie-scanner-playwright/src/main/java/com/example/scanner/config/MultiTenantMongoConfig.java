@@ -35,7 +35,7 @@ public class MultiTenantMongoConfig extends AbstractMongoClientConfiguration {
     @Bean
     @Override
     public MongoClient mongoClient() {
-        log.info("Connecting to MongoDB using URI: {}", mongoUri);
+        log.info("Connecting to MongoDB");
         return MongoClients.create(mongoUri);
     }
 
@@ -65,7 +65,7 @@ public class MultiTenantMongoConfig extends AbstractMongoClientConfiguration {
      */
     public MongoTemplate getMongoTemplateForTenant(String tenantId) {
         String dbName = tenantDatabasePrefix + tenantId;
-        log.info("Getting MongoTemplate for tenantId: {} using database: {}", tenantId, dbName);
+        log.info("Getting MongoTemplate");
         MongoDatabaseFactory factory = new SimpleMongoClientDatabaseFactory(mongoClient(), dbName);
         return new MongoTemplate(factory);
     }

@@ -7,6 +7,9 @@ import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Status;
 import com.example.scanner.enums.VersionStatus;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -59,7 +62,6 @@ public class ConsentUtil {
         newVersion.setStartDate(now);
         newVersion.setCreatedAt(Instant.now());
         newVersion.setUpdatedAt(Instant.now());
-        newVersion.setClassName("com.example.scanner.entity.Consent");
 
         // Calculate new end date based on preferences
         newVersion.setEndDate(calculateConsentEndDate(newVersion.getPreferences()));
@@ -115,5 +117,31 @@ public class ConsentUtil {
         // Business rule: All-reject scenario marks handle as REJECTED without creating consent
         // Therefore, if we're determining consent status, at least one preference is ACCEPTED
         return Status.ACTIVE;
+    }
+
+    /**
+     * Compute SHA-256 hash of a string
+     *
+     * @param input The string to hash
+     * @return SHA-256 hash as hexadecimal string
+     */
+    public static String computeSHA256Hash(String input) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+
+            // Convert bytes to hexadecimal string
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hashBytes) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("Failed to compute SHA-256 hash", e);
+        }
     }
 }

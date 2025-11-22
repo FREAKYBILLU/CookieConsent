@@ -1,6 +1,7 @@
 package com.example.scanner.service;
 
 import com.example.scanner.client.VaultClient;
+import com.example.scanner.dto.response.EncryptPayloadResponse;
 import com.example.scanner.dto.response.VaultVerifyResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -27,5 +28,11 @@ public class VaultService {
     public VaultVerifyResponse verifyJwtToken(String jwt, String tenantId, String businessId) {
         log.info("Verifying JWT token via vault service");
         return vaultClient.verifyToken(jwt, tenantId, businessId);
+    }
+
+
+    public EncryptPayloadResponse encryptPayload(String tenantId, String businessId, String dataCategoryType, String dataCategoryValue, String dataString) {
+        log.info("Encrypting payload via vault service");
+        return vaultClient.encryptPayload(tenantId, businessId, dataCategoryType, dataCategoryValue, dataString);
     }
 }

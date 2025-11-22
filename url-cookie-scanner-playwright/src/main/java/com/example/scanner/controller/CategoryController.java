@@ -72,12 +72,9 @@ public class CategoryController {
             )
             @Valid @RequestBody AddCookieCategoryRequest request) {
 
-        log.info("Received add category request for tenant: {} with category: {}",
-                tenantId, request.getCategory());
 
         // Validate tenant ID
         if (tenantId == null || tenantId.trim().isEmpty()) {
-            log.error("Tenant ID is missing or empty");
             CookieCategoryResponse errorResponse = CookieCategoryResponse.builder()
                     .success(false)
                     .message("Tenant ID is required in header")
@@ -138,12 +135,8 @@ public class CategoryController {
             )
             @Valid @RequestBody UpdateCookieCategoryRequest request) {
 
-        log.info("Received update category request for tenant: {} with category: {}",
-                tenantId, request.getCategory());
-
         // Validate tenant ID
         if (tenantId == null || tenantId.trim().isEmpty()) {
-            log.error("Tenant ID is missing or empty");
             CookieCategoryResponse errorResponse = CookieCategoryResponse.builder()
                     .success(false)
                     .message("Tenant ID is required in header")

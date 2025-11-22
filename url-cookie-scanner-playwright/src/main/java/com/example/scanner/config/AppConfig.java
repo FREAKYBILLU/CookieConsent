@@ -29,33 +29,38 @@ public class AppConfig {
   @Bean
   @Primary
   public ObjectMapper objectMapper() {
-    ObjectMapper m = new ObjectMapper();
+      ObjectMapper m = new ObjectMapper();
 
-    // Configure JavaTimeModule for proper timestamp handling
-    JavaTimeModule timeModule = new JavaTimeModule();
-    m.registerModule(timeModule);
+      // Configure JavaTimeModule for proper timestamp handling
+      JavaTimeModule timeModule = new JavaTimeModule();
+      m.registerModule(timeModule);
 
-    // CRITICAL: Disable timestamps to get ISO-8601 formatted strings
-    m.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+      // CRITICAL: Disable timestamps to get ISO-8601 formatted strings
+      m.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
-    // ADDITIONAL: Set specific date format if needed
-    m.setDateFormat(new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ"));
+      m.disable(SerializationFeature.WRITE_DATE_TIMESTAMPS_AS_NANOSECONDS);
 
-    // Add duplicate key detection
-    m.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION, true);
+      // Set specific date format
+      m.setDateFormat(new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS"));
 
-    // Optional: Other useful security/validation configurations
-    m.configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, true);
+      // Add duplicate key detection
+      m.configure(JsonParser.Feature.STRICT_DUPLICATE_DETECTION, true);
+
+      // Optional: Other useful security/validation configurations
+      m.configure(DeserializationFeature.FAIL_ON_NULL_FOR_PRIMITIVES, true);
       m.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true);
 
-    // IMPORTANT: Configure serialization inclusion
-    m.setDefaultPropertyInclusion(
-            com.fasterxml.jackson.annotation.JsonInclude.Value.construct(
-                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL,
-                    com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL
-            )
-    );
 
-    return m;
+      m.configure(DeserializationFeature.READ_DATE_TIMESTAMPS_AS_NANOSECONDS, false);
+
+      // IMPORTANT: Configure serialization inclusion
+      m.setDefaultPropertyInclusion(
+              com.fasterxml.jackson.annotation.JsonInclude.Value.construct(
+                      com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL,
+                      com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL
+              )
+      );
+
+      return m;
   }
 }

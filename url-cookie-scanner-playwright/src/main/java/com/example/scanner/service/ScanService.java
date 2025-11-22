@@ -1,6 +1,7 @@
 package com.example.scanner.service;
 
 import com.example.scanner.config.MultiTenantMongoConfig;
+import com.example.scanner.constants.AuditConstants;
 import com.example.scanner.constants.ErrorCodes;
 import com.example.scanner.dto.response.CookieCategorizationResponse;
 import com.example.scanner.dto.CookieDto;
@@ -132,7 +133,9 @@ public class ScanService {
 
             String transactionId = UUID.randomUUID().toString();
 
-            auditService.logCookieScanInitiated(tenantId, transactionId);
+            Map<String, Object> context = new HashMap<>();
+            context.put(AuditConstants.RESOURCE_COOKIE_SCAN_ID,transactionId);
+            auditService.logCookieScanInitiated(tenantId, transactionId, context);
 
             ScanResultEntity result = new ScanResultEntity();
             result.setId(transactionId);
@@ -176,7 +179,9 @@ public class ScanService {
             result.setStatus(ScanStatus.RUNNING.name());
             saveScanResultToTenant(tenantId, result);
 
-            auditService.logCookieScanStarted(tenantId, transactionId);
+            Map<String, Object> context = new HashMap<>();
+            context.put(AuditConstants.RESOURCE_COOKIE_SCAN_ID, transactionId);
+            auditService.logCookieScanStarted(tenantId, transactionId, context);
 
             scanMetrics.setScanPhase("RUNNING");
             performMaximumCookieDetection(url, transactionId, scanMetrics, subdomains, tenantId);
@@ -199,7 +204,9 @@ public class ScanService {
             scanMetrics.markFailed(e.getMessage());
             scanMetrics.setScanPhase("FAILED");
 
-            auditService.logCookieScanFailed(tenantId, transactionId);
+            Map<String, Object> context = new HashMap<>();
+            context.put(AuditConstants.RESOURCE_COOKIE_SCAN_ID, transactionId);
+            auditService.logCookieScanFailed(tenantId, transactionId, context);
 
             Duration totalDuration = Duration.ofMillis(System.currentTimeMillis() - scanStartTime);
 
@@ -593,7 +600,7 @@ public class ScanService {
             String siteRoot = UrlAndCookieUtil.extractRootDomain(scanUrl);
             List<Cookie> browserCookies = context.cookies();
 
-           log.info("=== CAPTURING {} browser cookies ===", browserCookies.size());
+            log.info("=== CAPTURING {} browser cookies ===", browserCookies.size());
             List<CookieDto> cookiesToSave = new ArrayList<>();
 
             for (Cookie playwrightCookie : browserCookies) {

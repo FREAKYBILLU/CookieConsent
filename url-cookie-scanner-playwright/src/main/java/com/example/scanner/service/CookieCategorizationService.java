@@ -65,7 +65,7 @@ public class CookieCategorizationService {
         }
 
         try {
-            log.info("Starting categorization for {} cookies", cookieNames.size());
+            log.info("Starting categorization");
 
             // Check cache first
             Map<String, CookieCategorizationResponse> cachedResults = getCachedResults(cookieNames);
@@ -76,7 +76,7 @@ public class CookieCategorizationService {
             Map<String, CookieCategorizationResponse> apiResults = Collections.emptyMap();
 
             if (!uncachedCookies.isEmpty()) {
-                log.debug("Fetching categorization for {} uncached cookies", uncachedCookies.size());
+                log.debug("Fetching categorization uncached cookies");
 
                 if (useExternalApi) {
                     apiResults = callCategorizationApiWithRetry(uncachedCookies);
@@ -85,8 +85,7 @@ public class CookieCategorizationService {
                 }
 
                 if (!apiResults.isEmpty()) {
-                    log.info("Validating {} predicted categories against Category table for tenant: {}",
-                            apiResults.size(), tenantId);
+                    log.info("Validating predicted categories against Category table");
 
                     Map<String, CookieCategorizationResponse> validatedResults = new ConcurrentHashMap<>();
 
@@ -102,8 +101,7 @@ public class CookieCategorizationService {
                         response.setCategory(validatedCategory);
 
                         if (!predictedCategory.equals(validatedCategory)) {
-                            log.info("Cookie '{}': Mapped predicted category '{}' to '{}'",
-                                    cookieName, predictedCategory, validatedCategory);
+                            log.info("Predicted category is not equals to validated category");
                         }
 
                         validatedResults.put(cookieName, response);
@@ -122,13 +120,12 @@ public class CookieCategorizationService {
             Map<String, CookieCategorizationResponse> allResults = new ConcurrentHashMap<>(cachedResults);
             allResults.putAll(apiResults);
 
-            log.info("Successfully categorized {} out of {} cookies ({} from cache, {} from API)",
-                    allResults.size(), cookieNames.size(), cachedResults.size(), apiResults.size());
+            log.info("Successfully categorized cookies from API)");
 
             return allResults;
 
         } catch (Exception e) {
-            log.error("Cookie categorization service failed: {}", e.getMessage(), e);
+            log.error("Cookie categorization service failed");
             throw new CookieCategorizationException("Cookie categorization service is unavailable: " + e.getMessage());
         }
     }
@@ -146,15 +143,13 @@ public class CookieCategorizationService {
             )
     )
     public Map<String, CookieCategorizationResponse> callCategorizationApiWithRetry(List<String> cookieNames) throws CookieCategorizationException {
-        log.debug("Calling categorization API for cookies: {}", cookieNames);
+        log.debug("Calling categorization API for cookies");
 
         Instant startTime = Instant.now();
 
         try {
             // Prepare request
             CookieCategorizationRequest request = new CookieCategorizationRequest(cookieNames);
-            log.debug("API Request payload: {}", request);
-
             // Set headers
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
@@ -172,15 +167,12 @@ public class CookieCategorizationService {
             );
 
             Duration callDuration = Duration.between(startTime, Instant.now());
-            log.info("API call completed successfully in {}ms", callDuration.toMillis());
+            log.info("API call completed successfully");
 
             return parseApiResponse(response);
 
         } catch (ResourceAccessException e) {
             Duration callDuration = Duration.between(startTime, Instant.now());
-            log.error("API TIMEOUT after {}ms. Target: {}. Error: {}",
-                    callDuration.toMillis(), categorizationApiUrl, e.getMessage());
-
             if (e.getMessage() != null && e.getMessage().toLowerCase().contains("timeout")) {
                 log.error("CONFIRMED: Read timeout occurred. External API is taking too long to respond.");
             }
@@ -188,15 +180,11 @@ public class CookieCategorizationService {
 
         } catch (HttpServerErrorException e) {
             Duration callDuration = Duration.between(startTime, Instant.now());
-            log.error("API returned server error after {}ms. Status: {}, Response: {}",
-                    callDuration.toMillis(), e.getStatusCode(), e.getResponseBodyAsString());
             throw e;
 
         } catch (Exception e) {
             Duration callDuration = Duration.between(startTime, Instant.now());
-            log.error("API call failed after {}ms: {} - {}",
-                    callDuration.toMillis(), e.getClass().getSimpleName(), e.getMessage());
-            throw e;
+           throw e;
         }
     }
 
@@ -217,9 +205,6 @@ public class CookieCategorizationService {
             }
         }
 
-        if (!cachedResults.isEmpty()) {
-            log.debug("Retrieved {} cached results out of {} requested cookies", cachedResults.size(), cookieNames.size());
-        }
         return cachedResults;
     }
 
@@ -230,9 +215,6 @@ public class CookieCategorizationService {
             }
 
             String responseBody = response.getBody();
-            log.debug("Raw API response (length: {}): {}",
-                    responseBody != null ? responseBody.length() : 0,
-                    responseBody != null && responseBody.length() > 200 ? responseBody.substring(0, 200) + "..." : responseBody);
 
             if (responseBody == null || responseBody.trim().isEmpty()) {
                 throw new CookieCategorizationException("External categorization API returned empty response");
@@ -243,7 +225,7 @@ public class CookieCategorizationService {
                     new TypeReference<List<CookieCategorizationResponse>>() {}
             );
 
-            log.debug("Successfully parsed {} categorization responses from API", responses.size());
+            log.debug("Successfully parsed categorization responses from API");
 
             Map<String, CookieCategorizationResponse> resultMap = responses.stream()
                     .filter(resp -> resp != null && resp.getName() != null)
@@ -253,11 +235,11 @@ public class CookieCategorizationService {
                             (existing, replacement) -> existing
                     ));
 
-            log.debug("Mapped {} valid responses to cookie names", resultMap.size());
+            log.debug("Mapped valid responses to cookie names");
             return resultMap;
 
         } catch (Exception e) {
-            log.error("Error parsing API response: {}", e.getMessage(), e);
+            log.error("Error parsing API response");
             throw new CookieCategorizationException("Failed to parse categorization API response: " + e.getMessage(), e);
         }
     }
@@ -272,20 +254,15 @@ public class CookieCategorizationService {
             categorizationCache.put(entry.getKey(), cacheEntry);
         }
 
-        log.debug("Cached {} categorization results with TTL: {} minutes", results.size(), cacheTtlMinutes);
+        log.debug("Cached categorization results");
     }
 
     private void cleanExpiredEntries() {
         if (!cacheEnabled) return;
-
         Instant now = Instant.now();
-        int sizeBefore = categorizationCache.size();
         categorizationCache.entrySet().removeIf(entry -> !entry.getValue().isValid(now));
-        int sizeAfter = categorizationCache.size();
 
-        if (sizeBefore > sizeAfter) {
-            log.debug("Cleaned {} expired cache entries ({} -> {})", sizeBefore - sizeAfter, sizeBefore, sizeAfter);
-        }
+
     }
 
     private static class CacheEntry {
@@ -326,14 +303,12 @@ public class CookieCategorizationService {
                 .findFirst();
 
         if (match.isPresent()) {
-            log.info("Mapped predicted category '{}' to existing category '{}' (case difference)",
-                    predictedCategory, match.get());
+            log.info("Mapped predicted to existing category");
             return match.get();
         }
 
         // No match found - use default
-        log.warn("Predicted category '{}' not found in database for tenant {}. Using 'Others'",
-                predictedCategory, tenantId);
+        log.warn("Predicted category not found in database for tenant Using 'Others'");
         return "Others";
     }
 
@@ -357,7 +332,7 @@ public class CookieCategorizationService {
             results.put(cookieName, response);
         }
 
-        log.debug("CSV lookup: found {} out of {} cookies", results.size(), cookieNames.size());
+        log.debug("CSV lookup: found out of cookies");
         return results;
     }
 

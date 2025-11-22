@@ -1,6 +1,7 @@
 package com.example.scanner.dto.request;
 
 
+import com.example.scanner.enums.LANGUAGE;
 import com.example.scanner.enums.PreferenceStatus;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -22,17 +23,16 @@ import java.util.Map;
 public class CreateConsentRequest {
 
     @Schema(description = "Unique consent handle ID obtained from consent handle creation",
-            example = "d7cbde9d-c46b-4e8e-8fb7-0c143d77a013",
+            example = "dd77a013CXahuXXXXX....",
             required = true)
     @NotBlank(message = "Consent handle ID is required")
     private String consentHandleId;
 
     @Schema(description = "User's preferred language for consent display. Must match one of the supported languages in the template",
-            example = "ENGLISH",
             allowableValues = {"ASSAMESE", "BENGALI", "BODO", "DOGRI", "GUJARATI", "HINDI", "KANNADA", "KASHMIRI",
                     "KONKANI", "MAITHILI", "MALAYALAM", "MANIPURI", "MARATHI", "NEPALI", "ODIA",
                     "PUNJABI", "SANSKRIT", "SANTALI", "SINDHI", "TAMIL", "TELUGU", "URDU", "ENGLISH"})
-    private String languagePreference;
+    private LANGUAGE languagePreference;
 
     @Schema(
             description = "Map of category names",

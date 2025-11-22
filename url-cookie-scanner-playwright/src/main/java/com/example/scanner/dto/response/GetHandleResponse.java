@@ -21,13 +21,13 @@ import java.util.List;
 public class GetHandleResponse {
     @Schema(
             description = "Consent handle ID",
-            example = "handle_123e4567-e89b-12d3-a456-426614174000"
+            example = "handle_123e4567-......."
     )
     private String consentHandleId;
 
     @Schema(
             description = "Template ID associated with this handle",
-            example = "tpl_123e4567-e89b-12d3-a456-426614174000"
+            example = "tpl_123e4567-e89b-1XXXX..."
     )
     private String templateId;
 
@@ -51,7 +51,7 @@ public class GetHandleResponse {
 
     @Schema(
             description = "Business ID",
-            example = "0c092ed7-e99d-4ef7-8b1f-a3898e788832"
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX-e9XXX...."
     )
     private String businessId;
 

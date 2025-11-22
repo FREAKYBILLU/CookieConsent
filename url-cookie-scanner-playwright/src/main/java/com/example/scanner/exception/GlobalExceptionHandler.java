@@ -37,8 +37,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCircuitBreakerOpen(
             CallNotPermittedException ex, WebRequest request) {
 
-        log.error("Circuit breaker is OPEN - service unavailable: {}", ex.getMessage());
-
         ErrorResponse error = new ErrorResponse(
                 "R5031", // Service Unavailable - Circuit Breaker
                 "Service is temporarily unavailable due to high error rate. Please try again in a few minutes.",
@@ -55,8 +53,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RejectedExecutionException.class)
     public ResponseEntity<ErrorResponse> handleThreadPoolRejection(
             RejectedExecutionException ex, WebRequest request) {
-
-        log.error("Thread pool rejected execution - system overloaded: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 "R5032", // Service Unavailable - Thread Pool Full
@@ -75,8 +71,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleTimeout(
             TimeoutException ex, WebRequest request) {
 
-        log.error("Request timeout occurred: {}", ex.getMessage());
-
         ErrorResponse error = new ErrorResponse(
                 "R5033", // Service Unavailable - Timeout
                 "Request timed out. The server is taking too long to respond. Please try again later.",
@@ -91,8 +85,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(OutOfMemoryError.class)
     public ResponseEntity<ErrorResponse> handleOutOfMemory(
             OutOfMemoryError ex, WebRequest request) {
-
-        log.error("CRITICAL: Out of memory error occurred: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 "R5034", // Critical Error - Out of Memory
@@ -109,8 +101,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleStackOverflow(
             StackOverflowError ex, WebRequest request) {
 
-        log.error("CRITICAL: Stack overflow error occurred: {}", ex.getMessage());
-
         ErrorResponse error = new ErrorResponse(
                 "R5035", // Critical Error - Stack Overflow
                 "System encountered a processing error. Please contact support if this persists.",
@@ -124,7 +114,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(UrlValidationException.class)
     public ResponseEntity<ErrorResponse> handleUrlValidation(UrlValidationException ex, WebRequest request) {
-        log.warn("URL validation failed: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
@@ -151,7 +140,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(TransactionNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleTransactionNotFound(TransactionNotFoundException ex, WebRequest request) {
-        log.warn("Transaction not found: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
@@ -166,7 +154,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(ScanExecutionException.class)
     public ResponseEntity<ErrorResponse> handleScanExecution(ScanExecutionException ex, WebRequest request) {
-        log.error("Scan execution failed: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
@@ -181,7 +168,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CookieCategorizationException.class)
     public ResponseEntity<ErrorResponse> handleCategorization(CookieCategorizationException ex, WebRequest request) {
-        log.error("Cookie categorization failed: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
@@ -196,7 +182,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex, WebRequest request) {
-        log.warn("Validation failed: {}", ex.getMessage());
 
         Map<String, String> fieldErrors = new HashMap<>();
         ex.getBindingResult().getAllErrors().forEach(error -> {
@@ -222,7 +207,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(RestClientException.class)
     public ResponseEntity<ErrorResponse> handleRestClient(RestClientException ex, WebRequest request) {
-        log.error("External API call failed: {}", ex.getMessage(), ex);
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.EXTERNAL_SERVICE_ERROR,
@@ -237,7 +221,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex, WebRequest request) {
-        log.warn("Invalid argument: {}", ex.getMessage());
 
         ErrorResponse error = new ErrorResponse(
                 ErrorCodes.VALIDATION_ERROR,
@@ -252,7 +235,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponse> handleJsonParseError(HttpMessageNotReadableException ex, WebRequest request) {
-        log.warn("JSON parsing failed: {}", ex.getMessage());
 
         String userFriendlyMessage = "Invalid request format. Please check your JSON syntax.";
         String details = "JSON parsing error: " + ex.getMessage();
@@ -267,22 +249,18 @@ public class GlobalExceptionHandler {
                 userFriendlyMessage = "Duplicate keys detected in request. Each field must appear only once.";
                 details = "Duplicate JSON key found: " + jsonEx.getMessage();
                 errorCode = ErrorCodes.VALIDATION_ERROR;
-                log.warn("Duplicate key attack attempt detected: {}", jsonEx.getMessage());
             }
         }
-        // ✅ NEW: Check for empty enum string (TemplateStatus)
         else if (ex.getMessage() != null &&
                 ex.getMessage().contains("Cannot coerce empty String") &&
                 ex.getMessage().contains("TemplateStatus")) {
             userFriendlyMessage = "Invalid status value";
             details = "Status cannot be empty. Valid values are: DRAFT, PUBLISHED";
         }
-        // ✅ NEW: Check for invalid enum value
         else if (ex.getMessage() != null && ex.getMessage().contains("TemplateStatus")) {
             userFriendlyMessage = "Invalid status value";
             details = "Status must be one of: DRAFT, PUBLISHED";
         }
-        // Your existing specific error handling
         else if (ex.getMessage().contains("Boolean")) {
             userFriendlyMessage = "Invalid boolean value. Use true or false only.";
         } else if (ex.getMessage().contains("Unrecognized token")) {
@@ -292,7 +270,6 @@ public class GlobalExceptionHandler {
         else if (ex.getMessage() != null && ex.getMessage().toLowerCase().contains("duplicate")) {
             userFriendlyMessage = "Duplicate keys detected in request. Each field must appear only once.";
             details = "Duplicate JSON key detected in request body";
-            log.warn("Duplicate key attack attempt detected: {}", ex.getMessage());
         }
 
         ErrorResponse error = new ErrorResponse(
@@ -310,9 +287,6 @@ public class GlobalExceptionHandler {
             org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex,
             WebRequest request) {
 
-        log.warn("SECURITY: Path variable validation error - {} for request: {}",
-                ex.getMessage(), request.getDescription(false));
-
         String paramName = ex.getName();
         String paramValue = String.valueOf(ex.getValue());
 
@@ -325,10 +299,6 @@ public class GlobalExceptionHandler {
         // Enhanced security detection for transaction ID
         if ("transactionId".equals(paramName)) {
             userMessage = "Invalid transaction ID format. Transaction ID must be a valid UUID.";
-
-            // Log security attempt
-            log.warn("SECURITY ALERT: Invalid transaction ID attempt - value: {} from request: {}",
-                    paramValue, request.getDescription(false));
         }
 
         ErrorResponse error = new ErrorResponse(
@@ -349,8 +319,6 @@ public class GlobalExceptionHandler {
             jakarta.validation.ConstraintViolationException ex,
             WebRequest request) {
 
-        log.warn("Constraint violation: {}", ex.getMessage());
-
         String violations = ex.getConstraintViolations().stream()
                 .map(violation -> violation.getPropertyPath() + ": " + violation.getMessage())
                 .collect(Collectors.joining(", "));
@@ -370,8 +338,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleMethodNotSupported(
             HttpRequestMethodNotSupportedException ex,
             WebRequest request) {
-
-        log.warn("Method not supported: {} for {}", ex.getMethod(), request.getDescription(false));
 
         // Get supported methods
         String supportedMethods = ex.getSupportedHttpMethods() != null
@@ -408,11 +374,9 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleGeneral(Exception ex, WebRequest request) {
         // Track error patterns to identify potential DoS attacks
         String clientInfo = extractClientInfo(request);
-        log.error("Unexpected error from client {}: {}", clientInfo, ex.getMessage(), ex);
 
         // Check if this might be a resource exhaustion attack
         if (isResourceExhaustionPattern(ex)) {
-            log.warn("Potential resource exhaustion attack detected from client: {}", clientInfo);
 
             ErrorResponse error = new ErrorResponse(
                     "R5036", // Resource Exhaustion Protection
@@ -515,8 +479,6 @@ public class GlobalExceptionHandler {
             ConsentException ex,
             WebRequest request) {
 
-        log.warn("Consent operation failed: {} - {}", ex.getErrorCode(), ex.getUserMessage());
-
         ErrorResponse error = new ErrorResponse(
                 ex.getErrorCode(),
                 ex.getUserMessage(),
@@ -567,7 +529,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(CategoryUpdateException.class)
     public ResponseEntity<ErrorResponse> handleCategoryUpdate(CategoryUpdateException ex, WebRequest request) {
-        log.error("Category update failed: {}", ex.getMessage());
 
         HttpStatus status = switch (ex.getErrorCode()) {
             case ErrorCodes.CATEGORY_NOT_FOUND -> HttpStatus.NOT_FOUND;

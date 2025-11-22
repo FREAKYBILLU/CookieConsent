@@ -50,7 +50,7 @@ public class CookieDetectionUtil {
                         break;
                     }
                 } catch (Exception e) {
-                    log.debug("Failed to click selector '{}': {}", selector, e.getMessage());
+                    log.debug("Failed to click selector '{}'", selector);
                 }
             }
 
@@ -77,12 +77,12 @@ public class CookieDetectionUtil {
                         }
                     }
                 } catch (Exception e) {
-                    log.debug("Fallback consent handling failed: {}", e.getMessage());
+                    log.debug("Fallback consent handling failed");
                 }
             }
 
         } catch (Exception e) {
-            log.warn("Error during consent banner handling: {}", e.getMessage());
+            log.warn("Error during consent banner handling");
         }
 
         log.info("Consent banner handling result: {}", consentHandled);

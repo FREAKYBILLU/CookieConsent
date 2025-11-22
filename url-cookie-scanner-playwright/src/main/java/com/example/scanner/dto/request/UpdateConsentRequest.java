@@ -1,5 +1,6 @@
 package com.example.scanner.dto.request;
 
+import com.example.scanner.enums.LANGUAGE;
 import com.example.scanner.enums.PreferenceStatus;
 import com.example.scanner.enums.Status;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
@@ -22,16 +23,15 @@ import java.util.Map;
 public class UpdateConsentRequest {
 
     @Schema(description = "Consent handle ID for this update operation",
-            example = "handle_123e4567-e89b-12d3-a456-426614174000", required = true)
+            example = "handle_123e4-XXXXXX.......", required = true)
     @NotNull(message = "Consent handle ID is required for updates")
     private String consentHandleId;
 
     @Schema(
             description = "Updated language preference - must be one of LANGUAGE enum values",
-            example = "HINDI",
             allowableValues = {"ASSAMESE", "BENGALI", "BODO", "DOGRI", "GUJARATI", "HINDI", "KANNADA", "KASHMIRI", "KONKANI", "MAITHILI", "MALAYALAM", "MANIPURI", "MARATHI", "NEPALI", "ODIA", "PUNJABI", "SANSKRIT", "SANTALI", "SINDHI", "TAMIL", "TELUGU", "URDU", "ENGLISH"}
     )
-    private String languagePreference;
+    private LANGUAGE languagePreference;
 
     @Schema(
             description = "Map of category names",
@@ -41,8 +41,7 @@ public class UpdateConsentRequest {
 
     @Schema(
             description = "Optional status to revoke consent. Only REVOKED is allowed. When provided, only the status is updated without creating a new version.",
-            allowableValues = {"REVOKED"},
-            example = "REVOKED"
+            allowableValues = {"REVOKED"}
     )
     private Status status;
 

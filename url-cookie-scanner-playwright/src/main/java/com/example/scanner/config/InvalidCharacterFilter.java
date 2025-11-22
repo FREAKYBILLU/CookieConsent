@@ -58,8 +58,7 @@ public class InvalidCharacterFilter implements Filter {
             if (isStatusEndpoint(requestURI)) {
                 String transactionId = extractTransactionId(requestURI);
                 if (transactionId != null && !isValidTransactionId(transactionId)) {
-                    log.warn("SECURITY: Invalid transaction ID format blocked: {} from IP: {}",
-                            transactionId, getClientIpAddress(httpRequest));
+                    log.warn("SECURITY: Invalid transaction ID format blocked");
                     handleInvalidTransactionId(httpRequest, httpResponse, requestURI, transactionId);
                     return;
                 }
@@ -67,8 +66,7 @@ public class InvalidCharacterFilter implements Filter {
 
             // Check if URI contains other invalid characters
             if (INVALID_CHAR_PATTERN.matcher(requestURI).find()) {
-                log.warn("SECURITY: Request with invalid characters blocked: {} from IP: {}",
-                        requestURI, getClientIpAddress(httpRequest));
+                log.warn("SECURITY: Request with invalid characters blocked");
                 handleInvalidCharacters(httpRequest, httpResponse, requestURI);
                 return;
             }
@@ -103,7 +101,7 @@ public class InvalidCharacterFilter implements Filter {
                 }
             }
         } catch (Exception e) {
-            log.debug("Error extracting transaction ID from URI: {}", requestURI);
+            log.debug("Error extracting transaction ID");
         }
         return null;
     }

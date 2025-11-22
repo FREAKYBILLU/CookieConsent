@@ -21,11 +21,11 @@ import java.time.LocalDateTime;
 public class UpdateConsentResponse {
 
     @Schema(description = "Logical consent ID (same across versions)",
-            example = "cst_123e4567-e89b-12d3-a456-426614174000")
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX-XXX....")
     private String consentId;
 
     @Schema(description = "New document ID for this version",
-            example = "507f1f77bcf86cd799439011")
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX.....")
     private String newVersionId;
 
     @Schema(description = "New version number", example = "2")
@@ -57,9 +57,13 @@ public class UpdateConsentResponse {
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
     private Instant updatedAt;
 
+    @Schema(description = "JWS token from vault service for consent verification (NOT stored in DB)",
+            example = "eyXXX.EXAMPLE-TOKEN-NOT-REAL.xxxXXX.....")
+    private String jwsToken;
+
     public static UpdateConsentResponse success(String consentId, String newVersionId,
                                                 Integer newVersion, Integer previousVersion,
-                                                String jwtToken, LocalDateTime expiry) {
+                                                String jwtToken, LocalDateTime expiry, String jwsToken) {
         return UpdateConsentResponse.builder()
                 .consentId(consentId)
                 .newVersionId(newVersionId)
@@ -69,6 +73,7 @@ public class UpdateConsentResponse {
                 .consentExpiry(expiry)
                 .message("Consent updated successfully. New version " + newVersion + " created.")
                 .updatedAt(Instant.now())
+                .jwsToken(jwsToken)
                 .build();
     }
 }

@@ -77,18 +77,7 @@ public class ConsentHandleController {
             @RequestHeader("X-Tenant-ID") String tenantId,
             @Valid @org.springframework.web.bind.annotation.RequestBody CreateHandleRequest request,
             @RequestHeader Map<String, String> headers) throws ScannerException {
-
-        log.info("Creating consent handle for templateId: {}, customer: {}, tenant: {}",
-                request.getTemplateId(), request.getCustomerIdentifiers().getValue(), tenantId);
-
         ConsentHandleResponse response = this.consentHandleService.createConsentHandle(tenantId, request, headers);
-
-        log.info("Successfully {} consent handle: {} for transaction: {} and tenant: {}",
-                response.isNewHandle() ? "created" : "returned existing",
-                response.getConsentHandleId(),
-                headers.get(Constants.TXN_ID),
-                tenantId);
-
         HttpStatus status = response.isNewHandle() ? HttpStatus.CREATED : HttpStatus.OK;
         return new ResponseEntity<>(response, status);
     }
@@ -135,13 +124,7 @@ public class ConsentHandleController {
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable("consentHandleId") String consentHandleId,
             @RequestHeader Map<String, String> headers) throws ScannerException {
-
-        log.info("Retrieving consent handle: {} for tenant: {}", consentHandleId, tenantId);
-
         GetHandleResponse response = this.consentHandleService.getConsentHandleById(consentHandleId, tenantId);
-
-        log.info("Successfully retrieved consent handle: {} for tenant: {}", consentHandleId, tenantId);
-
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
 }
