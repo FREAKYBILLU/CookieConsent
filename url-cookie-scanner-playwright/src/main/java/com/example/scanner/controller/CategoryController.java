@@ -9,6 +9,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
@@ -40,40 +41,57 @@ public class CategoryController {
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Add a new cookie category",
-            description = "Creates a new cookie category for the specified tenant"
+            description = """
+                Creates a new cookie category for the specified tenant.
+                
+                Error Codes: R4001 (Validation error), R4009 (Category exists), R5000 (Internal error)
+                """
     )
     @ApiResponses(value = {
             @ApiResponse(
                     responseCode = "201",
                     description = "Category created successfully",
-                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CookieCategoryResponse.class),
+                            examples = @ExampleObject(value = """
+                                {"success": true, "message": "Category added successfully", "categoryName": "Analytics"}
+                                """)
+                    )
             ),
             @ApiResponse(
                     responseCode = "400",
                     description = "Bad request - validation failed or category already exists",
-                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CookieCategoryResponse.class),
+                            examples = @ExampleObject(value = """
+                                {"success": false, "message": "Category already exists", "errorCode": "R4009"}
+                                """)
+                    )
             ),
             @ApiResponse(
                     responseCode = "500",
                     description = "Internal server error",
-                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CookieCategoryResponse.class),
+                            examples = @ExampleObject(value = """
+                                {"success": false, "message": "Internal server error", "errorCode": "R5000"}
+                                """)
+                    )
             )
     })
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            content = @Content(
+                    schema = @Schema(implementation = AddCookieCategoryRequest.class),
+                    examples = @ExampleObject(value = """
+                        {"categoryName": "Analytics", "description": "Cookies for analytics"}
+                        """)
+            )
+    )
     public ResponseEntity<CookieCategoryResponse> addCategory(
-            @Parameter(
-                    description = "Tenant ID for multi-tenant support",
-                    required = true,
-                    example = "tenant-123"
-            )
+            @Parameter(description = "Tenant ID", required = true, example = "cst_123e4567-e89b-XXX....")
             @RequestHeader(value = "X-Tenant-ID", required = true) String tenantId,
-            @Parameter(
-                    description = "Cookie category details to be added",
-                    required = true
-            )
             @Valid @RequestBody AddCookieCategoryRequest request) {
 
-
-        // Validate tenant ID
         if (tenantId == null || tenantId.trim().isEmpty()) {
             CookieCategoryResponse errorResponse = CookieCategoryResponse.builder()
                     .success(false)
@@ -82,10 +100,8 @@ public class CategoryController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
 
-        // Process the request
         CookieCategoryResponse response = categoryService.addCategory(request, tenantId);
 
-        // Return appropriate response based on success
         if (response.isSuccess()) {
             return ResponseEntity.status(HttpStatus.CREATED).body(response);
         } else {
@@ -98,13 +114,22 @@ public class CategoryController {
             consumes = MediaType.APPLICATION_JSON_VALUE)
     @Operation(
             summary = "Update an existing cookie category",
-            description = "Updates the description of an existing cookie category for the specified tenant"
+            description = """
+                Updates the description of an existing cookie category for the specified tenant.
+                
+                Error Codes: R4001 (Validation error), R4041 (Not found), R5000 (Internal error)
+                """
     )
     @ApiResponses(value = {
             @ApiResponse(
                     responseCode = "200",
                     description = "Category updated successfully",
-                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CookieCategoryResponse.class),
+                            examples = @ExampleObject(value = """
+                                {"success": true, "message": "Category updated successfully"}
+                                """)
+                    )
             ),
             @ApiResponse(
                     responseCode = "400",
@@ -114,7 +139,12 @@ public class CategoryController {
             @ApiResponse(
                     responseCode = "404",
                     description = "Category not found",
-                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CookieCategoryResponse.class),
+                            examples = @ExampleObject(value = """
+                                {"success": false, "message": "Category not found", "errorCode": "R4041"}
+                                """)
+                    )
             ),
             @ApiResponse(
                     responseCode = "500",
@@ -122,20 +152,19 @@ public class CategoryController {
                     content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
             )
     })
+    @io.swagger.v3.oas.annotations.parameters.RequestBody(
+            content = @Content(
+                    schema = @Schema(implementation = UpdateCookieCategoryRequest.class),
+                    examples = @ExampleObject(value = """
+                        {"categoryName": "Analytics", "description": "Updated description"}
+                        """)
+            )
+    )
     public ResponseEntity<CookieCategoryResponse> updateCookieCategory(
-            @Parameter(
-                    description = "Tenant ID for multi-tenant support",
-                    required = true,
-                    example = "tenant-123"
-            )
+            @Parameter(description = "Tenant ID", required = true, example = "cst_123e4567-e89b-XXX....")
             @RequestHeader(value = "X-Tenant-ID", required = true) String tenantId,
-            @Parameter(
-                    description = "Cookie category details to be updated",
-                    required = true
-            )
             @Valid @RequestBody UpdateCookieCategoryRequest request) {
 
-        // Validate tenant ID
         if (tenantId == null || tenantId.trim().isEmpty()) {
             CookieCategoryResponse errorResponse = CookieCategoryResponse.builder()
                     .success(false)
@@ -144,7 +173,6 @@ public class CategoryController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(errorResponse);
         }
 
-        // Process the request
         CookieCategoryResponse response = categoryService.updateCookieCategory(request, tenantId);
         return ResponseEntity.ok(response);
     }
@@ -158,25 +186,21 @@ public class CategoryController {
             @ApiResponse(
                     responseCode = "200",
                     description = "Categories fetched successfully",
-                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = CookieCategory.class)))
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = CookieCategoryResponse.class)))
             ),
             @ApiResponse(
                     responseCode = "404",
-                    description = "No categories found for the given tenant",
-                    content = @Content
+                    description = "No categories found",
+                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
             ),
             @ApiResponse(
                     responseCode = "500",
                     description = "Internal server error",
-                    content = @Content
+                    content = @Content(schema = @Schema(implementation = CookieCategoryResponse.class))
             )
     })
     public ResponseEntity<List<CookieCategoryResponse>> getAllCategory(
-            @Parameter(
-                    description = "Tenant ID for multi-tenant support",
-                    required = true,
-                    example = "tenant-123"
-            )
+            @Parameter(description = "Tenant ID", required = true, example = "cst_123e4567-e89b-XXX....")
             @RequestHeader(value = "X-Tenant-ID", required = true) String tenantId){
         List<CookieCategoryResponse> categoryList = categoryService.findAll(tenantId);
         if(categoryList.isEmpty()){

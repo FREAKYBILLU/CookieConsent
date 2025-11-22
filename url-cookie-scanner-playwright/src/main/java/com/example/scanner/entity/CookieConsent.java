@@ -163,6 +163,11 @@ public class CookieConsent {
     @Schema(description = "Indicates if this version is current (NOT_STALE) or outdated (STALE)")
     private StaleStatus staleStatus;
 
+    @Field("currentChainHash")
+    @JsonProperty("currentChainHash")
+    @Schema(description = "SHA-256 hash of consent data (for tamper detection)")
+    private String currentChainHash;
+
     // Constructor for new consent creation (version 1)
     public CookieConsent(String consentHandleId, String businessId, String templateId, Integer templateVersion,
                          LANGUAGE languagePreferences, Multilingual multilingual, CustomerIdentifiers customerIdentifiers,

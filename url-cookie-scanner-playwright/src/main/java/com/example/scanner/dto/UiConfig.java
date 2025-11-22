@@ -1,8 +1,10 @@
 package com.example.scanner.dto;
 
+import com.example.scanner.enums.LayoutType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -56,4 +58,17 @@ public class UiConfig {
 
     @Schema(description = "Show validity period in UI", example = "true")
     private boolean validitytoBeShown;
+
+    @Schema(description = "Layout type for consent banner", example = "MODAL")
+    private LayoutType layoutType;
+
+    @Schema(description = "Title for manage preferences section", example = "Manage Your Cookie Preferences")
+    private String managePreferencesTitle;
+
+    @Schema(description = "Description for manage preferences section", example = "Choose which categories of cookies you allow. You can adjust these anytime.")
+    private String managePreferencesDescription;
+
+    @Schema(description = "Button label configuration")
+    @Valid
+    private ButtonLabels buttonLabels;
 }

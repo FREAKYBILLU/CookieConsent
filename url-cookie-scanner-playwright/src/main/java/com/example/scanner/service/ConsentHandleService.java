@@ -203,7 +203,6 @@ public class ConsentHandleService {
                     cookiesByCategory
             );
 
-            // STEP 3: Build response
             GetHandleResponse response = GetHandleResponse.builder()
                     .consentHandleId(consentHandle.getConsentHandleId())
                     .templateId(template.getTemplateId())
@@ -212,7 +211,8 @@ public class ConsentHandleService {
                     .url(consentHandle.getUrl())
                     .businessId(consentHandle.getBusinessId())
                     .multilingual(template.getMultilingual())
-                    .preferences(preferencesWithCookies)  // Use the new wrapper
+                    .uiConfig(template.getUiConfig())
+                    .preferences(preferencesWithCookies)
                     .customerIdentifiers(consentHandle.getCustomerIdentifiers())
                     .status(consentHandle.getStatus())
                     .build();

@@ -104,8 +104,6 @@ public class ConsentTemplateService {
 
         validateScanExists(tenantId, createRequest.getScanId());
 
-        validateCookieExpiry(tenantId, createRequest.getScanId());
-
         TenantContext.setCurrentTenant(tenantId);
         MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
 
@@ -160,46 +158,6 @@ public class ConsentTemplateService {
 
             if (!"COMPLETED".equals(scanResult.getStatus())) {
                 throw new IllegalArgumentException("Scan with ID '" + scanId + "' is not completed. Current status: " + scanResult.getStatus());
-            }
-
-        } finally {
-            TenantContext.clear();
-        }
-    }
-
-    private void validateCookieExpiry(String tenantId, String scanId) {
-        TenantContext.setCurrentTenant(tenantId);
-        MongoTemplate tenantMongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
-
-        try {
-            Query query = new Query(Criteria.where("transactionId").is(scanId));
-            ScanResultEntity scanResult = tenantMongoTemplate.findOne(query, ScanResultEntity.class);
-
-            if (scanResult == null || scanResult.getCookiesBySubdomain() == null) {
-                return;
-            }
-
-            List<CookieEntity> allCookies = scanResult.getCookiesBySubdomain().values()
-                    .stream()
-                    .flatMap(List::stream)
-                    .collect(Collectors.toList());
-
-            Instant now = Instant.now();
-            List<CookieEntity> expiredCookies = allCookies.stream()
-                    .filter(cookie -> cookie.getExpires() != null && cookie.getExpires().isBefore(now))
-                    .collect(Collectors.toList());
-
-            if (!expiredCookies.isEmpty()) {
-                String expiredCookieNames = expiredCookies.stream()
-                        .map(CookieEntity::getName)
-                        .limit(5)
-                        .collect(Collectors.joining(", "));
-
-                throw new IllegalArgumentException(
-                        "Template cannot be created because " + expiredCookies.size() +
-                                " cookie(s) have expired. Examples: " + expiredCookieNames +
-                                (expiredCookies.size() > 5 ? " and more..." : "")
-                );
             }
 
         } finally {

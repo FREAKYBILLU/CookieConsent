@@ -2,6 +2,7 @@ package com.example.scanner.dto.response;
 
 import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.dto.Multilingual;
+import com.example.scanner.dto.UiConfig;
 import com.example.scanner.enums.ConsentHandleStatus;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -61,6 +62,10 @@ public class GetHandleResponse {
     )
     private Multilingual multilingual;
 
+    @Schema(description = "UI configuration for consent banner",
+            implementation = UiConfig.class)
+    private UiConfig uiConfig;
+
     @Schema(
             description = "List of preference configurations with associated cookies",
             implementation = PreferenceWithCookies.class
@@ -78,4 +83,5 @@ public class GetHandleResponse {
             example = "ACTIVE"
     )
     private ConsentHandleStatus status;
+
 }

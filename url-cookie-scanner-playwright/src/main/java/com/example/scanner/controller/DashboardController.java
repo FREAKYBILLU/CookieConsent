@@ -27,7 +27,7 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/dashboard")
-@Tag(name = "Dashboard", description = "APIs for consent dashboard analytics and reporting")
+@Tag(name = "Dashboard", description = "Consent dashboard analytics and reporting")
 @Slf4j
 public class DashboardController {
 
@@ -36,60 +36,40 @@ public class DashboardController {
 
     @Operation(
             summary = "Get consent dashboard data",
-            description = "Fetches consent data grouped by template. TenantId is mandatory as path parameter. " +
-                    "All query parameters are optional. Returns all templates if only tenantId is provided.",
+            description = """
+                Fetches consent data grouped by template. TenantId mandatory, all query params optional.
+                Returns all templates if only tenantId provided.
+                """,
             responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Dashboard data retrieved successfully",
-                            content = @Content(
-                                    mediaType = "application/json",
-                                    array = @ArraySchema(
-                                            schema = @Schema(implementation = DashboardTemplateResponse.class)
-                                    )
-                            )
-                    ),
-                    @ApiResponse(
-                            responseCode = "404",
-                            description = "No data found",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
+                    @ApiResponse(responseCode = "200", description = "Dashboard data retrieved successfully",
+                            content = @Content(array = @ArraySchema(schema = @Schema(implementation = DashboardTemplateResponse.class)))),
+                    @ApiResponse(responseCode = "404", description = "No data found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     @GetMapping("/{tenantId}")
     public ResponseEntity<?> getDashboardData(
-            @Parameter(description = "Tenant ID (mandatory)", required = true)
+            @Parameter(description = "Tenant ID", required = true, example = "tenant-123")
             @PathVariable("tenantId") String tenantId,
-
-            @Parameter(description = "Template ID (optional)")
+            @Parameter(description = "Template ID (optional)", example = "tpl_123e4567-e89b-12d3-a456-426614174000")
             @RequestParam(value = "template", required = false) String templateId,
-
-            @Parameter(description = "Scan ID (optional)")
+            @Parameter(description = "Scan ID (optional)", example = "scan_123e4567-e89b-12d3-a456-426614174000")
             @RequestParam(value = "scanId", required = false) String scanId,
-
-            @Parameter(description = "Template version (optional)")
+            @Parameter(description = "Template version (optional)", example = "5")
             @RequestParam(value = "version", required = false) Integer version,
-
-            @Parameter(description = "Start date filter (optional)")
+            @Parameter(description = "Start date (optional) - ISO 8601 format", example = "2025-01-01T00:00:00")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             @RequestParam(value = "startDt", required = false) LocalDateTime startDate,
-
-            @Parameter(description = "End date filter (optional)")
+            @Parameter(description = "End date (optional) - ISO 8601 format", example = "2025-11-22T23:59:59")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
             @RequestParam(value = "endDt", required = false) LocalDateTime endDate,
-
             HttpServletRequest httpRequest) {
 
         try {
-            // Validation: Tenant ID
             CommonUtil.validateTenantId(tenantId);
 
-            // Create request object for service layer
             DashboardRequest request = DashboardRequest.builder()
                     .templateID(templateId)
                     .scanID(scanId)
@@ -98,19 +78,12 @@ public class DashboardController {
                     .endDate(endDate)
                     .build();
 
-            // Fetch dashboard data
-            List<DashboardTemplateResponse> dashboardData =
-                    consentService.getDashboardDataGroupedByTemplate(tenantId, request);
+            List<DashboardTemplateResponse> dashboardData = consentService.getDashboardDataGroupedByTemplate(tenantId, request);
 
             if (dashboardData.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND).body(
-                        new ErrorResponse(
-                                "NO_DATA_FOUND",
-                                "No data found",
-                                "No templates or consents found for the given criteria",
-                                Instant.now(),
-                                httpRequest.getRequestURI()
-                        )
+                        new ErrorResponse("NO_DATA_FOUND", "No data found",
+                                "No templates or consents found for criteria", Instant.now(), httpRequest.getRequestURI())
                 );
             }
 
@@ -118,13 +91,8 @@ public class DashboardController {
 
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new ErrorResponse(
-                            ErrorCodes.INTERNAL_ERROR,
-                            "Internal server error",
-                            e.getMessage(),
-                            Instant.now(),
-                            httpRequest.getRequestURI()
-                    )
+                    new ErrorResponse(ErrorCodes.INTERNAL_ERROR, "Internal server error",
+                            e.getMessage(), Instant.now(), httpRequest.getRequestURI())
             );
         }
     }

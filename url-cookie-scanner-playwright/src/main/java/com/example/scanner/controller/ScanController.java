@@ -20,6 +20,7 @@ import com.example.scanner.util.UrlAndCookieUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -41,20 +42,36 @@ import java.util.stream.Collectors;
 @Tag(name = "Cookie Scanner", description = "DPDPA Compliant Cookie Scanning and Management APIs with Subdomain Support and Rate Limiting")
 public class ScanController {
 
-  private static final Logger log = LoggerFactory.getLogger(ScanController.class);
-  private final CookieService cookieService;
-  private final ScanService scanService;
+    private static final Logger log = LoggerFactory.getLogger(ScanController.class);
+    private final CookieService cookieService;
+    private final ScanService scanService;
 
     @Operation(
             summary = "Start Website Cookie Scan with Protection",
-            description = "Initiates a comprehensive cookie scan with rate limiting and circuit breaker protection. " +
-                    "All subdomains must belong to the same root domain as the main URL. " +
-                    "Returns a transaction ID to track the scan progress. Protected against DoS attacks.",
+            description = """
+                Initiates comprehensive cookie scan with rate limiting and circuit breaker protection.
+                Subdomains must belong to same root domain. Returns transaction ID for tracking.
+                
+                Error Codes: R4001 (Empty URL), R4291 (Rate limit), R5031 (Service unavailable), R5000 (Internal)
+                """,
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX....")
+            },
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(
+                            schema = @Schema(implementation = ScanRequestDto.class)
+                    )
+            ),
             responses = {
                     @ApiResponse(
                             responseCode = "200",
                             description = "Scan initiated successfully",
-                            content = @Content(schema = @Schema(implementation = Map.class))
+                            content = @Content(
+                                    schema = @Schema(implementation = Map.class),
+                                    examples = @ExampleObject(value = """
+                                        {"transactionId": "550e8400-e29b-41d4-a716-446655440000", "message": "Scan started for main URL and 2 subdomains", "mainUrl": "https://example.com", "subdomainCount": 2}
+                                        """)
+                            )
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -78,51 +95,60 @@ public class ScanController {
                     )
             }
     )
-  @PostMapping("/scan")
-  public ResponseEntity<Map<String, Object>> scanUrl(
-          @RequestHeader("X-Tenant-ID") String tenantId,
-          @Valid @RequestBody ScanRequestDto scanRequest) throws UrlValidationException, ScanExecutionException {
+    @PostMapping("/scan")
+    public ResponseEntity<Map<String, Object>> scanUrl(
+            @Parameter(description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX....")
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @Valid @RequestBody ScanRequestDto scanRequest) throws UrlValidationException, ScanExecutionException {
 
-    String url = scanRequest.getUrl();
-    List<String> subdomains = scanRequest.getSubDomain();
+        String url = scanRequest.getUrl();
+        List<String> subdomains = scanRequest.getSubDomain();
 
-    if (url == null || url.trim().isEmpty()) {
-      throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
-              "URL is required and cannot be empty",
-              "ScanRequestDto validation failed: url field is null or empty"
-      );
+        if (url == null || url.trim().isEmpty()) {
+            throw new UrlValidationException(ErrorCodes.EMPTY_ERROR,
+                    "URL is required and cannot be empty",
+                    "ScanRequestDto validation failed: url field is null or empty"
+            );
+        }
+
+
+        try {
+            String transactionId;
+            transactionId = scanService.startScan(tenantId, url, subdomains);
+
+            String message = "Scan started for main URL";
+            if (subdomains != null && !subdomains.isEmpty()) {
+                message += " and " + subdomains.size() + " subdomain" +
+                        (subdomains.size() > 1 ? "s" : "");
+            }
+
+            Map<String, Object> response = new HashMap<>();
+            response.put("transactionId", transactionId);
+            response.put("message", message);
+            response.put("mainUrl", url);
+            response.put("subdomainCount", subdomains != null ? subdomains.size() : 0);
+
+            return ResponseEntity.ok(response);
+
+        } catch (UrlValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ScanExecutionException("Failed to initiate scan: " + e.getMessage());
+        }
     }
-
-
-    try {
-      String transactionId;
-      transactionId = scanService.startScan(tenantId, url, subdomains);
-
-      String message = "Scan started for main URL";
-      if (subdomains != null && !subdomains.isEmpty()) {
-        message += " and " + subdomains.size() + " subdomain" +
-                (subdomains.size() > 1 ? "s" : "");
-      }
-
-      Map<String, Object> response = new HashMap<>();
-      response.put("transactionId", transactionId);
-      response.put("message", message);
-      response.put("mainUrl", url);
-      response.put("subdomainCount", subdomains != null ? subdomains.size() : 0);
-
-      return ResponseEntity.ok(response);
-
-    } catch (UrlValidationException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new ScanExecutionException("Failed to initiate scan: " + e.getMessage());
-    }
-  }
 
     @Operation(
             summary = "Get Scan Status and Results",
-            description = "Retrieves the current status and detailed results of a cookie scan using the transaction ID. " +
-                    "Results include cookies from main URL and all scanned subdomains with subdomain attribution.",
+            description = """
+                Retrieves scan status and detailed results using transaction ID.
+                Includes cookies from main URL and all subdomains with attribution.
+                
+                Error Codes: R4001 (Invalid TxnID), R4041 (Not found), R5000 (Internal)
+                """,
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "transactionId", description = "Transaction ID from scan", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
+            },
             responses = {
                     @ApiResponse(
                             responseCode = "200",
@@ -146,97 +172,110 @@ public class ScanController {
                     )
             }
     )
-  @GetMapping("/status/{transactionId}")
-  public ResponseEntity<ScanStatusResponse> getStatus(
-          @RequestHeader("X-Tenant-ID") String tenantId,
-          @Parameter(description = "Transaction ID from the scan request", required = true)
-          @PathVariable("transactionId") String transactionId) throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
+    @GetMapping("/status/{transactionId}")
+    public ResponseEntity<ScanStatusResponse> getStatus(
+            @Parameter(description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX....")
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @PathVariable("transactionId") String transactionId) throws TransactionNotFoundException, ScanExecutionException, UrlValidationException {
 
-    if (!CommonUtil.isValidTransactionId(transactionId)) {
-      throw new UrlValidationException(
-              ErrorCodes.VALIDATION_ERROR,
-              "Invalid transaction ID format",
-              "Transaction ID must be a valid UUID format. Received: " + transactionId
-      );
-    }
-
-    try {
-      Optional<ScanResultEntity> resultOpt = scanService.getScanResult(tenantId, transactionId);
-      if (resultOpt.isEmpty()) {
-        throw new TransactionNotFoundException(transactionId);
-      }
-
-      ScanResultEntity result = resultOpt.get();
-
-      List<ScanStatusResponse.SubdomainCookieGroup> subdomains = new ArrayList<>();
-
-      if (result.getCookiesBySubdomain() != null) {
-        for (Map.Entry<String, List<CookieEntity>> entry : result.getCookiesBySubdomain().entrySet()) {
-          String subdomainName = entry.getKey();
-          List<CookieEntity> cookies = entry.getValue();
-          String subdomainUrl = "main".equals(subdomainName) ? result.getUrl() :
-                  constructSubdomainUrl(result.getUrl(), subdomainName);
-
-          subdomains.add(new ScanStatusResponse.SubdomainCookieGroup(subdomainName, subdomainUrl, cookies));
+        if (!CommonUtil.isValidTransactionId(transactionId)) {
+            throw new UrlValidationException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    "Invalid transaction ID format",
+                    "Transaction ID must be a valid UUID format. Received: " + transactionId
+            );
         }
 
-        subdomains.sort((a, b) -> {
-          if ("main".equals(a.getSubdomainName())) return -1;
-          if ("main".equals(b.getSubdomainName())) return 1;
-          return a.getSubdomainName().compareTo(b.getSubdomainName());
-        });
-      }
+        try {
+            Optional<ScanResultEntity> resultOpt = scanService.getScanResult(tenantId, transactionId);
+            if (resultOpt.isEmpty()) {
+                throw new TransactionNotFoundException(transactionId);
+            }
 
-      // Create summary from all cookies
-      List<CookieEntity> allCookies = result.getCookiesBySubdomain() != null ?
-              result.getCookiesBySubdomain().values().stream()
-                      .flatMap(List::stream)
-                      .toList() : new ArrayList<>();
+            ScanResultEntity result = resultOpt.get();
 
-      Map<String, Integer> bySource = allCookies.stream()
-              .collect(Collectors.groupingBy(
-                      cookie -> cookie.getSource() != null ? cookie.getSource().name() : "UNKNOWN",
-                      Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
-              ));
+            List<ScanStatusResponse.SubdomainCookieGroup> subdomains = new ArrayList<>();
 
-      Map<String, Integer> byCategory = allCookies.stream()
-              .collect(Collectors.groupingBy(
-                      cookie -> cookie.getCategory() != null ? cookie.getCategory() : "uncategorized",
-                      Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
-              ));
+            if (result.getCookiesBySubdomain() != null) {
+                for (Map.Entry<String, List<CookieEntity>> entry : result.getCookiesBySubdomain().entrySet()) {
+                    String subdomainName = entry.getKey();
+                    List<CookieEntity> cookies = entry.getValue();
+                    String subdomainUrl = "main".equals(subdomainName) ? result.getUrl() :
+                            constructSubdomainUrl(result.getUrl(), subdomainName);
 
-      ScanStatusResponse.ScanSummary summary = new ScanStatusResponse.ScanSummary(bySource, byCategory);
+                    subdomains.add(new ScanStatusResponse.SubdomainCookieGroup(subdomainName, subdomainUrl, cookies));
+                }
 
-      ScanStatusResponse response = new ScanStatusResponse(
-              result.getTransactionId(),
-              result.getStatus(),
-              result.getUrl(),
-              subdomains,
-              summary
-      );
+                subdomains.sort((a, b) -> {
+                    if ("main".equals(a.getSubdomainName())) return -1;
+                    if ("main".equals(b.getSubdomainName())) return 1;
+                    return a.getSubdomainName().compareTo(b.getSubdomainName());
+                });
+            }
 
-      return ResponseEntity.ok(response);
+            // Create summary from all cookies
+            List<CookieEntity> allCookies = result.getCookiesBySubdomain() != null ?
+                    result.getCookiesBySubdomain().values().stream()
+                            .flatMap(List::stream)
+                            .toList() : new ArrayList<>();
 
-    } catch (TransactionNotFoundException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new ScanExecutionException("Failed to retrieve scan status: " + e.getMessage());
+            Map<String, Integer> bySource = allCookies.stream()
+                    .collect(Collectors.groupingBy(
+                            cookie -> cookie.getSource() != null ? cookie.getSource().name() : "UNKNOWN",
+                            Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
+                    ));
+
+            Map<String, Integer> byCategory = allCookies.stream()
+                    .collect(Collectors.groupingBy(
+                            cookie -> cookie.getCategory() != null ? cookie.getCategory() : "uncategorized",
+                            Collectors.collectingAndThen(Collectors.counting(), Math::toIntExact)
+                    ));
+
+            ScanStatusResponse.ScanSummary summary = new ScanStatusResponse.ScanSummary(bySource, byCategory);
+
+            ScanStatusResponse response = new ScanStatusResponse(
+                    result.getTransactionId(),
+                    result.getStatus(),
+                    result.getUrl(),
+                    subdomains,
+                    summary
+            );
+
+            return ResponseEntity.ok(response);
+
+        } catch (TransactionNotFoundException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ScanExecutionException("Failed to retrieve scan status: " + e.getMessage());
+        }
     }
-  }
 
-  private String constructSubdomainUrl(String mainUrl, String subdomainName) {
-    try {
-      String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
-      String protocol = mainUrl.startsWith("https") ? "https" : "http";
-      return protocol + "://" + subdomainName + "." + rootDomain;
-    } catch (Exception e) {
-      return mainUrl;
+    private String constructSubdomainUrl(String mainUrl, String subdomainName) {
+        try {
+            String rootDomain = UrlAndCookieUtil.extractRootDomain(mainUrl);
+            String protocol = mainUrl.startsWith("https") ? "https" : "http";
+            return protocol + "://" + subdomainName + "." + rootDomain;
+        } catch (Exception e) {
+            return mainUrl;
+        }
     }
-  }
 
     @Operation(
             summary = "Update Cookie Information",
-            description = "Updates the category, description, domain, privacy policy URL, and expires date for a specific cookie within a scan transaction.",
+            description = """
+                Updates category, description, domain, privacy policy URL, expires for specific cookie.
+                
+                Error Codes: R4001 (Invalid TxnID), R4041 (Cookie/Txn not found), R5000 (Internal)
+                """,
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "transactionId", description = "Transaction ID from scan", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
+            },
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(
+                            schema = @Schema(implementation = CookieUpdateRequest.class)
+                    )
+            ),
             responses = {
                     @ApiResponse(
                             responseCode = "200",
@@ -260,126 +299,55 @@ public class ScanController {
                     )
             }
     )
-  @PutMapping("/transaction/{transactionId}/cookie")
-  public ResponseEntity<CookieUpdateResponse> updateCookie(
-          @RequestHeader("X-Tenant-ID") String tenantId,
-          @Parameter(description = "Transaction ID from the scan", required = true)
-          @PathVariable("transactionId") String transactionId,
-          @Parameter(description = "Cookie update request containing name, category, description, domain, privacy policy URL, and expires", required = true)
-          @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
+    @PutMapping("/transaction/{transactionId}/cookie")
+    public ResponseEntity<CookieUpdateResponse> updateCookie(
+            @Parameter(description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX....")
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @PathVariable("transactionId") String transactionId,
+            @Valid @RequestBody CookieUpdateRequest updateRequest) throws ScanExecutionException, CookieNotFoundException, TransactionNotFoundException, UrlValidationException {
 
-    if (!CommonUtil.isValidTransactionId(transactionId)) {
-      throw new UrlValidationException(
-              ErrorCodes.VALIDATION_ERROR,
-              "Invalid transaction ID format",
-              "Transaction ID must be a valid UUID format. Received: " + transactionId
-      );
-    }
+        if (!CommonUtil.isValidTransactionId(transactionId)) {
+            throw new UrlValidationException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    "Invalid transaction ID format",
+                    "Transaction ID must be a valid UUID format. Received: " + transactionId
+            );
+        }
 
-    try {
-      CookieUpdateResponse response = cookieService.updateCookie(tenantId, transactionId, updateRequest);
+        try {
+            CookieUpdateResponse response = cookieService.updateCookie(tenantId, transactionId, updateRequest);
 
-      if (response.isUpdated()) {
-        return ResponseEntity.ok(response);
-      } else {
-        return ResponseEntity.badRequest().body(response);
-      }
-
-    } catch (CookieNotFoundException | TransactionNotFoundException e) {
-      throw e;
-    } catch (UrlValidationException e) {
-      throw e;
-    } catch (Exception e) {
-      throw new ScanExecutionException("Failed to update cookie: " + e.getMessage());
-    }
-  }
-
-    @Operation(
-            summary = "Enhanced Health Check with Protection Status",
-            description = "Enhanced health check that includes circuit breaker state and protection status.",
-            responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Service is healthy",
-                            content = @Content(schema = @Schema(implementation = Map.class))
-                    )
+            if (response.isUpdated()) {
+                return ResponseEntity.ok(response);
+            } else {
+                return ResponseEntity.badRequest().body(response);
             }
-    )
-  @GetMapping("/health")
-  public ResponseEntity<Map<String, Object>> healthCheck() {
 
-    Map<String, Object> healthInfo = new HashMap<>();
-    healthInfo.put("status", "UP");
-    healthInfo.put("service", "Cookie Scanner API");
-    healthInfo.put("version", "2.1.0");
-    healthInfo.put("timestamp", java.time.Instant.now().toString());
-
-    Map<String, Object> features = new HashMap<>();
-    features.put("subdomainScanning", true);
-    features.put("cookieCategorization", true);
-    features.put("consentHandling", true);
-    features.put("iframeProcessing", true);
-    features.put("rateLimiting", scanService != null);
-    features.put("circuitBreaker", scanService != null);
-
-    healthInfo.put("features", features);
-
-    // Add protection status
-    Map<String, Object> protection = new HashMap<>();
-    protection.put("rateLimiting", scanService != null);
-    protection.put("circuitBreaker", scanService != null);
-    protection.put("bulkhead", true);
-    healthInfo.put("protection", protection);
-
-    return ResponseEntity.ok(healthInfo);
-  }
-
-    @Operation(
-            summary = "System Metrics and Performance",
-            description = "Get detailed system metrics including rate limiting and protection status.",
-            responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Metrics retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = Map.class))
-                    )
-            }
-    )
-  @GetMapping("/metrics")
-  public ResponseEntity<Map<String, Object>> getMetrics() {
-    Map<String, Object> metrics = new HashMap<>();
-
-    Runtime runtime = Runtime.getRuntime();
-    Map<String, Object> memory = new HashMap<>();
-    memory.put("totalMemory", runtime.totalMemory());
-    memory.put("freeMemory", runtime.freeMemory());
-    memory.put("usedMemory", runtime.totalMemory() - runtime.freeMemory());
-    memory.put("maxMemory", runtime.maxMemory());
-    memory.put("usedMemoryPercent", String.format("%.2f%%",
-            ((double)(runtime.totalMemory() - runtime.freeMemory()) / runtime.maxMemory()) * 100));
-
-    metrics.put("memory", memory);
-    metrics.put("processors", runtime.availableProcessors());
-    metrics.put("timestamp", java.time.Instant.now().toString());
-
-    Map<String, Object> threads = new HashMap<>();
-    threads.put("activeCount", Thread.activeCount());
-    threads.put("currentThread", Thread.currentThread().getName());
-    metrics.put("threads", threads);
-
-    Map<String, Object> protection = new HashMap<>();
-    protection.put("enhancedServiceAvailable", scanService != null);
-    protection.put("rateLimitingActive", scanService != null);
-    protection.put("circuitBreakerActive", scanService != null);
-    metrics.put("protection", protection);
-
-    return ResponseEntity.ok(metrics);
-  }
+        } catch (CookieNotFoundException | TransactionNotFoundException e) {
+            throw e;
+        } catch (UrlValidationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ScanExecutionException("Failed to update cookie: " + e.getMessage());
+        }
+    }
 
     @Operation(
             summary = "Add Cookie to Scan Transaction",
-            description = "Manually adds a cookie to a specific transaction and subdomain. " +
-                    "The cookie domain must belong to the same root domain as the scanned URL.",
+            description = """
+                Manually adds cookie to transaction. Cookie domain must belong to same root domain.
+                
+                Error Codes: R4001 (Invalid TxnID), R4041 (Txn not found), R4091 (Duplicate), R5000 (Internal)
+                """,
+            parameters = {
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "transactionId", description = "Transaction ID from scan", required = true, example = "550e8400-e29b-41d4-a716-446655440000")
+            },
+            requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
+                    content = @Content(
+                            schema = @Schema(implementation = AddCookieRequest.class)
+                    )
+            ),
             responses = {
                     @ApiResponse(
                             responseCode = "200",
@@ -403,28 +371,109 @@ public class ScanController {
                     )
             }
     )
-  @PostMapping("/transaction/{transactionId}/cookies")
-  public ResponseEntity<AddCookieResponse> addCookie(
-          @RequestHeader("X-Tenant-ID") String tenantId,
-          @Parameter(description = "Transaction ID from the scan", required = true)
-          @PathVariable("transactionId") String transactionId,
-          @Parameter(description = "Cookie information to add", required = true)
-          @Valid @RequestBody AddCookieRequest addRequest) throws ScanExecutionException, TransactionNotFoundException, UrlValidationException {
+    @PostMapping("/transaction/{transactionId}/cookies")
+    public ResponseEntity<AddCookieResponse> addCookie(
+            @Parameter(description = "Tenant ID", required = true, example = "tpl_123e4567-CXXXXXX....")
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @PathVariable("transactionId") String transactionId,
+            @Valid @RequestBody AddCookieRequest addRequest) throws ScanExecutionException, TransactionNotFoundException, UrlValidationException {
 
-    if (!CommonUtil.isValidTransactionId(transactionId)) {
-      throw new UrlValidationException(
-              ErrorCodes.VALIDATION_ERROR,
-              "Invalid transaction ID format",
-              "Transaction ID must be a valid UUID format. Received: " + transactionId
-      );
+        if (!CommonUtil.isValidTransactionId(transactionId)) {
+            throw new UrlValidationException(
+                    ErrorCodes.VALIDATION_ERROR,
+                    "Invalid transaction ID format",
+                    "Transaction ID must be a valid UUID format. Received: " + transactionId
+            );
+        }
+
+        if (transactionId.trim().isEmpty()) {
+            throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
+        }
+
+        AddCookieResponse response = cookieService.addCookie(tenantId, transactionId, addRequest);
+        return ResponseEntity.ok(response);
     }
 
-    if (transactionId.trim().isEmpty()) {
-      throw new IllegalArgumentException("Transaction ID is required and cannot be empty");
+    @Operation(
+            summary = "Enhanced Health Check with Protection Status",
+            description = "Enhanced health check with circuit breaker and rate limiting status",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Service is healthy",
+                            content = @Content(schema = @Schema(implementation = Map.class))
+                    )
+            }
+    )
+    @GetMapping("/health")
+    public ResponseEntity<Map<String, Object>> healthCheck() {
+
+        Map<String, Object> healthInfo = new HashMap<>();
+        healthInfo.put("status", "UP");
+        healthInfo.put("service", "Cookie Scanner API");
+        healthInfo.put("version", "2.1.0");
+        healthInfo.put("timestamp", java.time.Instant.now().toString());
+
+        Map<String, Object> features = new HashMap<>();
+        features.put("subdomainScanning", true);
+        features.put("cookieCategorization", true);
+        features.put("consentHandling", true);
+        features.put("iframeProcessing", true);
+        features.put("rateLimiting", scanService != null);
+        features.put("circuitBreaker", scanService != null);
+
+        healthInfo.put("features", features);
+
+        // Add protection status
+        Map<String, Object> protection = new HashMap<>();
+        protection.put("rateLimiting", scanService != null);
+        protection.put("circuitBreaker", scanService != null);
+        protection.put("bulkhead", true);
+        healthInfo.put("protection", protection);
+
+        return ResponseEntity.ok(healthInfo);
     }
 
-    AddCookieResponse response = cookieService.addCookie(tenantId, transactionId, addRequest);
-    return ResponseEntity.ok(response);
-  }
+    @Operation(
+            summary = "System Metrics and Performance",
+            description = "Detailed system metrics including rate limiting and protection status",
+            responses = {
+                    @ApiResponse(
+                            responseCode = "200",
+                            description = "Metrics retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = Map.class))
+                    )
+            }
+    )
+    @GetMapping("/metrics")
+    public ResponseEntity<Map<String, Object>> getMetrics() {
+        Map<String, Object> metrics = new HashMap<>();
+
+        Runtime runtime = Runtime.getRuntime();
+        Map<String, Object> memory = new HashMap<>();
+        memory.put("totalMemory", runtime.totalMemory());
+        memory.put("freeMemory", runtime.freeMemory());
+        memory.put("usedMemory", runtime.totalMemory() - runtime.freeMemory());
+        memory.put("maxMemory", runtime.maxMemory());
+        memory.put("usedMemoryPercent", String.format("%.2f%%",
+                ((double)(runtime.totalMemory() - runtime.freeMemory()) / runtime.maxMemory()) * 100));
+
+        metrics.put("memory", memory);
+        metrics.put("processors", runtime.availableProcessors());
+        metrics.put("timestamp", java.time.Instant.now().toString());
+
+        Map<String, Object> threads = new HashMap<>();
+        threads.put("activeCount", Thread.activeCount());
+        threads.put("currentThread", Thread.currentThread().getName());
+        metrics.put("threads", threads);
+
+        Map<String, Object> protection = new HashMap<>();
+        protection.put("enhancedServiceAvailable", scanService != null);
+        protection.put("rateLimitingActive", scanService != null);
+        protection.put("circuitBreakerActive", scanService != null);
+        metrics.put("protection", protection);
+
+        return ResponseEntity.ok(metrics);
+    }
 
 }

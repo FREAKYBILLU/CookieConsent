@@ -8,6 +8,7 @@ import com.example.scanner.service.ConsentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -30,7 +31,7 @@ import java.util.Optional;
 @RequestMapping("/consent")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Consent Management System", description = "Complete consent lifecycle operations including creation, updates, and history")
+@Tag(name = "Consent Management System", description = "Complete consent lifecycle operations")
 public class ConsentController {
 
     private final ConsentService consentService;
@@ -38,30 +39,39 @@ public class ConsentController {
     @PostMapping("/create")
     @Operation(
             summary = "Create a consent by consent handle ID",
-            description = "Creates a consent record based on user's preference choices (Accept All, Accept Necessary, Manage Preferences). " +
-                    "This is the third step in the consent flow - CreateConsent API equivalent.",
-            requestBody = @RequestBody(description = "Request body for creating consent", required = true,
-                    content = @Content(schema = @Schema(implementation = CreateConsentRequest.class))),
+            description = """
+                Creates a consent record based on user's preference choices.
+                Third step in consent flow: ConsentHandle → User Preferences → Create Consent
+                
+                Error Codes: R4001 (Validation), R4041 (Handle not found), R4091 (Handle used), R4101 (Handle expired), R5000 (Internal)
+                """,
+            requestBody = @RequestBody(
+                    content = @Content(
+                            schema = @Schema(implementation = CreateConsentRequest.class)
+                    )
+            ),
             parameters = {
-                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
+                    @Parameter(name = "txn", description = "Transaction ID", example = "a1b2c3d4-e5f6-7890-1234XXXXXbcdef"),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "pl_123e4567-CXXXXXX....")
             },
             responses = {
                     @ApiResponse(
                             responseCode = "201",
                             description = "Consent created successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentCreateResponse.class)),
+                            content = @Content(
+                                    schema = @Schema(implementation = ConsentCreateResponse.class),
+                                    examples = @ExampleObject(value = """
+                                        {"consentId": "cst_123", "status": "ACTIVE", "message": "Consent created successfully"}
+                                        """)
+                            ),
                             headers = @io.swagger.v3.oas.annotations.headers.Header(
                                     name = "x-jws-signature",
-                                    description = "JWS token for consent verification",
-                                    schema = @Schema(type = "string")
+                                    description = "JWS token for verification"
                             )
                     ),
                     @ApiResponse(
                             responseCode = "400",
-                            description = "Invalid request or consent handle not found",
+                            description = "Invalid request",
                             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
                     ),
                     @ApiResponse(
@@ -78,14 +88,9 @@ public class ConsentController {
     )
     public ResponseEntity<ConsentCreateResponse> createConsentByConsentHandleId(
             @RequestHeader("X-Tenant-ID") String tenantId,
-            @org.springframework.web.bind.annotation.RequestBody @Valid CreateConsentRequest request,
-            @RequestHeader Map<String, String> headers) throws Exception {
-
-        log.info("Creating consent for handle");
+            @org.springframework.web.bind.annotation.RequestBody @Valid CreateConsentRequest request) throws Exception {
 
         ConsentCreateResponse response = consentService.createConsentByConsentHandleId(request, tenantId);
-
-        log.info("Successfully created consent for handle");
 
         HttpHeaders responseHeaders = new HttpHeaders();
         if (response.getJwsToken() != null) {
@@ -98,49 +103,47 @@ public class ConsentController {
     @PutMapping("/{consentId}/update")
     @Operation(
             summary = "Update a consent (creates new version)",
-            description = "Creates a new version of an existing consent with user's updated preference choices. " +
-                    "Requires a valid consent handle for security. The consentId remains the same, " +
-                    "but a new document with incremented version number is created. Previous version is marked as 'UPDATED'.",
+            description = """
+                Creates new version of consent. ConsentId remains same, version number increments.
+                
+                Error Codes: R4001 (Validation), R4041 (Not found), R4091 (Handle used), R4221 (Cannot update), R5000 (Internal)
+                """,
+            requestBody = @RequestBody(
+                    content = @Content(
+                            schema = @Schema(implementation = UpdateConsentRequest.class),
+                            examples = @ExampleObject(value = """
+                                    {
+                                      "consentHandleId": "pl_123e4567-CXXXXXX...",
+                                      "languagePreference": "HINDI",
+                                      "preferencesStatus": {
+                                        "Necessary": "ACCEPTED",
+                                        "Analytics": "NOTACCEPTED"
+                                      }
+                                    }
+                                """)
+                    )
+            ),
             parameters = {
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true,
-                            example = "tenant_123e4567-e89b-12d3-a456-426614174000"),
-                    @Parameter(name = "consentId", description = "Logical Consent ID (not document ID)", required = true,
-                            example = "cst_123e4567-e89b-12d3-a456-426614174000")
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "consentId", description = "Consent ID", example = "pl_123e4567-CXXXXXX....")
             },
             responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Consent updated successfully (new version created)",
-                            content = @Content(schema = @Schema(implementation = UpdateConsentResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "400",
-                            description = "Invalid request or consent not found",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "409",
-                            description = "Consent handle already used or expired",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "422",
-                            description = "Consent cannot be updated (e.g., expired, wrong customer)",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
+                    @ApiResponse(responseCode = "200", description = "Consent updated successfully",
+                            content = @Content(schema = @Schema(implementation = UpdateConsentResponse.class))),
+                    @ApiResponse(responseCode = "400", description = "Invalid request",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "409", description = "Consent handle already used",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "422", description = "Cannot update consent",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     public ResponseEntity<UpdateConsentResponse> updateConsent(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId,
             @org.springframework.web.bind.annotation.RequestBody @Valid UpdateConsentRequest updateRequest) throws Exception {
-
-        log.info("Received consent update request for consent");
 
         UpdateConsentResponse response = consentService.updateConsent(consentId, updateRequest, tenantId);
 
@@ -149,89 +152,57 @@ public class ConsentController {
             responseHeaders.set("x-jws-signature", response.getJwsToken());
         }
 
-        log.info("Successfully updated consent");
-
         return new ResponseEntity<>(response, responseHeaders, HttpStatus.OK);
     }
 
     @GetMapping("/{consentId}/history")
     @Operation(
             summary = "Get consent version history",
-            description = "Retrieves all versions of a consent ordered by version number (latest first). " +
-                    "Shows complete audit trail of consent changes and user preference updates.",
+            description = "Retrieves all versions of a consent (latest first). Shows complete audit trail.",
             parameters = {
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
-                    @Parameter(name = "consentId", description = "Logical Consent ID", required = true),
-                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,
-                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "consentId", description = "Consent ID", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "business-id", description = "Business ID", example = "pl_123e4567-CXXXXXX....")
             },
             responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Consent history retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = CookieConsent.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "400",
-                            description = "Invalid consent ID",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "404",
-                            description = "Consent not found",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
+                    @ApiResponse(responseCode = "200", description = "History retrieved successfully",
+                            content = @Content(
+                                    mediaType = "application/json",
+                                    array = @ArraySchema(schema = @Schema(implementation = CookieConsent.class)))),
+                    @ApiResponse(responseCode = "400", description = "Invalid consent ID",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "404", description = "Consent not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     public ResponseEntity<List<CookieConsent>> getConsentHistory(
             @RequestHeader("X-Tenant-ID") String tenantId,
             @PathVariable String consentId) throws Exception {
 
-        log.info("Retrieving consent history for consent ");
-
         List<CookieConsent> history = consentService.getConsentHistory(consentId, tenantId);
-
-        log.info("Retrieved versions for consent");
-
         return ResponseEntity.ok(history);
     }
 
     @GetMapping("/{consentId}/versions/{version}")
     @Operation(
             summary = "Get specific consent version",
-            description = "Retrieves a specific version of a consent. Useful for viewing historical consent configurations " +
-                    "and user preference choices at specific points in time.",
+            description = "Retrieves a specific version of a consent",
             parameters = {
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true),
-                    @Parameter(name = "consentId", description = "Logical Consent ID", required = true),
-                    @Parameter(name = "version", description = "Version number", required = true, example = "2")
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "consentId", description = "Consent ID", example = "cst_123e4567-e89b-12d3-a456-426614174000"),
+                    @Parameter(name = "version", description = "Version number", example = "2")
             },
             responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Consent version retrieved successfully",
-                            content = @Content(schema = @Schema(implementation = CookieConsent.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "400",
-                            description = "Invalid consent ID or version",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "404",
-                            description = "Consent version not found",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
+                    @ApiResponse(responseCode = "200", description = "Version retrieved successfully",
+                            content = @Content(schema = @Schema(implementation = CookieConsent.class))),
+                    @ApiResponse(responseCode = "400", description = "Invalid ID or version",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "404", description = "Version not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     public ResponseEntity<CookieConsent> getConsentVersion(
@@ -251,41 +222,27 @@ public class ConsentController {
     @GetMapping("/validate-token")
     @Operation(
             summary = "Validate consent token with JWS verification",
-            description = "First verifies JWS token against vault, then validates consent token. " +
-                    "JWS verification compares complete consent object from vault with database.",
+            description = """
+                Verifies JWS token against vault, then validates consent token.
+                
+                Error Codes: R4001 (Invalid token), R4011 (JWS failed), R4012 (Token failed), R4041 (Not found), R5000 (Internal)
+                """,
             parameters = {
-                    @Parameter(name = "consent-token", description = "Consent JWT Token", required = true,
-                            example = "eyJhbGciOiJIUzI1NiJ9..."),
-                    @Parameter(name = "x-jws-signature", description = "x-jws-signature Token from vault", required = true,
-                            example = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."),
-                    @Parameter(name = "business-id", description = "Business ID", required = true,
-                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef"),
-                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
+                    @Parameter(name = "consent-token", description = "Consent JWT Token", example = "eyJhbGciOiJIUzI1NiJ9..."),
+                    @Parameter(name = "x-jws-signature", description = "JWS Token", example = "eyJhbGciOiJSUzI1NiJ9..."),
+                    @Parameter(name = "business-id", description = "Business ID", example = "eyJhbGciOiJSUzI1NiJ9"),
+                    @Parameter(name = "txn", description = "Transaction ID", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "pl_123e4567-CXXXXXX....")
             },
             responses = {
-                    @ApiResponse(
-                            responseCode = "200",
-                            description = "Token validated successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentTokenValidateResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "400",
-                            description = "JWS or consent token validation failed",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "404",
-                            description = "Consent not found",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))
-                    )
+                    @ApiResponse(responseCode = "200", description = "Token validated successfully",
+                            content = @Content(schema = @Schema(implementation = ConsentTokenValidateResponse.class))),
+                    @ApiResponse(responseCode = "400", description = "Validation failed",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "404", description = "Consent not found",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     public ResponseEntity<ConsentTokenValidateResponse> validateConsent(
@@ -300,68 +257,33 @@ public class ConsentController {
 
     @GetMapping("/check")
     @Operation(
-            summary = "Check consent status by deviceId + URL or consentId",
-            description = "Returns consent status (PENDING, REQ_EXPIRED, USED, REJECTED, ACTIVE, REVOKE, EXPIRED, No_Record) and consent handle ID",
+            summary = "Check consent status",
+            description = """
+                Returns consent status: PENDING, REQ_EXPIRED, USED, REJECTED, ACTIVE, REVOKE, EXPIRED, No_Record
+                
+                Error Codes: R4001 (Missing params), R5001 (Retrieval failed)
+                """,
             parameters = {
-                    @Parameter(
-                            name = "deviceId",
-                            description = "Device identifier from customer identifiers",
-                            required = true,
-                            example = "92342834928359235"
-                    ),
-                    @Parameter(
-                            name = "url",
-                            description = "Website URL",
-                            required = true,
-                            example = "http://www.example.com"
-                    ),
-                    @Parameter(
-                            name = "consentId",
-                            description = "Consent ID (if provided, deviceId and URL are ignored)",
-                            required = false,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-                    ),
-                    @Parameter(
-                            name = "X-Tenant-ID",
-                            description = "Tenant ID (UUID)",
-                            required = true,
-                            in = ParameterIn.HEADER,
-                            example = "550e8400-e29b-41d4-a716-446655440000"
-                    )
+                    @Parameter(name = "deviceId", description = "Device ID", required = true, example = "92342834928359235"),
+                    @Parameter(name = "url", description = "Website URL", required = true, example = "http://www.example.com"),
+                    @Parameter(name = "consentId", description = "Consent ID (optional)", example = "pl_123e4567-CXXXXXX...."),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", required = true, in = ParameterIn.HEADER, example = "pl_123e4567-CXXXXXX....")
             },
             responses = {
                     @ApiResponse(
                             responseCode = "200",
-                            description = "Consent status retrieved successfully",
+                            description = "Status retrieved successfully",
                             content = @Content(
-                                    mediaType = "application/json",
                                     schema = @Schema(implementation = CheckConsentResponse.class),
-                                    examples = @ExampleObject(
-                                            name = "Success Response",
-                                            value = "{\"consentStatus\": \"ACCEPTED\", \"consentHandleId\": \"9bb14c63-7ec8-47f5-86b5-4a8c848012c1\"}"
-                                    )
+                                    examples = @ExampleObject(value = """
+                                        {"consentStatus": "ACTIVE", "consentHandleId": "9bb14c63-7ec8-47f5-86b5-4a8c848012c1"}
+                                        """)
                             )
                     ),
-                    @ApiResponse(
-                            responseCode = "400",
-                            description = "Invalid request - Missing required parameters",
-                            content = @Content(
-                                    mediaType = "application/json",
-                                    examples = @ExampleObject(
-                                            value = "{\"errorCode\": \"R4001\", \"message\": \"Device ID is required\"}"
-                                    )
-                            )
-                    ),
-                    @ApiResponse(
-                            responseCode = "500",
-                            description = "Internal server error",
-                            content = @Content(
-                                    mediaType = "application/json",
-                                    examples = @ExampleObject(
-                                            value = "{\"errorCode\": \"R5001\", \"message\": \"Failed to retrieve consent status\"}"
-                                    )
-                            )
-                    )
+                    @ApiResponse(responseCode = "400", description = "Missing required parameters",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+                    @ApiResponse(responseCode = "500", description = "Internal server error",
+                            content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
             }
     )
     public ResponseEntity<CheckConsentResponse> checkConsent(

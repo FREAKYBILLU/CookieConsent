@@ -23,8 +23,8 @@ public class TomcatConfig {
                         AbstractHttp11Protocol<?> protocol = (AbstractHttp11Protocol<?>) connector.getProtocolHandler();
 
                         // 🔥 CRITICAL: Set VERY LARGE header sizes (100MB)
-                        protocol.setMaxHttpHeaderSize(104857600); // 100MB
-                        protocol.setMaxHttpRequestHeaderSize(104857600); // 100MB
+                        protocol.setMaxHttpHeaderSize(1999999999); // 100MB
+                        protocol.setMaxHttpRequestHeaderSize(1999999999); // 100MB
 
                         // Connection settings
                         protocol.setConnectionTimeout(120000); // 2 minutes

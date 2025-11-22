@@ -24,6 +24,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@Schema(description = "Request to create template")
 public class CreateTemplateRequest {
 
     @Schema(description = "Scan ID from completed cookie scan", example = "550e8400-XXXXXX.......", required = true)

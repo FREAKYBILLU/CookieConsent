@@ -10,6 +10,7 @@ import com.example.scanner.service.ConsentHandleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.ExampleObject;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -27,34 +28,48 @@ import java.util.Map;
 @RequestMapping("/consent-handle")
 @RequiredArgsConstructor
 @Slf4j
-@Tag(name = "Consent Handle Management System", description = "Operations pertaining to consent handles for secure cookie consent flow")
+@Tag(name = "Consent Handle Management", description = "Secure consent handle operations for cookie consent flow")
 public class ConsentHandleController {
 
     private final ConsentHandleService consentHandleService;
 
     @PostMapping("/create")
     @Operation(
-            summary = "Create a new consent handle (SecureCode API)",
-            description = "Generates a secure, time-limited code (consent handle) for cookie consent operations. " +
-                    "This is the first step in the consent flow - equivalent to InitCreateConsent API.",
+            summary = "Create a new consent handle",
+            description = """
+                Generates a secure, time-limited consent handle (15 min expiry as default).
+                First step in consent flow: Create Handle → Get Handle → Create Consent
+                
+                Error Codes: R4001 (Validation), R4091 (Handle exists), R5000 (Internal)
+                """,
             requestBody = @RequestBody(
-                    description = "Request body for creating a consent handle",
-                    required = true,
-                    content = @Content(schema = @Schema(implementation = CreateHandleRequest.class))
+                    content = @Content(
+                            schema = @Schema(implementation = CreateHandleRequest.class),
+                            examples = @ExampleObject(value = """
+                                {
+                                  "templateId": "tpl_123",
+                                  "templateVersion": 1,
+                                  "url": "https://example.com",
+                                  "customerIdentifiers": {"type": "DEVICE_ID", "value": "device123"}
+                                }
+                                """)
+                    )
             ),
             parameters = {
-                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,
-                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
+                    @Parameter(name = "txn", description = "Transaction ID", example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
+                    @Parameter(name = "business-id", description = "Business ID", example = "b1c2d3e4-f5g6-7890-1234-567890abcdef")
             },
             responses = {
                     @ApiResponse(
                             responseCode = "201",
-                            description = "Consent Handle created successfully",
-                            content = @Content(schema = @Schema(implementation = ConsentHandleResponse.class))
+                            description = "Consent handle created successfully",
+                            content = @Content(
+                                    schema = @Schema(implementation = ConsentHandleResponse.class),
+                                    examples = @ExampleObject(value = """
+                                        {"consentHandleId": "9bb14c63-7ec8-47f5-86b5-4a8c848012c1", "message": "Consent Handle Created successfully!", "isNewHandle": true}
+                                        """)
+                            )
                     ),
                     @ApiResponse(
                             responseCode = "400",
@@ -84,23 +99,23 @@ public class ConsentHandleController {
 
     @GetMapping("/get/{consentHandleId}")
     @Operation(
-            summary = "Get consent handle by ID (GetCookieConsentTemplate API)",
-            description = "Retrieves consent handle details and associated template information using the secure code. " +
-                    "Returns cookie report data, popup theme, and language settings.",
+            summary = "Get consent handle by ID",
+            description = """
+                Retrieves consent handle details with template and cookie information.
+                Returns cookie report, UI config, and preferences with cookies.
+                
+                Error Codes: R4001 (Invalid ID), R4041 (Not found), R4101 (Expired), R5000 (Internal)
+                """,
             parameters = {
-                    @Parameter(name = "consentHandleId", description = "Consent Handle ID (Secure Code)",
-                            required = true, example = "550e8400-e29b-41d4-a716-446655440000"),
-                    @Parameter(name = "txn", description = "Transaction ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
-                    @Parameter(name = "business-id", description = "Business ID (UUID)", required = true,
-                            example = "b1c2d3e4-f5g6-7890-1234-567890abcdef"),
-                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID (UUID)", required = true,
-                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
+                    @Parameter(name = "consentHandleId", description = "Consent Handle ID", example = "9bb14c63-7ec8-47f5-86b5-4a8c848012c1"),
+                    @Parameter(name = "txn", description = "Transaction ID", example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"),
+                    @Parameter(name = "business-id", description = "Business ID", example = "b1c2d3e4-f5g6-7890-1234-567890abcdef"),
+                    @Parameter(name = "X-Tenant-ID", description = "Tenant ID", example = "a1b2c3d4-e5f6-7890-1234-567890abcdef")
             },
             responses = {
                     @ApiResponse(
                             responseCode = "200",
-                            description = "Consent Handle retrieved successfully",
+                            description = "Consent handle retrieved successfully",
                             content = @Content(schema = @Schema(implementation = GetHandleResponse.class))
                     ),
                     @ApiResponse(
@@ -110,7 +125,7 @@ public class ConsentHandleController {
                     ),
                     @ApiResponse(
                             responseCode = "404",
-                            description = "Consent Handle not found or expired",
+                            description = "Consent handle not found or expired",
                             content = @Content(schema = @Schema(implementation = ErrorResponse.class))
                     ),
                     @ApiResponse(

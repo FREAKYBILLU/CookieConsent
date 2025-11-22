@@ -35,7 +35,6 @@ public class SignableConsent {
     private Status status;
     private VersionStatus consentStatus;
     private Integer version;
-    private String consentJwtToken;
     private LocalDateTime startDate;
     private LocalDateTime endDate;
     private Instant createdAt;

@@ -59,6 +59,7 @@ public class ConsentService {
     private final VaultService vaultService;
     private final ObjectMapper objectMapper;
     private final NotificationManager notificationManager;
+    private static final String GENESIS_CHAIN = "0000000000000000000000000000000000000000000000000000000000000000";
 
     public ConsentCreateResponse createConsentByConsentHandleId(CreateConsentRequest request, String tenantId) throws Exception {
         log.info("Processing consent creation for handle: {}, tenant: {}", request.getConsentHandleId(), tenantId);
@@ -133,6 +134,7 @@ public class ConsentService {
         consent.setStaleStatus(StaleStatus.NOT_STALE);
 
         SignableConsent signableConsent = toSignableConsent(consent);
+
         // Convert SignableConsent to JSON
         String signableJson;
         try {
@@ -155,7 +157,6 @@ public class ConsentService {
                     "Failed to convert consent to JSON: " + e.getMessage());
         }
 
-
         // Compute payload hash BEFORE encryption
         String consentJsonStringHash = null;
         try {
@@ -166,6 +167,9 @@ public class ConsentService {
         } catch (Exception e) {
             log.warn("Failed to compute payload hash");
         }
+
+        String chainedHash = ConsentUtil.computeSHA256Hash(GENESIS_CHAIN + consentJsonStringHash);
+        consent.setCurrentChainHash(chainedHash);
 
         // Encrypt (sets encryptionTime, encryptedReferenceId, encryptedString)
         generateConsentEncryption(consent, tenantId);
@@ -309,13 +313,14 @@ public class ConsentService {
             log.warn("Failed to compute payload hash: {}", e.getMessage());
         }
 
+        newVersion.setPayloadHash(newPayloadHash);
         String chainedHash = null;
         if (previousPayloadHash != null && newPayloadHash != null) {
             chainedHash = ConsentUtil.computeSHA256Hash(previousPayloadHash + newPayloadHash);
         } else if (newPayloadHash != null) {
             chainedHash = newPayloadHash;
         }
-        newVersion.setPayloadHash(chainedHash);
+        newVersion.setCurrentChainHash(chainedHash);
 
         // ENCRYPT
         generateConsentEncryption(newVersion, tenantId);
@@ -483,6 +488,8 @@ public class ConsentService {
             log.warn("Failed to compute payload hash: {}", e.getMessage());
         }
 
+        newVersion.setPayloadHash(newPayloadHash);
+
         // CHAIN HASH: Combine previous hash + new hash
         String chainedHash = null;
         if (previousPayloadHash != null && newPayloadHash != null) {
@@ -490,7 +497,7 @@ public class ConsentService {
         } else if (newPayloadHash != null) {
             chainedHash = newPayloadHash;
         }
-        newVersion.setPayloadHash(chainedHash);
+        newVersion.setCurrentChainHash(chainedHash);
 
         // ENCRYPT (sets encryptionTime, encryptedReferenceId, encryptedString)
         generateConsentEncryption(newVersion, tenantId);
@@ -1572,7 +1579,6 @@ public class ConsentService {
                 .status(consent.getStatus())
                 .consentStatus(consent.getConsentStatus())
                 .version(consent.getVersion())
-                .consentJwtToken(consent.getConsentJwtToken())
                 .startDate(consent.getStartDate())
                 .endDate(consent.getEndDate())
                 .createdAt(consent.getCreatedAt())
