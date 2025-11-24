@@ -30,6 +30,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.bson.Document;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -168,6 +169,10 @@ public class ConsentService {
             log.warn("Failed to compute payload hash");
         }
 
+        MongoTemplate mongoTemplate = mongoConfig.getMongoTemplateForTenant(tenantId);
+//        String previousChain = fetchLatestChain(mongoTemplate, CookieConsent.class);
+
+//        String chainedHash = ConsentUtil.computeSHA256Hash(previousChain + consentJsonStringHash);
         String chainedHash = ConsentUtil.computeSHA256Hash(GENESIS_CHAIN + consentJsonStringHash);
         consent.setCurrentChainHash(chainedHash);
 
@@ -1586,4 +1591,28 @@ public class ConsentService {
                 .staleStatus(consent.getStaleStatus())
                 .build();
     }
+
+//    /**
+//     * Fetches the most recent chain hash (the "currentChain" of the latest document)
+//     * from the audit collection for continuity.
+//     */
+//    public static <T> String fetchLatestChain(MongoTemplate mongoTemplate, Class<T> entityClass) {
+//        try {
+//            Query query = new Query().with(Sort.by(Sort.Direction.DESC, "createdAt")).limit(1);
+//
+//            // Fetch the latest document as a raw BSON document
+//            Document latestDoc = mongoTemplate.findOne(query, Document.class, mongoTemplate.getCollectionName(entityClass));
+//
+//            if (latestDoc == null) {
+//                return GENESIS_CHAIN;
+//            }
+//
+//            Object chain = latestDoc.get("currentChainHash");
+//            return (chain != null) ? chain.toString() : GENESIS_CHAIN;
+//
+//        } catch (Exception e) {
+//            log.error("Failed to fetch latest chain hash", e);
+//            return GENESIS_CHAIN;
+//        }
+//    }
 }

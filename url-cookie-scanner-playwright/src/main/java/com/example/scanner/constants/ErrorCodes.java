@@ -79,6 +79,7 @@ public final class ErrorCodes {
     public static final String VERSION_INTEGRITY_CHECK_FAILED = "R5005";
     public static final String REFERENCE_INTEGRITY_VIOLATION = "R5006";
     public static final String TENANT_ISOLATION_VIOLATION = "R5007";
+    public static final String EXTERNAL_SOURCE_CODE_SERVICE_ERROR = "R5008";
 
     // ==== BUSINESS RULE VIOLATIONS (R4221-R4299) ====
     public static final String TEMPLATE_NOT_UPDATABLE = "R4221";
@@ -97,7 +98,9 @@ public final class ErrorCodes {
 
     public static final String CONSENT_CANNOT_UPDATE_REVOKED = "R4100";
 
-    // Private constructor to prevent instantiation
+    public static final String INVALID_REQUEST = "R4120";
+
+
     private ErrorCodes() {
         throw new UnsupportedOperationException("Utility class cannot be instantiated");
     }
@@ -188,6 +191,8 @@ public final class ErrorCodes {
 
             case CONSENT_CANNOT_UPDATE_REVOKED -> "Cannot update revoked consent";
             case CONSENT_JWS_NOT_FOUND -> "x-jws-signature is required in the header.";
+
+            case EXTERNAL_SOURCE_CODE_SERVICE_ERROR -> "External service communication failed";
 
             default -> "Unknown error";
         };

@@ -112,14 +112,14 @@ public class CookieConsent {
 
     @Field("startDate")
     @JsonProperty("startDate")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
     @Schema(description = "Consent start date",
             example = "2025-01-15T10:30:00")
     private LocalDateTime startDate;
 
     @Field("endDate")
     @JsonProperty("endDate")
-    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS")
     @Schema(description = "Consent expiry date (earliest preference expiry)",
             example = "2026-01-15T10:30:00")
     private LocalDateTime endDate;

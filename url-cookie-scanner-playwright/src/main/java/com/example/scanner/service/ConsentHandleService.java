@@ -6,7 +6,6 @@ import com.example.scanner.config.TenantContext;
 import com.example.scanner.constants.AuditConstants;
 import com.example.scanner.constants.Constants;
 import com.example.scanner.constants.ErrorCodes;
-import com.example.scanner.dto.CustomerIdentifiers;
 import com.example.scanner.dto.Preference;
 import com.example.scanner.dto.request.CreateHandleRequest;
 import com.example.scanner.dto.response.ConsentHandleResponse;
@@ -31,6 +30,8 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ObjectUtils;
+import com.example.scanner.dto.response.GetConsentHandleAndSecureCodeResponse;
+import com.example.scanner.dto.response.SecureCodeApiResponse;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -45,6 +46,7 @@ public class ConsentHandleService {
     private final MultiTenantMongoConfig mongoConfig;
     private final AuditService auditService;
     private final NotificationManager notificationManager;
+    private final SecureCodeService secureCodeService;
 
     @Value("${consent.handle.expiry.minutes:15}")
     private int handleExpiryMinutes;
@@ -330,6 +332,80 @@ public class ConsentHandleService {
                     ErrorCodes.CONSENT_HANDLE_EXPIRED,
                     "Consent handle has expired",
                     "Consent handle " + handle.getConsentHandleId() + " expired at " + handle.getExpiresAt()
+            );
+        }
+    }
+
+    /**
+     * Create consent handle and fetch secure code in one operation
+     *
+     * @param tenantId    Tenant ID from header
+     * @param businessId  Business ID from header
+     * @param request     Request containing templateId, templateVersion, and customerIdentifiers
+     * @param headers     All request headers
+     * @return Combined response with consent handle ID and secure code details
+     * @throws ScannerException if any step fails
+     */
+    public GetConsentHandleAndSecureCodeResponse createConsentHandleAndSecureCode(
+            String tenantId,
+            String businessId,
+            CreateHandleRequest request,
+            Map<String, String> headers) throws ScannerException {
+
+        log.info("Starting consent handle and secure code creation for tenant: {}, businessId: {}, templateId: {}",
+                tenantId, businessId, request.getTemplateId());
+
+        try {
+            // Step 1: Create consent handle internally
+            CreateHandleRequest createHandleRequest = CreateHandleRequest.builder()
+                    .templateId(request.getTemplateId())
+                    .templateVersion(request.getTemplateVersion())
+                    .customerIdentifiers(request.getCustomerIdentifiers())
+                    .build();
+
+            log.info("Creating consent handle for templateId: {}, version: {}",
+                    request.getTemplateId(), request.getTemplateVersion());
+
+            ConsentHandleResponse consentHandleResponse = this.createConsentHandle(tenantId, createHandleRequest, headers);
+
+            log.info("Consent handle created successfully: {}", consentHandleResponse.getConsentHandleId());
+
+            // Step 2: Call external secure code API through SecureCodeService
+            String identityValue = request.getCustomerIdentifiers().getValue();
+            String identityType = request.getCustomerIdentifiers().getType();
+
+            log.info("Calling secure code service for identity: {}, type: {}", identityValue, identityType);
+
+            SecureCodeApiResponse secureCodeResponse = secureCodeService.createSecureCode(
+                    tenantId, businessId, identityValue, identityType);
+
+            log.info("Secure code created successfully: {}", secureCodeResponse.getSecureCode());
+
+            // Step 3: Build combined response
+            GetConsentHandleAndSecureCodeResponse response = GetConsentHandleAndSecureCodeResponse.builder()
+                    .consentHandleId(consentHandleResponse.getConsentHandleId())
+                    .secureCode(secureCodeResponse.getSecureCode())
+                    .identity(secureCodeResponse.getIdentity())
+                    .expiry(secureCodeResponse.getExpiry())
+                    .templateId(request.getTemplateId())
+                    .templateVersion(request.getTemplateVersion())
+                    .message("Consent handle and secure code created successfully")
+                    .build();
+
+            log.info("Combined response created successfully for consentHandleId: {}, secureCode: {}",
+                    response.getConsentHandleId(), response.getSecureCode());
+
+            return response;
+
+        } catch (ScannerException e) {
+            log.error("Error during consent handle and secure code creation: {}", e.getMessage(), e);
+            throw e;
+        } catch (Exception e) {
+            log.error("Unexpected error during consent handle and secure code creation: {}", e.getMessage(), e);
+            throw new ScannerException(
+                    ErrorCodes.INTERNAL_ERROR,
+                    "Something went wrong",
+                    "Unexpected error occurred: " + e.getMessage()
             );
         }
     }

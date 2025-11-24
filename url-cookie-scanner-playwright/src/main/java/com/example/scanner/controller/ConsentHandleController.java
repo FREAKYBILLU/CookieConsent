@@ -1,12 +1,15 @@
 package com.example.scanner.controller;
 
-import com.example.scanner.constants.Constants;
 import com.example.scanner.dto.response.ConsentHandleResponse;
 import com.example.scanner.dto.request.CreateHandleRequest;
 import com.example.scanner.dto.response.ErrorResponse;
+import com.example.scanner.dto.response.GetConsentHandleAndSecureCodeResponse;
 import com.example.scanner.dto.response.GetHandleResponse;
 import com.example.scanner.exception.ScannerException;
 import com.example.scanner.service.ConsentHandleService;
+import com.example.scanner.service.RequestResponseSignatureService;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,11 +21,14 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 @RestController
 @RequestMapping("/consent-handle")
@@ -32,6 +38,8 @@ import java.util.Map;
 public class ConsentHandleController {
 
     private final ConsentHandleService consentHandleService;
+
+    private final RequestResponseSignatureService requestResponseSignatureService;
 
     @PostMapping("/create")
     @Operation(
@@ -141,5 +149,165 @@ public class ConsentHandleController {
             @RequestHeader Map<String, String> headers) throws ScannerException {
         GetHandleResponse response = this.consentHandleService.getConsentHandleById(consentHandleId, tenantId);
         return new ResponseEntity<>(response, HttpStatus.OK);
+    }
+
+    @PostMapping("/handle-code")
+    @Operation(
+            summary = "Create consent handle and retrieve secure code",
+            description = """
+                Creates a consent handle internally and calls external secure code API to generate secure code.
+                This is a combined operation that performs two steps:
+                1. Creates a consent handle using templateId, templateVersion, and customerIdentifiers
+                2. Calls external secure code API with identity information
+                
+                Returns both consent handle ID and secure code details in a single response.
+                
+                Error Codes: 
+                - R4001 (Validation Error)
+                - R4041 (Not Found - Template not found)
+                - R5000 (Internal Server Error)
+                - External API errors will be propagated with appropriate error codes
+                """,
+            requestBody = @RequestBody(
+                    description = "Request containing template information and customer identifiers",
+                    required = true,
+                    content = @Content(
+                            schema = @Schema(implementation = CreateHandleRequest.class),
+                            examples = @ExampleObject(
+                                    name = "Sample Request",
+                                    value = """
+                                        {
+                                          "templateId": "tpl_123e4567-e89b-12d3-a456-426614174000",
+                                          "templateVersion": 1,
+                                          "customerIdentifiers": {
+                                            "type": "DEVICE_ID",
+                                            "value": "9324901354"
+                                          }
+                                        }
+                                        """
+                            )
+                    )
+            ),
+            parameters = {
+                    @Parameter(
+                            name = "X-Tenant-ID",
+                            description = "Tenant ID (UUID format)",
+                            required = true,
+                            example = "d582664d-e67c-4971-99dd-f0b4385ab35b"
+                    ),
+                    @Parameter(
+                            name = "business-id",
+                            description = "Business ID (UUID format)",
+                            required = true,
+                            example = "d582664d-e67c-4971-99dd-f0b4385ab35b"
+                    ),
+                    @Parameter(
+                            name = "txn",
+                            description = "Transaction ID for tracking (optional)",
+                            required = false,
+                            example = "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+                    )
+            },
+            responses = {
+                    @ApiResponse(
+                            responseCode = "201",
+                            description = "Consent handle and secure code created successfully",
+                            content = @Content(
+                                    schema = @Schema(implementation = GetConsentHandleAndSecureCodeResponse.class),
+                                    examples = @ExampleObject(
+                                            name = "Success Response",
+                                            value = """
+                                                {
+                                                  "consentHandleId": "9bb14c63-7ec8-47f5-86b5-4a8c848012c1",
+                                                  "secureCode": "fa0b0f24-6419-4d80-bd2b-d9493bc48b6c",
+                                                  "identity": "9324901354",
+                                                  "expiry": 1763831397284,
+                                                  "templateId": "tpl_123e4567-e89b-12d3-a456-426614174000",
+                                                  "templateVersion": 1,
+                                                  "message": "Consent handle and secure code created successfully"
+                                                }
+                                                """
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "400",
+                            description = "Invalid request - validation failed",
+                            content = @Content(
+                                    schema = @Schema(implementation = ErrorResponse.class),
+                                    examples = @ExampleObject(
+                                            name = "Validation Error",
+                                            value = """
+                                                {
+                                                  "errorCode": "R4001",
+                                                  "message": "Validation error",
+                                                  "details": "Template ID is required"
+                                                }
+                                                """
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "404",
+                            description = "Template not found",
+                            content = @Content(
+                                    schema = @Schema(implementation = ErrorResponse.class),
+                                    examples = @ExampleObject(
+                                            name = "Not Found Error",
+                                            value = """
+                                                {
+                                                  "errorCode": "R4041",
+                                                  "message": "Template not found",
+                                                  "details": "No template found with the given ID and version"
+                                                }
+                                                """
+                                    )
+                            )
+                    ),
+                    @ApiResponse(
+                            responseCode = "500",
+                            description = "Internal server error or external API failure",
+                            content = @Content(
+                                    schema = @Schema(implementation = ErrorResponse.class),
+                                    examples = @ExampleObject(
+                                            name = "Internal Error",
+                                            value = """
+                                                {
+                                                  "errorCode": "R5000",
+                                                  "message": "Internal server error",
+                                                  "details": "Failed to create secure code: Connection timeout"
+                                                }
+                                                """
+                                    )
+                            )
+                    )
+            }
+    )
+    public ResponseEntity<GetConsentHandleAndSecureCodeResponse> getConsentHandleAndSecureCode(
+            @RequestHeader("X-Tenant-ID") String tenantId,
+            @RequestHeader("business-id") String businessId,
+            @Valid @org.springframework.web.bind.annotation.RequestBody CreateHandleRequest request,
+            @RequestHeader Map<String, String> headers) throws ScannerException {
+
+        log.info("Received request to create consent handle and secure code for tenant: {}, businessId: {}, templateId: {}",
+                tenantId, businessId, request.getTemplateId());
+
+
+        ObjectMapper mapper = new ObjectMapper();
+        Map<String, Object> map =
+                mapper.convertValue(request, new TypeReference<TreeMap<String, Object>>() {});
+        requestResponseSignatureService.verifyRequest(map ,headers);
+
+        GetConsentHandleAndSecureCodeResponse response = consentHandleService
+                .createConsentHandleAndSecureCode(tenantId, businessId, request, headers);
+
+        log.info("Successfully created consent handle: {} and secure code: {}",
+                response.getConsentHandleId(), response.getSecureCode());
+
+        String signature = requestResponseSignatureService.signRequest(map);
+        HttpHeaders responseHeaders = new HttpHeaders();
+        responseHeaders.add("x-jws-signature", signature);
+
+        return new ResponseEntity<>(response, responseHeaders, HttpStatus.OK);
     }
 }
